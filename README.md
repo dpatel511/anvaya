@@ -6,9 +6,9 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Stage 0: research and design. No assembler has been implemented yet.
+Early Python prototype. Anvaya currently supports validated k-mer extraction and basic de Bruijn graph construction with edge multiplicities.
 
-The initial prototype will be written in Python and will prioritize correctness and scientific validation before speed or memory optimization.
+Correctness and scientific validation are the priorities before speed or memory optimization.
 
 ## Initial scope
 
@@ -17,6 +17,20 @@ The initial prototype will be written in Python and will prioritize correctness 
 - untreated double-stranded libraries initially;
 - reference-free assembly;
 - no damage profile required as input.
+
+## Implemented
+
+- overlapping k-mer extraction;
+- DNA sequence and k-mer size validation;
+- directed de Bruijn graph construction;
+- repeated-edge counting and branch representation;
+- unit tests for graph primitives.
+
+## Testing
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
 
 ## Documentation
 
