@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "anvaya"
 version = "0.1.0"
 description = "Damage-aware de Bruijn graph assembly research prototype"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 
 [tool.setuptools.packages.find]
 where = ["src"]
