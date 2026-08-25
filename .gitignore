@@ -4,3 +4,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Generated experiment data
+experiments/**/generated/
+experiments/**/results/
