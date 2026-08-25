@@ -30,3 +30,21 @@ Initial evidence includes molecule count, distance from both molecule ends, read
 
 Internal damage calibration will be part of the assembler. PyDamage and similar tools are comparators, not required components.
 
+## Evidence from the current baseline
+
+Minimum-support filtering showed that unsupported k-mers cause most initial graph fragmentation. On the clean single-genome benchmark, `min_count=2` increased genome recovery from 21.444% to 94.940% without introducing a reported misassembly.
+
+A fixed-k sweep showed that `k=31` gives the best current contiguity for 150 bp reads at 20× coverage. Larger k values recover slightly more of the reference but fragment valid paths. This result is dataset-specific and does not establish a default for ancient metagenomes.
+
+All filtered assemblies have a duplication ratio near 2.0, and their graph node counts are close to twice the reference length. This is evidence that forward and reverse-complement paths are currently represented separately. The current output is also a set of unitigs that stops at unresolved branches, rather than fully resolved contigs comparable to mature assemblers.
+
+## Near-term development sequence
+
+1. Design an orientation-aware graph that preserves strand evidence; naïve canonicalization must not discard direction needed for assembly or later damage inference.
+2. Represent k-mers compactly as encoded integers and replace nested Python objects with flatter graph structures.
+3. Add conservative tip and bubble handling as optional, independently benchmarked operations.
+4. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
+5. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.
+6. Add terminal position, orientation, quality, and molecule evidence for damage-aware branch decisions.
+
+Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
