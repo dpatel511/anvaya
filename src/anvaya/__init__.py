@@ -10,11 +10,13 @@ from anvaya.graph import (
     source_nodes,
 )
 from anvaya.kmers import kmers
+from anvaya.unitigs import extract_unitigs
 
 __all__ = [
     "DeBruijnGraph",
     "branching_nodes",
     "build_dbg",
+    "extract_unitigs",
     "in_degree",
     "kmers",
     "out_degree",
