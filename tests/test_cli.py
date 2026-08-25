@@ -40,7 +40,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("reads=1", stdout.getvalue())
             self.assertIn("unitigs=1", stdout.getvalue())
             self.assertIn("[anvaya] Loading reads", stderr.getvalue())
-            self.assertIn("[anvaya] Building de Bruijn graph", stderr.getvalue())
+            self.assertIn("[anvaya] Building directed de Bruijn graph", stderr.getvalue())
             self.assertIn("[anvaya] Extracting unitigs", stderr.getvalue())
             self.assertIn("[anvaya] Writing unitigs", stderr.getvalue())
             self.assertIn("[anvaya] Completed", stderr.getvalue())

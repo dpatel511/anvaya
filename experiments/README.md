@@ -139,6 +139,46 @@ The approximately 2.0 duplication ratio after filtering is consistent with forwa
 
 The full comparison remains ignored under `experiments/baseline/results/min_count_comparison/quast/`.
 
+## Orientation-aware graph experiment
+
+### Question
+
+Does representing each k-mer and its reverse complement as one physical graph edge remove strand duplication without reducing assembly quality?
+
+The baseline simulated reads were assembled with `k=31` and `min_count=2`. The directed and orientation-aware runs used identical reads and evaluation settings.
+
+```bash
+anvaya assemble -1 simulated1.fq -2 simulated2.fq \
+  --k 31 --min-count 2 --orientation-aware -o contigs.fasta
+```
+
+### Results
+
+| Metric | Directed | Orientation-aware |
+|---|---:|---:|
+| Graph nodes | 9,923,379 | 5,006,437 |
+| Branching nodes | 4,669 | 3,756 |
+| Total unitigs | 10,708 | 6,355 |
+| Contigs >=200 bp | 4,135 | 1,664 |
+| Largest contig | 28,204 bp | 20,336 bp |
+| N50 | 3,804 bp | 4,813 bp |
+| NGA50 | 5,874 bp | 4,715 bp |
+| Genome fraction | 97.309% | 96.904% |
+| Duplication ratio | 1.999 | 1.005 |
+| Misassemblies | 0 | 0 |
+| Mismatches per 100 kbp | 0.01 | 0.00 |
+| Wall time | 202.07 s | 193.90 s |
+| Peak memory | 6.13 GiB | 6.92 GiB |
+
+### Interpretation
+
+Canonical physical edges reduced the node count by about half and corrected the duplication ratio from 1.999 to 1.005. N50 improved by about 27%, and the assembly remained free of detected misassemblies. This validates the orientation-aware graph model.
+
+The result is not yet an overall performance improvement. Genome fraction decreased by 0.405 percentage points, the largest contig and NGA50 decreased, and peak memory increased by about 13%. The current implementation stores two oriented adjacency maps per node, Python tuple edge keys, counters, and one support object per physical edge. Graph construction also repeatedly creates and reverse-complements string k-mers.
+
+The orientation-aware mode therefore remains experimental. The next implementation step is a compact representation using encoded canonical k-mers, flat adjacency storage, integer edge identifiers, and compact visited state. The same benchmark must be repeated after that change to verify that optimization preserves the corrected duplication ratio and assembly accuracy.
+
+The complete generated QUAST report remains ignored under `experiments/baseline/results/orientation_aware/quast/`.
 ## K-mer size experiment
 
 ### Question

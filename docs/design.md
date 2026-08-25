@@ -30,6 +30,11 @@ Initial evidence includes molecule count, distance from both molecule ends, read
 
 Internal damage calibration will be part of the assembler. PyDamage and similar tools are comparators, not required components.
 
+## Orientation-aware graph
+
+The experimental graph stores each canonical `(k-1)`-mer once and uses oriented integer handles to traverse either strand. A physical k-mer edge therefore represents both its forward traversal and the reverse-complement traversal. Forward, reverse, and palindromic observations are retained separately, while `min_count` is applied to their combined support.
+
+This representation prevents the two DNA strands from producing duplicate assemblies and establishes the structure needed for later orientation-dependent damage evidence. It does not yet store read-end position, base quality, molecule identity, or library-level damage evidence.
 ## Evidence from the current baseline
 
 Minimum-support filtering showed that unsupported k-mers cause most initial graph fragmentation. On the clean single-genome benchmark, `min_count=2` increased genome recovery from 21.444% to 94.940% without introducing a reported misassembly.

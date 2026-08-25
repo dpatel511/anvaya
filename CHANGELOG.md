@@ -21,6 +21,10 @@ All notable project changes will be documented in this file.
 - Unit tests for assembler primitives and simulation helpers.
 - `anvaya assemble` command with progress reporting and FASTA output.
 - Optional minimum k-mer support filtering through `--min-count`.
+- Experimental orientation-aware graph construction through `--orientation-aware`.
+- Canonical physical graph nodes with oriented traversal handles.
+- Forward, reverse, and palindromic support tracking for canonical k-mers.
+- Orientation-aware unitig extraction and graph summaries.
 
 ### Changed
 
