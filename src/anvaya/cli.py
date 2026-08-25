@@ -139,8 +139,8 @@ def _run_assemble(
     )
     if orientation_aware:
         graph = build_bidirected_dbg(sequences, k, min_count)
-        node_count = len(graph.sequences)
-        edge_count = len(graph.edge_support)
+        node_count = graph.node_count
+        edge_count = graph.edge_count
     else:
         graph = build_dbg(sequences, k, min_count)
         node_count = len(graph)
