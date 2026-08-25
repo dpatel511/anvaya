@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya currently supports validated k-mer extraction, basic de Bruijn graph construction, topology analysis, unitig extraction, and an end-to-end reads-to-unitigs workflow.
+Early Python prototype. Anvaya supports sequence-file input, basic de Bruijn graph assembly, topology analysis, unitig extraction, and controlled graph-disturbance tests.
 
 Correctness and scientific validation are the priorities before speed or memory optimization.
 
@@ -20,15 +20,15 @@ Correctness and scientific validation are the priorities before speed or memory 
 
 ## Implemented
 
-- overlapping k-mer extraction;
-- DNA sequence and k-mer size validation;
-- directed de Bruijn graph construction;
-- repeated-edge counting and branch representation;
-- incoming and outgoing node degrees;
-- source, sink, and branching-node identification;
+- plain and gzipped FASTA/FASTQ input with Phred scores;
+- DNA validation, reverse complements, and canonical sequences;
+- overlapping k-mer extraction with ambiguous k-mers excluded;
+- directed de Bruijn graph construction and edge multiplicity;
+- node degrees and source, sink, and branch identification;
 - maximal non-branching unitig extraction;
 - graph topology and support summaries;
-- end-to-end reads-to-unitigs assembly;
+- end-to-end file-to-unitigs assembly;
+- deterministic test-only simulation helpers;
 - unit tests for assembler primitives.
 
 ## Testing
@@ -43,3 +43,4 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 - [Initial design](docs/design.md)
 - [Benchmark plan](docs/benchmark_plan.md)
 - [Literature notes](notes/literature.md)
+- [Simulation experiments](experiments/README.md)
