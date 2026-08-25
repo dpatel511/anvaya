@@ -20,6 +20,7 @@ All notable project changes will be documented in this file.
 - Initial graph-disturbance smoke experiment.
 - Unit tests for assembler primitives and simulation helpers.
 - `anvaya assemble` command with progress reporting and FASTA output.
+- Optional minimum k-mer support filtering through `--min-count`.
 
 ### Changed
 

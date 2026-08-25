@@ -24,6 +24,7 @@ Correctness and scientific validation are the priorities before further speed or
 - DNA validation, reverse complements, and canonical sequences;
 - overlapping k-mer extraction with ambiguous k-mers excluded;
 - directed de Bruijn graph construction and edge multiplicity;
+- optional minimum k-mer support filtering;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
@@ -35,10 +36,10 @@ Correctness and scientific validation are the priorities before further speed or
 ## Command-line usage
 
 ```bash
-anvaya assemble -i reads.fastq.gz --k 21 -o contigs.fasta
+anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta
 ```
 
-Progress is written to stderr and the final assembly summary to stdout.
+`--min-count` defaults to `1`, which preserves all observed k-mers. Progress is written to stderr and the final assembly summary to stdout.
 
 ## Testing
 
