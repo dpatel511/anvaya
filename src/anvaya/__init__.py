@@ -8,6 +8,7 @@ from anvaya.bidirected import (
     extract_bidirected_unitigs,
     summarize_bidirected_graph,
 )
+from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
 from anvaya.graph import (
     DeBruijnGraph,
     branching_nodes,
@@ -30,6 +31,7 @@ __all__ = [
     "GraphSummary",
     "Read",
     "StrandSupport",
+    "TipCleaningSummary",
     "assemble",
     "assemble_file",
     "branching_nodes",
@@ -44,6 +46,7 @@ __all__ = [
     "normalize_dna",
     "out_degree",
     "reverse_complement",
+    "remove_weak_tips",
     "sink_nodes",
     "source_nodes",
     "summarize_bidirected_graph",
