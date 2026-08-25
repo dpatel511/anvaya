@@ -11,8 +11,8 @@ DeBruijnGraph = dict[str, Counter[str]]
 def build_dbg(reads: Sequence[str], k: int) -> DeBruijnGraph:
     """Build a directed de Bruijn graph with edge multiplicities.
 
-    Nodes are (k-1)-mers. Each observed k-mer contributes an edge from its
-    prefix to its suffix. Repeated observations increase the edge count.
+    Nodes are (k-1)-mers. Each unambiguous observed k-mer contributes an edge
+    from its prefix to its suffix. Repeated observations increase the count.
     """
     if not reads:
         raise ValueError("reads must not be empty")
@@ -28,6 +28,8 @@ def build_dbg(reads: Sequence[str], k: int) -> DeBruijnGraph:
             raise ValueError("each read must be at least k bases long")
 
         for kmer in kmers(read, k):
+            if "N" in kmer:
+                continue
             prefix = kmer[:-1]
             suffix = kmer[1:]
             graph.setdefault(prefix, Counter())[suffix] += 1
