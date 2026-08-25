@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from anvaya.kmers import kmers
 
 DeBruijnGraph = dict[str, Counter[str]]
+DegreeMap = dict[str, int]
 
 
 def build_dbg(reads: Sequence[str], k: int) -> DeBruijnGraph:
@@ -43,6 +44,18 @@ def out_degree(graph: DeBruijnGraph, node: str) -> int:
     return len(graph[node])
 
 
+def node_degrees(graph: DeBruijnGraph) -> tuple[DegreeMap, DegreeMap]:
+    """Return distinct incoming and outgoing degrees for every node."""
+    in_degrees = dict.fromkeys(graph, 0)
+    out_degrees = {node: len(successors) for node, successors in graph.items()}
+
+    for successors in graph.values():
+        for successor in successors:
+            in_degrees[successor] += 1
+
+    return in_degrees, out_degrees
+
+
 def in_degree(graph: DeBruijnGraph, node: str) -> int:
     """Return the number of distinct incoming edges to *node*."""
     if node not in graph:
@@ -52,26 +65,29 @@ def in_degree(graph: DeBruijnGraph, node: str) -> int:
 
 def source_nodes(graph: DeBruijnGraph) -> set[str]:
     """Return nodes with no incoming edges and at least one outgoing edge."""
+    in_degrees, out_degrees = node_degrees(graph)
     return {
         node
         for node in graph
-        if in_degree(graph, node) == 0 and out_degree(graph, node) > 0
+        if in_degrees[node] == 0 and out_degrees[node] > 0
     }
 
 
 def sink_nodes(graph: DeBruijnGraph) -> set[str]:
     """Return nodes with at least one incoming edge and no outgoing edges."""
+    in_degrees, out_degrees = node_degrees(graph)
     return {
         node
         for node in graph
-        if in_degree(graph, node) > 0 and out_degree(graph, node) == 0
+        if in_degrees[node] > 0 and out_degrees[node] == 0
     }
 
 
 def branching_nodes(graph: DeBruijnGraph) -> set[str]:
     """Return nodes with multiple incoming or outgoing edges."""
+    in_degrees, out_degrees = node_degrees(graph)
     return {
         node
         for node in graph
-        if in_degree(graph, node) > 1 or out_degree(graph, node) > 1
+        if in_degrees[node] > 1 or out_degrees[node] > 1
     }

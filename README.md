@@ -8,7 +8,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 Early Python prototype. Anvaya supports sequence-file input, basic de Bruijn graph assembly, topology analysis, unitig extraction, and controlled graph-disturbance tests.
 
-Correctness and scientific validation are the priorities before speed or memory optimization.
+Correctness and scientific validation are the priorities before further speed or memory optimization.
 
 ## Initial scope
 
@@ -24,12 +24,21 @@ Correctness and scientific validation are the priorities before speed or memory 
 - DNA validation, reverse complements, and canonical sequences;
 - overlapping k-mer extraction with ambiguous k-mers excluded;
 - directed de Bruijn graph construction and edge multiplicity;
-- node degrees and source, sink, and branch identification;
+- linear-time node degree calculation;
+- source, sink, and branch identification;
 - maximal non-branching unitig extraction;
 - graph topology and support summaries;
-- end-to-end file-to-unitigs assembly;
+- `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
 - unit tests for assembler primitives.
+
+## Command-line usage
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 21 -o contigs.fasta
+```
+
+Progress is written to stderr and the final assembly summary to stdout.
 
 ## Testing
 
