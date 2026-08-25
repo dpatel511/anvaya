@@ -8,3 +8,4 @@ build/
 # Generated experiment data
 experiments/**/generated/
 experiments/**/results/
+experiments/**/comparisons/
