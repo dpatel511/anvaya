@@ -8,7 +8,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, topology analysis, unitig extraction, and controlled graph-disturbance tests.
 
-Correctness and scientific validation are the priorities before further speed or memory optimization.
+Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
 ## Initial scope
 
@@ -25,6 +25,7 @@ Correctness and scientific validation are the priorities before further speed or
 - overlapping k-mer extraction with ambiguous k-mers excluded;
 - directed de Bruijn graph construction and edge multiplicity;
 - experimental orientation-aware graph construction using canonical nodes and oriented handles;
+- rolling 2-bit canonical k-mer encoding and compact integer graph arrays;
 - combined forward and reverse-complement k-mer support;
 - optional minimum k-mer support filtering;
 - linear-time node degree calculation;
@@ -50,7 +51,7 @@ anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
   --orientation-aware -o contigs.fasta
 ```
 
-This mode prevents forward and reverse-complement paths from being assembled separately. It remains experimental because its current Python representation uses more memory than the directed graph.
+This mode prevents forward and reverse-complement paths from being assembled separately. It remains experimental while graph-cleaning and damage-aware decisions are developed and validated.
 
 ## Testing
 

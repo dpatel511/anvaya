@@ -135,7 +135,7 @@ anvaya assemble -1 simulated1.fq -2 simulated2.fq \
 
 `min_count=2` produced the best accuracy-contiguity trade-off. It increased genome recovery from 21.444% to 94.940%, increased N50 nearly sevenfold, reduced unitig fragmentation by about 96%, reduced runtime by about 30%, and reduced peak memory by about 18%. Threshold 3 removed more connecting k-mers and reduced contiguity without improving genome recovery.
 
-The approximately 2.0 duplication ratio after filtering is consistent with forward and reverse-complement paths being assembled separately. Orientation-aware graph construction is therefore the next design priority. The remaining runtime and memory gap also shows that compact k-mer and graph representations will still be required.
+The approximately 2.0 duplication ratio after filtering was consistent with forward and reverse-complement paths being assembled separately. This result motivated the orientation-aware and compact graph experiments below.
 
 The full comparison remains ignored under `experiments/baseline/results/min_count_comparison/quast/`.
 
@@ -176,9 +176,41 @@ Canonical physical edges reduced the node count by about half and corrected the 
 
 The result is not yet an overall performance improvement. Genome fraction decreased by 0.405 percentage points, the largest contig and NGA50 decreased, and peak memory increased by about 13%. The current implementation stores two oriented adjacency maps per node, Python tuple edge keys, counters, and one support object per physical edge. Graph construction also repeatedly creates and reverse-complements string k-mers.
 
-The orientation-aware mode therefore remains experimental. The next implementation step is a compact representation using encoded canonical k-mers, flat adjacency storage, integer edge identifiers, and compact visited state. The same benchmark must be repeated after that change to verify that optimization preserves the corrected duplication ratio and assembly accuracy.
+The initial orientation-aware mode therefore remained experimental pending a compact representation. That optimization is evaluated below.
 
 The complete generated QUAST report remains ignored under `experiments/baseline/results/orientation_aware/quast/`.
+
+## Compact orientation-aware graph experiment
+
+### Question
+
+Can compact graph storage reduce runtime and memory without changing the validated orientation-aware assembly?
+
+The same 676,696 reads were assembled with `k=31`, `min_count=2`, and `--orientation-aware`. The compact implementation uses rolling 2-bit canonical k-mers, packed strand support, typed integer arrays, and byte-array traversal state.
+
+### Results
+
+| Metric | Initial orientation-aware | Compact orientation-aware | Change |
+|---|---:|---:|---:|
+| Graph construction | 161.26 s | 92.73 s | 43% faster |
+| Unitig extraction | 25.01 s | 16.97 s | 32% faster |
+| Wall time | 193.90 s | 113.99 s | 41% faster |
+| Peak memory | 6.92 GiB | 2.78 GiB | 60% lower |
+| Graph nodes | 5,006,437 | 5,006,437 | unchanged |
+| Total unitigs | 6,355 | 6,355 | unchanged |
+| N50 | 4,813 bp | 4,813 bp | unchanged |
+| Genome fraction | 96.904% | 96.904% | unchanged |
+| Duplication ratio | 1.005 | 1.005 | unchanged |
+| Misassemblies | 0 | 0 | unchanged |
+
+### Interpretation
+
+The optimization met its goal. Peak memory fell below the directed `k=31` baseline of 6.13 GiB, and wall time improved by about 1.7-fold. The canonical unitig multisets were identical even though FASTA ordering and strand presentation differed. QUAST reported identical values for every assembly metric, confirming that the storage change did not alter accuracy.
+
+The implementation remains CPU-bound and slower than mature assemblers. Further optimization should be guided by profiling; stable hot loops can later be moved to Cython without rewriting the complete Python workflow.
+
+Generated timing data and the QUAST comparison remain ignored under `experiments/baseline/results/compact_orientation/`.
+
 ## K-mer size experiment
 
 ### Question
@@ -217,12 +249,11 @@ The same reads and reference were assembled with `min_count=2` and `k` values 21
 
 For this clean 150 bp, 20× dataset, `k=31` and `min_count=2` provide the best current accuracy-contiguity trade-off. This is a dataset-specific result, not a universal default for short, low-coverage, damaged, or metagenomic reads.
 
-The approximately 2.0 duplication ratio and graph size near twice the 5.08 Mb reference support the hypothesis that forward and reverse-complement paths are represented separately. The next development sequence is:
+The approximately 2.0 duplication ratio and graph size near twice the 5.08 Mb reference motivated orientation-aware construction. That representation and its compact storage have now been validated in the experiments above. The next development sequence is:
 
-1. design and validate orientation-aware graph construction;
-2. introduce compact integer k-mer storage and flatter graph structures;
-3. add conservative, independently tested tip and bubble handling;
-4. evaluate paired-read links and multi-k assembly;
-5. introduce damage-aware evidence only after the ordinary baseline is stable.
+1. add conservative, independently tested tip and bubble handling;
+2. evaluate paired-read links and multi-k assembly;
+3. validate the baseline on controlled mixtures and small communities;
+4. introduce damage-aware evidence after the ordinary baseline is stable.
 
 The full report remains ignored under `experiments/baseline/results/k_sweep/quast/`.
