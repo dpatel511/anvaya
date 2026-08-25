@@ -19,3 +19,9 @@ All notable project changes will be documented in this file.
 - Deterministic test-only helpers for fragments, errors, terminal damage, and SNPs.
 - Initial graph-disturbance smoke experiment.
 - Unit tests for assembler primitives and simulation helpers.
+- `anvaya assemble` command with progress reporting and FASTA output.
+
+### Changed
+
+- Replaced repeated graph-wide degree scans with linear-time degree calculation.
+- Avoided duplicate unitig extraction during CLI assembly.
