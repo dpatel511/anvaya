@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya currently supports validated k-mer extraction, basic de Bruijn graph construction, and graph topology analysis.
+Early Python prototype. Anvaya currently supports validated k-mer extraction, basic de Bruijn graph construction, topology analysis, unitig extraction, and an end-to-end reads-to-unitigs workflow.
 
 Correctness and scientific validation are the priorities before speed or memory optimization.
 
@@ -26,7 +26,10 @@ Correctness and scientific validation are the priorities before speed or memory 
 - repeated-edge counting and branch representation;
 - incoming and outgoing node degrees;
 - source, sink, and branching-node identification;
-- unit tests for graph primitives.
+- maximal non-branching unitig extraction;
+- graph topology and support summaries;
+- end-to-end reads-to-unitigs assembly;
+- unit tests for assembler primitives.
 
 ## Testing
 
