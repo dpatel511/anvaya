@@ -179,3 +179,50 @@ The result is not yet an overall performance improvement. Genome fraction decrea
 The orientation-aware mode therefore remains experimental. The next implementation step is a compact representation using encoded canonical k-mers, flat adjacency storage, integer edge identifiers, and compact visited state. The same benchmark must be repeated after that change to verify that optimization preserves the corrected duplication ratio and assembly accuracy.
 
 The complete generated QUAST report remains ignored under `experiments/baseline/results/orientation_aware/quast/`.
+## K-mer size experiment
+
+### Question
+
+Can a larger fixed k-mer improve contiguity after weak k-mers are filtered?
+
+The same reads and reference were assembled with `min_count=2` and `k` values 21, 31, 41, and 51. MEGAHIT and metaSPAdes outputs from the baseline run were included in the same QUAST comparison.
+
+### Results
+
+| Metric | k=21 | k=31 | k=41 | k=51 | MEGAHIT | metaSPAdes |
+|---|---:|---:|---:|---:|---:|---:|
+| Graph nodes | 9,902,440 | 9,923,379 | 9,897,805 | 9,827,816 | — | — |
+| Branching nodes | 13,665 | 4,669 | 2,883 | 2,066 | — | — |
+| Total unitigs | 24,336 | 10,708 | 10,610 | 14,162 | 106 | 196 |
+| Contigs ≥200 bp | 8,332 | 4,135 | 5,674 | 8,576 | 106 | 103 |
+| Largest contig | 10,197 bp | 28,204 bp | 14,337 bp | 7,836 bp | 448,867 bp | 449,487 bp |
+| N50 | 1,698 bp | 3,804 bp | 2,665 bp | 1,667 bp | 151,608 bp | 130,616 bp |
+| Genome fraction | 94.940% | 97.309% | 97.779% | 98.113% | 98.601% | 98.347% |
+| Duplication ratio | 2.005 | 1.999 | 2.009 | 2.019 | 1.001 | 1.000 |
+| Misassemblies | 0 | 0 | 0 | 0 | 2 | 0 |
+| Mismatches per 100 kbp | 0.01 | 0.01 | 0.02 | 0.03 | 2.02 | 3.74 |
+| Wall time | 3 min 15 s | 3 min 22 s | 3 min 21 s | 3 min 18 s | 38 s | 1 min 20 s |
+| Peak memory | 5.83 GiB | 6.13 GiB | 6.41 GiB | 6.38 GiB | 299 MiB | 1.5 GiB |
+
+### Why the results change with k
+
+- `k=21` cannot distinguish enough repeated sequence, so the graph contains more branches and unitigs stop frequently.
+- `k=31` adds enough sequence context to resolve many of those branches while retaining sufficient k-mer support, giving the best contiguity in this experiment.
+- At `k=41` and `k=51`, longer k-mers become easier to break through sequencing errors or insufficient support. Genome fraction rises slightly, but contiguity declines.
+- Graph node counts remain close to 10 million at every k, so k-mer choice does not address the core memory problem.
+- Memory rises with longer string k-mers and remains far above the mature assemblers.
+- Anvaya outputs unresolved unitigs, while MEGAHIT and metaSPAdes apply graph simplification, multi-k strategies, and additional path resolution to produce much longer contigs.
+
+### Conclusions and next steps
+
+For this clean 150 bp, 20× dataset, `k=31` and `min_count=2` provide the best current accuracy-contiguity trade-off. This is a dataset-specific result, not a universal default for short, low-coverage, damaged, or metagenomic reads.
+
+The approximately 2.0 duplication ratio and graph size near twice the 5.08 Mb reference support the hypothesis that forward and reverse-complement paths are represented separately. The next development sequence is:
+
+1. design and validate orientation-aware graph construction;
+2. introduce compact integer k-mer storage and flatter graph structures;
+3. add conservative, independently tested tip and bubble handling;
+4. evaluate paired-read links and multi-k assembly;
+5. introduce damage-aware evidence only after the ordinary baseline is stable.
+
+The full report remains ignored under `experiments/baseline/results/k_sweep/quast/`.
