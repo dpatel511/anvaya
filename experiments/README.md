@@ -211,6 +211,46 @@ The implementation remains CPU-bound and slower than mature assemblers. Further 
 
 Generated timing data and the QUAST comparison remain ignored under `experiments/baseline/results/compact_orientation/`.
 
+## Conservative tip-cleaning experiment
+
+### Question
+
+Can short, weak dead-end paths be removed to improve contiguity without sacrificing reference recovery, accuracy, or memory efficiency?
+
+The compact orientation-aware baseline was rerun on the same 676,696 reads with `k=31`, `min_count=2`, and `--clean-tips`. Cleaning removes paths no longer than `2 × k` only when their strongest edge has at most 20% of competing support.
+
+```bash
+anvaya assemble -1 simulated1.fq -2 simulated2.fq \
+  --k 31 --min-count 2 --orientation-aware --clean-tips \
+  -o contigs.fasta
+```
+
+### Results
+
+| Metric | Compact baseline | Tip cleaning |
+|---|---:|---:|
+| Active graph nodes | 5,006,437 | 4,993,920 |
+| Active graph edges | 5,007,930 | 4,995,413 |
+| Branching nodes | 3,756 | 2,967 |
+| Total unitigs | 6,355 | 4,760 |
+| Contigs ≥200 bp | 1,664 | 1,081 |
+| Largest contig | 20,336 bp | 46,465 bp |
+| N50 | 4,813 bp | 8,056 bp |
+| NGA50 | 4,715 bp | 7,876 bp |
+| Genome fraction | 96.904% | 97.022% |
+| Duplication ratio | 1.005 | 1.001 |
+| Misassemblies | 0 | 0 |
+| Wall time | 113.99 s | 117.52 s |
+| Peak memory | 2.78 GiB | 2.77 GiB |
+
+### Interpretation
+
+Cleaning removed 806 tips containing 12,517 edges in 0.92 seconds. N50 increased by 67%, the largest contig increased by 128%, unitig count fell by 25%, and genome fraction increased by 0.118 percentage points. QUAST reported no misassemblies, mismatches, or indels. Peak memory remained effectively unchanged, while total runtime increased by about 3%.
+
+This is a practically important result but not yet evidence of general or statistical significance. It is one clean single-genome simulation with one seed. Tip cleaning must next be tested across replicate seeds, genomes, coverage levels, controlled strain mixtures, and damaged reads before it can become the default.
+
+Generated timing data and the QUAST comparison remain ignored under `experiments/baseline/results/tip_cleaning/`.
+
 ## K-mer size experiment
 
 ### Question
@@ -251,9 +291,10 @@ For this clean 150 bp, 20× dataset, `k=31` and `min_count=2` provide the best c
 
 The approximately 2.0 duplication ratio and graph size near twice the 5.08 Mb reference motivated orientation-aware construction. That representation and its compact storage have now been validated in the experiments above. The next development sequence is:
 
-1. add conservative, independently tested tip and bubble handling;
-2. evaluate paired-read links and multi-k assembly;
-3. validate the baseline on controlled mixtures and small communities;
-4. introduce damage-aware evidence after the ordinary baseline is stable.
+1. validate conservative tip cleaning on damaged and low-abundance data;
+2. add independently tested bubble handling;
+3. evaluate paired-read links and multi-k assembly;
+4. validate the baseline on controlled mixtures and small communities;
+5. introduce damage-aware evidence after the ordinary baseline is stable.
 
 The full report remains ignored under `experiments/baseline/results/k_sweep/quast/`.

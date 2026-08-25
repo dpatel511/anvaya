@@ -25,6 +25,8 @@ All notable project changes will be documented in this file.
 - Canonical physical graph nodes with oriented traversal handles.
 - Forward, reverse, and palindromic support tracking for canonical k-mers.
 - Orientation-aware unitig extraction and graph summaries.
+- Experimental conservative tip cleaning through `--clean-tips`.
+- In-place compact-graph edge deactivation and active graph accounting.
 
 ### Changed
 

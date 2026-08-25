@@ -38,20 +38,27 @@ This representation prevents the two DNA strands from producing duplicate assemb
 
 The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
 
+## Conservative tip cleaning
+
+The experimental cleaner considers only dead-end paths no longer than `2 × k`. A path is removed when its strongest edge has at most 20% of the support of a competing edge at the attachment branch. Long tips, isolated paths, and strongly supported alternatives are preserved.
+
+Edges are deactivated directly in the compact adjacency arrays, and degrees and active graph totals are updated in place. This avoids copying the graph or allocating per-edge cleaning objects. The operation remains opt-in until it is validated on damaged and low-abundance data.
+
 ## Evidence from the current baseline
 
 Minimum-support filtering showed that unsupported k-mers cause most initial graph fragmentation. On the clean single-genome benchmark, `min_count=2` increased genome recovery from 21.444% to 94.940% without introducing a reported misassembly.
 
 A fixed-k sweep showed that `k=31` gives the best current contiguity for 150 bp reads at 20× coverage. Larger k values recover slightly more of the reference but fragment valid paths. This result is dataset-specific and does not establish a default for ancient metagenomes.
 
-The directed filtered assemblies have a duplication ratio near 2.0. The orientation-aware graph corrected this to 1.005 and reduced physical nodes from 9.92 million to 5.01 million. Its compact representation preserved the same unitigs while reducing peak memory from 6.92 GiB to 2.78 GiB and wall time from 193.90 seconds to 113.99 seconds. The current output is still a set of unitigs that stops at unresolved branches, rather than fully resolved contigs comparable to mature assemblers.
+The directed filtered assemblies have a duplication ratio near 2.0. The orientation-aware graph corrected this to 1.005 and reduced physical nodes from 9.92 million to 5.01 million. Its compact representation preserved the same unitigs while reducing peak memory from 6.92 GiB to 2.78 GiB and wall time from 193.90 seconds to 113.99 seconds. Conservative tip cleaning then increased N50 from 4,813 bp to 8,056 bp and the largest contig from 20,336 bp to 46,465 bp without a reported misassembly on the clean baseline.
 
 ## Near-term development sequence
 
-1. Add conservative tip and bubble handling as optional, independently benchmarked operations.
-2. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
-3. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.
-4. Add terminal position, orientation, quality, and molecule evidence for damage-aware branch decisions.
-5. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
+1. Validate tip cleaning across seeds, genomes, coverage levels, damaged reads, and low-abundance strains.
+2. Add conservative bubble handling as an optional, independently benchmarked operation.
+3. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
+4. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.
+5. Add terminal position, orientation, quality, and molecule evidence for damage-aware branch decisions.
+6. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
