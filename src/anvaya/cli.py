@@ -6,6 +6,11 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from anvaya.bidirected import (
+    build_bidirected_dbg,
+    extract_bidirected_unitigs,
+    summarize_bidirected_graph,
+)
 from anvaya.graph import build_dbg
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
@@ -81,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="minimum k-mer support to retain (default: 1)",
     )
     assemble_parser.add_argument(
+        "--orientation-aware",
+        action="store_true",
+        help="use the experimental orientation-aware graph",
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -104,7 +114,11 @@ def _resolve_input_paths(
 
 
 def _run_assemble(
-    input_paths: list[Path], output_path: Path, k: int, min_count: int
+    input_paths: list[Path],
+    output_path: Path,
+    k: int,
+    min_count: int,
+    orientation_aware: bool,
 ) -> int:
     started = time.perf_counter()
 
@@ -114,25 +128,42 @@ def _run_assemble(
     if len(read_groups) == 2 and len(read_groups[0]) != len(read_groups[1]):
         raise ValueError("paired-end input files must contain the same number of reads")
     reads = [read for group in read_groups for read in group]
+    sequences = [read.sequence for read in reads]
     _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
 
     stage_started = time.perf_counter()
-    _progress(f"Building de Bruijn graph with k={k}, min_count={min_count}")
-    graph = build_dbg([read.sequence for read in reads], k, min_count)
-    edge_count = sum(len(successors) for successors in graph.values())
+    graph_kind = "orientation-aware" if orientation_aware else "directed"
     _progress(
-        f"Built graph with {len(graph)} nodes and {edge_count} edges "
+        f"Building {graph_kind} de Bruijn graph with "
+        f"k={k}, min_count={min_count}"
+    )
+    if orientation_aware:
+        graph = build_bidirected_dbg(sequences, k, min_count)
+        node_count = len(graph.sequences)
+        edge_count = len(graph.edge_support)
+    else:
+        graph = build_dbg(sequences, k, min_count)
+        node_count = len(graph)
+        edge_count = sum(len(successors) for successors in graph.values())
+    _progress(
+        f"Built graph with {node_count} nodes and {edge_count} edges "
         f"in {time.perf_counter() - stage_started:.2f}s"
     )
 
     stage_started = time.perf_counter()
     _progress("Extracting unitigs")
-    unitigs = extract_unitigs(graph)
+    if orientation_aware:
+        unitigs = extract_bidirected_unitigs(graph)
+    else:
+        unitigs = extract_unitigs(graph)
     _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
 
     stage_started = time.perf_counter()
     _progress("Calculating graph statistics")
-    summary = summarize_graph(graph, unitigs)
+    if orientation_aware:
+        summary = summarize_bidirected_graph(graph, unitigs)
+    else:
+        summary = summarize_graph(graph, unitigs)
     _progress(f"Calculated graph statistics in {time.perf_counter() - stage_started:.2f}s")
 
     stage_started = time.perf_counter()
@@ -145,6 +176,7 @@ def _run_assemble(
     print(f"reads={len(reads)}")
     print(f"k={k}")
     print(f"min_count={min_count}")
+    print(f"orientation_aware={str(orientation_aware).lower()}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -167,6 +199,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.output,
                 arguments.k,
                 arguments.min_count,
+                arguments.orientation_aware,
             )
     except (OSError, ValueError) as error:
         parser.error(str(error))

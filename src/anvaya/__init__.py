@@ -1,6 +1,13 @@
 """Anvaya: damage-aware de Bruijn graph assembly."""
 
 from anvaya.assembly import assemble, assemble_file
+from anvaya.bidirected import (
+    BidirectedDeBruijnGraph,
+    StrandSupport,
+    build_bidirected_dbg,
+    extract_bidirected_unitigs,
+    summarize_bidirected_graph,
+)
 from anvaya.graph import (
     DeBruijnGraph,
     branching_nodes,
@@ -18,14 +25,18 @@ from anvaya.sequences import canonical_sequence, normalize_dna, reverse_compleme
 from anvaya.unitigs import extract_unitigs
 
 __all__ = [
+    "BidirectedDeBruijnGraph",
     "DeBruijnGraph",
     "GraphSummary",
     "Read",
+    "StrandSupport",
     "assemble",
     "assemble_file",
     "branching_nodes",
+    "build_bidirected_dbg",
     "build_dbg",
     "canonical_sequence",
+    "extract_bidirected_unitigs",
     "extract_unitigs",
     "in_degree",
     "kmers",
@@ -35,6 +46,7 @@ __all__ = [
     "reverse_complement",
     "sink_nodes",
     "source_nodes",
+    "summarize_bidirected_graph",
     "summarize_graph",
     "write_fasta",
 ]
