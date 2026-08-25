@@ -23,6 +23,16 @@ def _kmer_size(value: str) -> int:
     return k
 
 
+def _minimum_count(value: str) -> int:
+    try:
+        count = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("minimum count must be an integer") from error
+    if count < 1:
+        raise argparse.ArgumentTypeError("minimum count must be at least 1")
+    return count
+
+
 def _progress(message: str) -> None:
     print(f"[anvaya] {message}", file=sys.stderr, flush=True)
 
@@ -65,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="k-mer size (at least 2)",
     )
     assemble_parser.add_argument(
+        "--min-count",
+        type=_minimum_count,
+        default=1,
+        help="minimum k-mer support to retain (default: 1)",
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -87,7 +103,9 @@ def _resolve_input_paths(
     return [arguments.left, arguments.right]
 
 
-def _run_assemble(input_paths: list[Path], output_path: Path, k: int) -> int:
+def _run_assemble(
+    input_paths: list[Path], output_path: Path, k: int, min_count: int
+) -> int:
     started = time.perf_counter()
 
     stage_started = time.perf_counter()
@@ -99,8 +117,8 @@ def _run_assemble(input_paths: list[Path], output_path: Path, k: int) -> int:
     _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
 
     stage_started = time.perf_counter()
-    _progress(f"Building de Bruijn graph with k={k}")
-    graph = build_dbg([read.sequence for read in reads], k)
+    _progress(f"Building de Bruijn graph with k={k}, min_count={min_count}")
+    graph = build_dbg([read.sequence for read in reads], k, min_count)
     edge_count = sum(len(successors) for successors in graph.values())
     _progress(
         f"Built graph with {len(graph)} nodes and {edge_count} edges "
@@ -125,6 +143,8 @@ def _run_assemble(input_paths: list[Path], output_path: Path, k: int) -> int:
 
     print(f"input_files={len(input_paths)}")
     print(f"reads={len(reads)}")
+    print(f"k={k}")
+    print(f"min_count={min_count}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -142,7 +162,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.command == "assemble":
             input_paths = _resolve_input_paths(parser, arguments)
-            return _run_assemble(input_paths, arguments.output, arguments.k)
+            return _run_assemble(
+                input_paths,
+                arguments.output,
+                arguments.k,
+                arguments.min_count,
+            )
     except (OSError, ValueError) as error:
         parser.error(str(error))
 

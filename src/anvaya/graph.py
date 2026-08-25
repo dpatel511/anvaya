@@ -9,11 +9,12 @@ DeBruijnGraph = dict[str, Counter[str]]
 DegreeMap = dict[str, int]
 
 
-def build_dbg(reads: Sequence[str], k: int) -> DeBruijnGraph:
+def build_dbg(reads: Sequence[str], k: int, min_count: int = 1) -> DeBruijnGraph:
     """Build a directed de Bruijn graph with edge multiplicities.
 
-    Nodes are (k-1)-mers. Each unambiguous observed k-mer contributes an edge
-    from its prefix to its suffix. Repeated observations increase the count.
+    Nodes are (k-1)-mers. Each retained unambiguous k-mer contributes an edge
+    from its prefix to its suffix. K-mers observed fewer than ``min_count``
+    times are excluded.
     """
     if not reads:
         raise ValueError("reads must not be empty")
@@ -21,20 +22,40 @@ def build_dbg(reads: Sequence[str], k: int) -> DeBruijnGraph:
         raise TypeError("k must be an integer")
     if k < 2:
         raise ValueError("k must be at least 2 for graph construction")
-
-    graph: DeBruijnGraph = {}
+    if not isinstance(min_count, int) or isinstance(min_count, bool):
+        raise TypeError("min_count must be an integer")
+    if min_count < 1:
+        raise ValueError("min_count must be at least 1")
 
     for read in reads:
         if len(read) < k:
             raise ValueError("each read must be at least k bases long")
 
-        for kmer in kmers(read, k):
-            if "N" in kmer:
-                continue
-            prefix = kmer[:-1]
-            suffix = kmer[1:]
-            graph.setdefault(prefix, Counter())[suffix] += 1
-            graph.setdefault(suffix, Counter())
+    graph: DeBruijnGraph = {}
+
+    if min_count == 1:
+        for read in reads:
+            for kmer in kmers(read, k):
+                if "N" in kmer:
+                    continue
+                prefix = kmer[:-1]
+                suffix = kmer[1:]
+                graph.setdefault(prefix, Counter())[suffix] += 1
+                graph.setdefault(suffix, Counter())
+        return graph
+
+    kmer_counts: Counter[str] = Counter()
+    for read in reads:
+        kmer_counts.update(kmer for kmer in kmers(read, k) if "N" not in kmer)
+
+    while kmer_counts:
+        kmer, count = kmer_counts.popitem()
+        if count < min_count:
+            continue
+        prefix = kmer[:-1]
+        suffix = kmer[1:]
+        graph.setdefault(prefix, Counter())[suffix] = count
+        graph.setdefault(suffix, Counter())
 
     return graph
 
