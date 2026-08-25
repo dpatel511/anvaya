@@ -30,3 +30,6 @@ All notable project changes will be documented in this file.
 
 - Replaced repeated graph-wide degree scans with linear-time degree calculation.
 - Avoided duplicate unitig extraction during CLI assembly.
+- Replaced string-based orientation-aware k-mers with rolling 2-bit encoding.
+- Replaced nested orientation-aware graph objects with compact integer arrays and byte-array traversal state.
+- Reduced the orientation-aware benchmark wall time by 41% and peak memory by 60% without changing QUAST accuracy metrics.

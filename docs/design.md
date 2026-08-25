@@ -35,21 +35,23 @@ Internal damage calibration will be part of the assembler. PyDamage and similar 
 The experimental graph stores each canonical `(k-1)`-mer once and uses oriented integer handles to traverse either strand. A physical k-mer edge therefore represents both its forward traversal and the reverse-complement traversal. Forward, reverse, and palindromic observations are retained separately, while `min_count` is applied to their combined support.
 
 This representation prevents the two DNA strands from producing duplicate assemblies and establishes the structure needed for later orientation-dependent damage evidence. It does not yet store read-end position, base quality, molecule identity, or library-level damage evidence.
+
+The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
+
 ## Evidence from the current baseline
 
 Minimum-support filtering showed that unsupported k-mers cause most initial graph fragmentation. On the clean single-genome benchmark, `min_count=2` increased genome recovery from 21.444% to 94.940% without introducing a reported misassembly.
 
 A fixed-k sweep showed that `k=31` gives the best current contiguity for 150 bp reads at 20× coverage. Larger k values recover slightly more of the reference but fragment valid paths. This result is dataset-specific and does not establish a default for ancient metagenomes.
 
-All filtered assemblies have a duplication ratio near 2.0, and their graph node counts are close to twice the reference length. This is evidence that forward and reverse-complement paths are currently represented separately. The current output is also a set of unitigs that stops at unresolved branches, rather than fully resolved contigs comparable to mature assemblers.
+The directed filtered assemblies have a duplication ratio near 2.0. The orientation-aware graph corrected this to 1.005 and reduced physical nodes from 9.92 million to 5.01 million. Its compact representation preserved the same unitigs while reducing peak memory from 6.92 GiB to 2.78 GiB and wall time from 193.90 seconds to 113.99 seconds. The current output is still a set of unitigs that stops at unresolved branches, rather than fully resolved contigs comparable to mature assemblers.
 
 ## Near-term development sequence
 
-1. Design an orientation-aware graph that preserves strand evidence; naïve canonicalization must not discard direction needed for assembly or later damage inference.
-2. Represent k-mers compactly as encoded integers and replace nested Python objects with flatter graph structures.
-3. Add conservative tip and bubble handling as optional, independently benchmarked operations.
-4. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
-5. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.
-6. Add terminal position, orientation, quality, and molecule evidence for damage-aware branch decisions.
+1. Add conservative tip and bubble handling as optional, independently benchmarked operations.
+2. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
+3. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.
+4. Add terminal position, orientation, quality, and molecule evidence for damage-aware branch decisions.
+5. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.

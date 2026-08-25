@@ -19,11 +19,14 @@ class BidirectedGraphTests(unittest.TestCase):
         read = "AACTGGA"
         graph = build_bidirected_dbg([read, reverse_complement(read)], 3)
 
-        self.assertEqual(len(graph.edge_support), 5)
+        self.assertEqual(graph.edge_count, 5)
         self.assertTrue(
             all(
                 support.forward == 1 and support.reverse == 1
-                for support in graph.edge_support.values()
+                for support in (
+                    graph.strand_support(edge_id)
+                    for edge_id in range(graph.edge_count)
+                )
             )
         )
 
@@ -33,7 +36,7 @@ class BidirectedGraphTests(unittest.TestCase):
             [read, reverse_complement(read)], 3, min_count=2
         )
 
-        self.assertEqual(len(graph.edge_support), 5)
+        self.assertEqual(graph.edge_count, 5)
         unitigs = extract_bidirected_unitigs(graph)
         self.assertEqual(len(unitigs), 1)
         self.assertEqual(canonical_sequence(unitigs[0]), canonical_sequence(read))
@@ -50,15 +53,30 @@ class BidirectedGraphTests(unittest.TestCase):
     def test_records_palindromic_kmer_support(self) -> None:
         graph = build_bidirected_dbg(["ATAT"], 4)
 
-        support = next(iter(graph.edge_support.values()))
+        support = graph.strand_support(0)
         self.assertEqual(support.palindromic, 1)
         self.assertEqual(support.total, 1)
+
+    def test_skips_windows_crossing_ambiguous_bases(self) -> None:
+        graph = build_bidirected_dbg(["AACTNCCG"], 3)
+
+        self.assertEqual(graph.edge_count, 3)
+        self.assertEqual(graph.observations, 3)
+
+    def test_supports_kmers_larger_than_machine_words(self) -> None:
+        read = "AACTGGACCTAGTACCGATTCGGAATCGTACGATCACTGA"
+        graph = build_bidirected_dbg([read], 35)
+
+        unitigs = extract_bidirected_unitigs(graph)
+        self.assertEqual(len(unitigs), 1)
+        self.assertEqual(canonical_sequence(unitigs[0]), canonical_sequence(read))
 
     def test_oriented_handles_spell_reverse_complements(self) -> None:
         graph = build_bidirected_dbg(["AACTGGA"], 3)
 
-        for node_id, sequence in enumerate(graph.sequences):
-            self.assertEqual(oriented_sequence(graph, node_id << 1), sequence)
+        for node_id in range(graph.node_count):
+            sequence = oriented_sequence(graph, node_id << 1)
+            self.assertEqual(sequence, canonical_sequence(sequence))
             self.assertEqual(
                 oriented_sequence(graph, (node_id << 1) | 1),
                 reverse_complement(sequence),
