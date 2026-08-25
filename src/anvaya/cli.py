@@ -1,0 +1,119 @@
+"""Command-line interface for Anvaya."""
+
+import argparse
+import sys
+import time
+from collections.abc import Sequence
+from pathlib import Path
+
+from anvaya.graph import build_dbg
+from anvaya.metrics import summarize_graph
+from anvaya.output import write_fasta
+from anvaya.reads import load_reads
+from anvaya.unitigs import extract_unitigs
+
+
+def _kmer_size(value: str) -> int:
+    try:
+        k = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("k must be an integer") from error
+    if k < 2:
+        raise argparse.ArgumentTypeError("k must be at least 2")
+    return k
+
+
+def _progress(message: str) -> None:
+    print(f"[anvaya] {message}", file=sys.stderr, flush=True)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Create the Anvaya argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="anvaya",
+        description="Damage-aware de Bruijn graph assembly research prototype",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    assemble_parser = subparsers.add_parser(
+        "assemble",
+        help="assemble FASTA/FASTQ reads into unitigs",
+    )
+    assemble_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        type=Path,
+        help="input FASTA/FASTQ file, optionally gzipped",
+    )
+    assemble_parser.add_argument(
+        "--k",
+        required=True,
+        type=_kmer_size,
+        help="k-mer size (at least 2)",
+    )
+    assemble_parser.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        type=Path,
+        help="output unitig FASTA file",
+    )
+    return parser
+
+
+def _run_assemble(input_path: Path, output_path: Path, k: int) -> int:
+    started = time.perf_counter()
+
+    stage_started = time.perf_counter()
+    _progress(f"Loading reads from {input_path}")
+    reads = load_reads(input_path)
+    _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
+
+    stage_started = time.perf_counter()
+    _progress(f"Building de Bruijn graph with k={k}")
+    graph = build_dbg([read.sequence for read in reads], k)
+    edge_count = sum(len(successors) for successors in graph.values())
+    _progress(
+        f"Built graph with {len(graph)} nodes and {edge_count} edges "
+        f"in {time.perf_counter() - stage_started:.2f}s"
+    )
+
+    stage_started = time.perf_counter()
+    _progress("Extracting unitigs")
+    unitigs = extract_unitigs(graph)
+    _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
+
+    stage_started = time.perf_counter()
+    _progress("Calculating graph statistics")
+    summary = summarize_graph(graph, unitigs)
+    _progress(f"Calculated graph statistics in {time.perf_counter() - stage_started:.2f}s")
+
+    stage_started = time.perf_counter()
+    _progress(f"Writing unitigs to {output_path}")
+    write_fasta(unitigs, output_path)
+    _progress(f"Wrote output in {time.perf_counter() - stage_started:.2f}s")
+    _progress(f"Completed in {time.perf_counter() - started:.2f}s")
+
+    print(f"reads={len(reads)}")
+    print(f"nodes={summary.nodes}")
+    print(f"edges={summary.edges}")
+    print(f"observations={summary.observations}")
+    print(f"branching_nodes={summary.branching_nodes}")
+    print(f"unitigs={summary.unitigs}")
+    print(f"output={output_path}")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the Anvaya command-line interface."""
+    parser = build_parser()
+    arguments = parser.parse_args(argv)
+
+    try:
+        if arguments.command == "assemble":
+            return _run_assemble(arguments.input, arguments.output, arguments.k)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+
+    parser.error(f"unknown command: {arguments.command}")

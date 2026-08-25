@@ -12,6 +12,7 @@ from anvaya.graph import (
 )
 from anvaya.kmers import kmers
 from anvaya.metrics import GraphSummary, summarize_graph
+from anvaya.output import write_fasta
 from anvaya.reads import Read, load_reads
 from anvaya.sequences import canonical_sequence, normalize_dna, reverse_complement
 from anvaya.unitigs import extract_unitigs
@@ -35,4 +36,5 @@ __all__ = [
     "sink_nodes",
     "source_nodes",
     "summarize_graph",
+    "write_fasta",
 ]

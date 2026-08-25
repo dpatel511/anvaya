@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Damage-aware de Bruijn graph assembly research prototype"
 requires-python = ">=3.13"
 
+[project.scripts]
+anvaya = "anvaya.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
-
