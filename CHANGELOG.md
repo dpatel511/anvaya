@@ -10,6 +10,4 @@ All notable project changes will be documented in this file.
 - Validated overlapping k-mer extraction.
 - Basic directed de Bruijn graph construction.
 - Edge multiplicity and branch representation.
-- Incoming and outgoing node degree calculations.
-- Source, sink, and branching-node identification.
 - Unit tests for k-mer and graph primitives.
