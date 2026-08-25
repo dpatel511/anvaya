@@ -247,9 +247,43 @@ anvaya assemble -1 simulated1.fq -2 simulated2.fq \
 
 Cleaning removed 806 tips containing 12,517 edges in 0.92 seconds. N50 increased by 67%, the largest contig increased by 128%, unitig count fell by 25%, and genome fraction increased by 0.118 percentage points. QUAST reported no misassemblies, mismatches, or indels. Peak memory remained effectively unchanged, while total runtime increased by about 3%.
 
-This is a practically important result but not yet evidence of general or statistical significance. It is one clean single-genome simulation with one seed. Tip cleaning must next be tested across replicate seeds, genomes, coverage levels, controlled strain mixtures, and damaged reads before it can become the default.
+This was a practically important result but not evidence of general or statistical significance by itself. The clean multi-dataset validation below tests whether the behaviour reproduces across genomes, seeds, and coverage levels.
 
 Generated timing data and the QUAST comparison remain ignored under `experiments/baseline/results/tip_cleaning/`.
+
+## Clean tip-validation matrix
+
+### Question
+
+Does conservative tip cleaning behave consistently across bacterial genomes, simulation seeds, and sequencing coverage?
+
+The current assembler was tested unchanged on two bacterial references, seeds 42 and 43, and 5× and 20× ART coverage. Each of the eight datasets was assembled with tip cleaning disabled and enabled, then evaluated with QUAST.
+
+```bash
+python3 experiments/03_tip_cleaning_validation.py \
+  --reference reference_1.fna --reference reference_2.fna \
+  --output-dir experiments/validation/results/clean_pilot \
+  --seeds 42 43 --coverages 5 20
+```
+
+Use `--resume` to verify outputs, skip completed stages, and regenerate the combined summary without repeating completed work.
+
+### Results
+
+| Coverage | Conditions | N50 effect | Largest-contig effect | Genome fraction | Misassemblies |
+|---|---:|---:|---:|---:|---:|
+| 5× | 4 | 0–0.14% increase | unchanged in 3/4; 36% increase in 1/4 | increased by 0.011–0.019 points | 0 in all runs |
+| 20× | 4 | 56–67% increase | 52–128% increase | increased by 0.100–0.138 points | 0 in all runs |
+
+At 20×, duplication ratio also improved from 1.005 to 1.001–1.002. At 5×, only 34–116 tips were removed per dataset, compared with 727–1,329 at 20×. Peak memory was effectively unchanged, and runtime showed no consistent cleaning overhead beyond normal run-to-run variation.
+
+### Interpretation
+
+The rule behaves conservatively when coverage is weak and reproducibly improves contiguity when support separation is stronger. No clean validation condition lost genome fraction or gained a reported misassembly. This strengthens the clean-isolate evidence, but the sample remains too small for a broad statistical claim.
+
+The remaining safety tests are low-abundance related strains and realistic ancient-DNA damage. Tip cleaning remains opt-in until those tests show that weak genuine paths and damage-supported molecules are preserved appropriately.
+
+Generated data and reports remain ignored under `experiments/validation/results/clean_pilot/`. The combined generated table is `summary.tsv` in that directory.
 
 ## K-mer size experiment
 
