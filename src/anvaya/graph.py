@@ -1,4 +1,4 @@
-"""Basic de Bruijn graph construction."""
+"""Basic de Bruijn graph construction and topology."""
 
 from collections import Counter
 from collections.abc import Sequence
@@ -34,3 +34,42 @@ def build_dbg(reads: Sequence[str], k: int) -> DeBruijnGraph:
             graph.setdefault(suffix, Counter())
 
     return graph
+
+
+def out_degree(graph: DeBruijnGraph, node: str) -> int:
+    """Return the number of distinct outgoing edges from *node*."""
+    return len(graph[node])
+
+
+def in_degree(graph: DeBruijnGraph, node: str) -> int:
+    """Return the number of distinct incoming edges to *node*."""
+    if node not in graph:
+        raise KeyError(node)
+    return sum(node in successors for successors in graph.values())
+
+
+def source_nodes(graph: DeBruijnGraph) -> set[str]:
+    """Return nodes with no incoming edges and at least one outgoing edge."""
+    return {
+        node
+        for node in graph
+        if in_degree(graph, node) == 0 and out_degree(graph, node) > 0
+    }
+
+
+def sink_nodes(graph: DeBruijnGraph) -> set[str]:
+    """Return nodes with at least one incoming edge and no outgoing edges."""
+    return {
+        node
+        for node in graph
+        if in_degree(graph, node) > 0 and out_degree(graph, node) == 0
+    }
+
+
+def branching_nodes(graph: DeBruijnGraph) -> set[str]:
+    """Return nodes with multiple incoming or outgoing edges."""
+    return {
+        node
+        for node in graph
+        if in_degree(graph, node) > 1 or out_degree(graph, node) > 1
+    }
