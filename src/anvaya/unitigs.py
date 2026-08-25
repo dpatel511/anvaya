@@ -1,6 +1,6 @@
 """Unitig extraction from de Bruijn graphs."""
 
-from anvaya.graph import DeBruijnGraph, in_degree, out_degree
+from anvaya.graph import DeBruijnGraph, node_degrees
 
 
 def _spell_path(path: list[str]) -> str:
@@ -15,9 +15,10 @@ def extract_unitigs(graph: DeBruijnGraph) -> list[str]:
     """
     visited: set[tuple[str, str]] = set()
     unitigs: list[str] = []
+    in_degrees, out_degrees = node_degrees(graph)
 
     for start in sorted(graph):
-        if in_degree(graph, start) == 1 and out_degree(graph, start) == 1:
+        if in_degrees[start] == 1 and out_degrees[start] == 1:
             continue
 
         for successor in sorted(graph[start]):
@@ -29,7 +30,7 @@ def extract_unitigs(graph: DeBruijnGraph) -> list[str]:
             visited.add(edge)
             current = successor
 
-            while in_degree(graph, current) == 1 and out_degree(graph, current) == 1:
+            while in_degrees[current] == 1 and out_degrees[current] == 1:
                 following = next(iter(graph[current]))
                 edge = (current, following)
                 if edge in visited:
