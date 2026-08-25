@@ -27,6 +27,7 @@ All notable project changes will be documented in this file.
 - Orientation-aware unitig extraction and graph summaries.
 - Experimental conservative tip cleaning through `--clean-tips`.
 - In-place compact-graph edge deactivation and active graph accounting.
+- Reproducible clean tip-validation matrix with verified stage resumption and TSV summaries.
 
 ### Changed
 

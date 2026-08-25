@@ -50,11 +50,13 @@ Minimum-support filtering showed that unsupported k-mers cause most initial grap
 
 A fixed-k sweep showed that `k=31` gives the best current contiguity for 150 bp reads at 20× coverage. Larger k values recover slightly more of the reference but fragment valid paths. This result is dataset-specific and does not establish a default for ancient metagenomes.
 
-The directed filtered assemblies have a duplication ratio near 2.0. The orientation-aware graph corrected this to 1.005 and reduced physical nodes from 9.92 million to 5.01 million. Its compact representation preserved the same unitigs while reducing peak memory from 6.92 GiB to 2.78 GiB and wall time from 193.90 seconds to 113.99 seconds. Conservative tip cleaning then increased N50 from 4,813 bp to 8,056 bp and the largest contig from 20,336 bp to 46,465 bp without a reported misassembly on the clean baseline.
+The directed filtered assemblies have a duplication ratio near 2.0. The orientation-aware graph corrected this to 1.005 and reduced physical nodes from 9.92 million to 5.01 million. Its compact representation preserved the same unitigs while reducing peak memory from 6.92 GiB to 2.78 GiB and wall time from 193.90 seconds to 113.99 seconds.
+
+Across two clean bacterial genomes, two seeds, and 5×/20× coverage, conservative tip cleaning introduced no reported misassemblies. At 20×, N50 improved by 56–67% and the largest contig by 52–128%. At 5×, cleaning made few changes and did not reduce genome fraction. This supports the current rule on clean isolates but does not establish safety for damaged molecules or rare strains.
 
 ## Near-term development sequence
 
-1. Validate tip cleaning across seeds, genomes, coverage levels, damaged reads, and low-abundance strains.
+1. Validate tip cleaning on damaged reads and low-abundance related strains.
 2. Add conservative bubble handling as an optional, independently benchmarked operation.
 3. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
 4. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.

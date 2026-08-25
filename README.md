@@ -69,6 +69,15 @@ Tip cleaning is not yet a default because it must be validated on damaged reads 
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
+The clean tip-validation matrix can be run or safely resumed with:
+
+```bash
+python3 experiments/03_tip_cleaning_validation.py \
+  --reference reference.fna --output-dir results --resume
+```
+
+Completed simulation, assembly, and QUAST stages are verified and skipped.
+
 ## Documentation
 
 - [Research question](docs/research_question.md)
