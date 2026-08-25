@@ -87,7 +87,7 @@ Anvaya constructed 13,424,232 nodes and 13,584,362 edges from 87,970,480 k-mer o
 - The current graph preserves accurate short local sequences but fails to recover a complete or contiguous genome.
 - The current prototype is slower and substantially more memory intensive than both comparison tools.
 - This is not a feature-matched comparison: Anvaya lacks graph cleaning, orientation-aware construction, multi-k assembly, and paired-link traversal.
-- The next controlled change is optional low-support k-mer or edge filtering, starting with `--min-count 2`, measured against this unchanged baseline.
+- Optional low-support filtering was selected as the next controlled change and is evaluated below.
 
 ### Reports
 
@@ -100,3 +100,41 @@ Generated reports remain ignored under `experiments/baseline/results/run_01/`:
 - `*.log`: tool output and diagnostics.
 
 QUAST reported a non-fatal Minimap2 version warning. Tool versions should be pinned before publication-level experiments.
+
+## Minimum-support filtering experiment
+
+### Question
+
+Does removing k-mers with weak abundance support improve the baseline without introducing assembly errors?
+
+The same reads, reference, `k=21`, and QUAST settings were used for `min_count` values 1, 2, and 3. A value of 1 is the unchanged baseline.
+
+```bash
+anvaya assemble -1 simulated1.fq -2 simulated2.fq \
+  --k 21 --min-count 2 -o contigs.fasta
+```
+
+### Results
+
+| Metric | min=1 | min=2 | min=3 |
+|---|---:|---:|---:|
+| Graph nodes | 13,424,232 | 9,902,440 | 9,811,260 |
+| Branching nodes | 348,205 | 13,665 | 12,289 |
+| Total unitigs | 547,833 | 24,336 | 26,989 |
+| Contigs ≥200 bp | 4,620 | 8,332 | 10,108 |
+| Largest contig | 657 bp | 10,197 bp | 7,929 bp |
+| N50 | 249 bp | 1,698 bp | 1,299 bp |
+| Genome fraction | 21.444% | 94.940% | 94.870% |
+| Duplication ratio | 1.086 | 2.005 | 1.978 |
+| Misassemblies | 0 | 0 | 0 |
+| Mismatches per 100 kbp | 0.68 | 0.01 | 0.00 |
+| Wall time | 4 min 39 s | 3 min 15 s | 3 min 19 s |
+| Peak memory | 7.1 GiB | 5.83 GiB | 5.79 GiB |
+
+### Interpretation
+
+`min_count=2` produced the best accuracy-contiguity trade-off. It increased genome recovery from 21.444% to 94.940%, increased N50 nearly sevenfold, reduced unitig fragmentation by about 96%, reduced runtime by about 30%, and reduced peak memory by about 18%. Threshold 3 removed more connecting k-mers and reduced contiguity without improving genome recovery.
+
+The approximately 2.0 duplication ratio after filtering is consistent with forward and reverse-complement paths being assembled separately. Orientation-aware graph construction is therefore the next design priority. The remaining runtime and memory gap also shows that compact k-mer and graph representations will still be required.
+
+The full comparison remains ignored under `experiments/baseline/results/min_count_comparison/quast/`.
