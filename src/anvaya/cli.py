@@ -11,6 +11,7 @@ from anvaya.bidirected import (
     extract_bidirected_unitigs,
     summarize_bidirected_graph,
 )
+from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
 from anvaya.graph import build_dbg
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
@@ -91,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="use the experimental orientation-aware graph",
     )
     assemble_parser.add_argument(
+        "--clean-tips",
+        action="store_true",
+        help="experimentally remove short, weak dead-end paths",
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -119,8 +125,11 @@ def _run_assemble(
     k: int,
     min_count: int,
     orientation_aware: bool,
+    clean_tips: bool,
 ) -> int:
     started = time.perf_counter()
+    if clean_tips and not orientation_aware:
+        raise ValueError("--clean-tips requires --orientation-aware")
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -150,6 +159,17 @@ def _run_assemble(
         f"in {time.perf_counter() - stage_started:.2f}s"
     )
 
+    cleaning_summary = TipCleaningSummary()
+    if clean_tips:
+        stage_started = time.perf_counter()
+        _progress("Removing short, weak tips")
+        cleaning_summary = remove_weak_tips(graph)
+        _progress(
+            f"Removed {cleaning_summary.tips_removed} tips containing "
+            f"{cleaning_summary.edges_removed} edges in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
+
     stage_started = time.perf_counter()
     _progress("Extracting unitigs")
     if orientation_aware:
@@ -177,6 +197,10 @@ def _run_assemble(
     print(f"k={k}")
     print(f"min_count={min_count}")
     print(f"orientation_aware={str(orientation_aware).lower()}")
+    print(f"tip_cleaning={str(clean_tips).lower()}")
+    print(f"tips_removed={cleaning_summary.tips_removed}")
+    print(f"tip_edges_removed={cleaning_summary.edges_removed}")
+    print(f"tip_observations_removed={cleaning_summary.observations_removed}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -200,6 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.k,
                 arguments.min_count,
                 arguments.orientation_aware,
+                arguments.clean_tips,
             )
     except (OSError, ValueError) as error:
         parser.error(str(error))

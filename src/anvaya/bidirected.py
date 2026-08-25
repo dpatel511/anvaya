@@ -43,6 +43,7 @@ class BidirectedDeBruijnGraph:
     palindromic_support: array = field(default_factory=lambda: array("I"))
     out_edges: array = field(default_factory=lambda: array("i"))
     out_degrees: bytearray = field(default_factory=bytearray)
+    active_edge_count: int = 0
     observations: int = 0
 
     @property
@@ -210,6 +211,8 @@ def build_bidirected_dbg(
         if reverse_source != source:
             _append_arc(graph, reverse_source, edge_id)
 
+    graph.active_edge_count = graph.edge_count
+
     return graph
 
 
@@ -237,6 +240,44 @@ def _outgoing_edges(
     offset = handle * _MAX_OUT_DEGREE
     for index in range(graph.out_degrees[handle]):
         yield graph.out_edges[offset + index]
+
+
+def _edge_support_total(graph: BidirectedDeBruijnGraph, edge_id: int) -> int:
+    return (
+        graph.forward_support[edge_id]
+        + graph.reverse_support[edge_id]
+        + graph.palindromic_support[edge_id]
+    )
+
+
+def _remove_arc(
+    graph: BidirectedDeBruijnGraph, source: Handle, edge_id: int
+) -> None:
+    offset = source * _MAX_OUT_DEGREE
+    degree = graph.out_degrees[source]
+    for index in range(degree):
+        if graph.out_edges[offset + index] != edge_id:
+            continue
+        last_index = offset + degree - 1
+        graph.out_edges[offset + index] = graph.out_edges[last_index]
+        graph.out_edges[last_index] = -1
+        graph.out_degrees[source] = degree - 1
+        return
+    raise ValueError("edge is not active from the requested handle")
+
+
+def _deactivate_edge(graph: BidirectedDeBruijnGraph, edge_id: int) -> int:
+    source = graph.edge_sources[edge_id]
+    target = graph.edge_targets[edge_id]
+    _remove_arc(graph, source, edge_id)
+    reverse_source = flip_handle(target)
+    if reverse_source != source:
+        _remove_arc(graph, reverse_source, edge_id)
+
+    support = _edge_support_total(graph, edge_id)
+    graph.active_edge_count -= 1
+    graph.observations -= support
+    return support
 
 
 def _spell_path(graph: BidirectedDeBruijnGraph, path: list[Handle]) -> str:
@@ -324,9 +365,15 @@ def summarize_bidirected_graph(
         if in_degree > 1 or out_degree > 1:
             branching_nodes[node_id] = 1
 
+    active_nodes = sum(
+        graph.out_degrees[node_id << 1] > 0
+        or graph.out_degrees[(node_id << 1) | 1] > 0
+        for node_id in range(graph.node_count)
+    )
+
     return GraphSummary(
-        nodes=graph.node_count,
-        edges=graph.edge_count,
+        nodes=active_nodes,
+        edges=graph.active_edge_count,
         observations=graph.observations,
         sources=sum(source_nodes),
         sinks=sum(sink_nodes),

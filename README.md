@@ -28,6 +28,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - rolling 2-bit canonical k-mer encoding and compact integer graph arrays;
 - combined forward and reverse-complement k-mer support;
 - optional minimum k-mer support filtering;
+- experimental conservative tip cleaning for short, weak dead-end paths;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
@@ -52,6 +53,15 @@ anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
 ```
 
 This mode prevents forward and reverse-complement paths from being assembled separately. It remains experimental while graph-cleaning and damage-aware decisions are developed and validated.
+
+Tip cleaning can be enabled for controlled comparisons:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --clean-tips -o contigs.fasta
+```
+
+Tip cleaning is not yet a default because it must be validated on damaged reads and low-abundance strains.
 
 ## Testing
 
