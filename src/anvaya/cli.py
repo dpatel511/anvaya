@@ -39,12 +39,24 @@ def build_parser() -> argparse.ArgumentParser:
         "assemble",
         help="assemble FASTA/FASTQ reads into unitigs",
     )
-    assemble_parser.add_argument(
+    input_group = assemble_parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
         "--input",
         "-i",
-        required=True,
         type=Path,
-        help="input FASTA/FASTQ file, optionally gzipped",
+        help="single-end FASTA/FASTQ input, optionally gzipped",
+    )
+    input_group.add_argument(
+        "--left",
+        "-1",
+        type=Path,
+        help="left paired-end FASTA/FASTQ input, optionally gzipped",
+    )
+    assemble_parser.add_argument(
+        "--right",
+        "-2",
+        type=Path,
+        help="right paired-end FASTA/FASTQ input, optionally gzipped",
     )
     assemble_parser.add_argument(
         "--k",
@@ -62,12 +74,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_assemble(input_path: Path, output_path: Path, k: int) -> int:
+def _resolve_input_paths(
+    parser: argparse.ArgumentParser, arguments: argparse.Namespace
+) -> list[Path]:
+    if arguments.input is not None:
+        if arguments.right is not None:
+            parser.error("--right/-2 can only be used with --left/-1")
+        return [arguments.input]
+
+    if arguments.right is None:
+        parser.error("paired-end input requires both --left/-1 and --right/-2")
+    return [arguments.left, arguments.right]
+
+
+def _run_assemble(input_paths: list[Path], output_path: Path, k: int) -> int:
     started = time.perf_counter()
 
     stage_started = time.perf_counter()
-    _progress(f"Loading reads from {input_path}")
-    reads = load_reads(input_path)
+    _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
+    read_groups = [load_reads(path) for path in input_paths]
+    if len(read_groups) == 2 and len(read_groups[0]) != len(read_groups[1]):
+        raise ValueError("paired-end input files must contain the same number of reads")
+    reads = [read for group in read_groups for read in group]
     _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
 
     stage_started = time.perf_counter()
@@ -95,6 +123,7 @@ def _run_assemble(input_path: Path, output_path: Path, k: int) -> int:
     _progress(f"Wrote output in {time.perf_counter() - stage_started:.2f}s")
     _progress(f"Completed in {time.perf_counter() - started:.2f}s")
 
+    print(f"input_files={len(input_paths)}")
     print(f"reads={len(reads)}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
@@ -112,7 +141,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if arguments.command == "assemble":
-            return _run_assemble(arguments.input, arguments.output, arguments.k)
+            input_paths = _resolve_input_paths(parser, arguments)
+            return _run_assemble(input_paths, arguments.output, arguments.k)
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
