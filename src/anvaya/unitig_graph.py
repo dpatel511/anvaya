@@ -1,0 +1,168 @@
+"""Compacted unitig-level representation of an orientation-aware graph."""
+
+from array import array
+from dataclasses import dataclass, field
+
+from anvaya.bidirected import (
+    BidirectedDeBruijnGraph,
+    Handle,
+    _edge_support_total,
+    _oriented_last_base,
+    _outgoing_edges,
+    _successor,
+    flip_handle,
+    iter_bidirected_unitig_paths,
+    oriented_sequence,
+)
+from anvaya.sequences import reverse_complement
+
+_MAX_LINK_DEGREE = 4
+
+
+@dataclass(slots=True, frozen=True)
+class UnitigSupport:
+    """Coverage and read-end evidence aggregated across one unitig."""
+
+    edge_count: int
+    observations: int
+    minimum_edge_support: int
+    mean_edge_support: float
+    terminal_observations: int
+    internal_observations: int
+
+
+@dataclass(slots=True)
+class CompactedUnitigGraph:
+    """Physical unitigs with links addressable through oriented handles."""
+
+    k: int
+    sequences: list[str] = field(default_factory=list)
+    start_handles: array = field(default_factory=lambda: array("Q"))
+    end_handles: array = field(default_factory=lambda: array("Q"))
+    edge_counts: array = field(default_factory=lambda: array("I"))
+    observations: array = field(default_factory=lambda: array("Q"))
+    minimum_edge_support: array = field(default_factory=lambda: array("I"))
+    terminal_observations: array = field(default_factory=lambda: array("Q"))
+    internal_observations: array = field(default_factory=lambda: array("Q"))
+    out_links: array = field(default_factory=lambda: array("q"))
+    out_degrees: bytearray = field(default_factory=bytearray)
+
+    @property
+    def unitig_count(self) -> int:
+        return len(self.sequences)
+
+    @property
+    def oriented_link_count(self) -> int:
+        return sum(self.out_degrees)
+
+    def oriented_sequence(self, handle: Handle) -> str:
+        """Return a unitig sequence in the requested orientation."""
+        sequence = self.sequences[handle >> 1]
+        return reverse_complement(sequence) if handle & 1 else sequence
+
+    def outgoing(self, handle: Handle) -> tuple[Handle, ...]:
+        """Return oriented unitigs reachable from one oriented unitig."""
+        offset = handle * _MAX_LINK_DEGREE
+        return tuple(
+            self.out_links[offset + index]
+            for index in range(self.out_degrees[handle])
+        )
+
+    def support(self, unitig_id: int) -> UnitigSupport:
+        """Return aggregate support for one physical unitig."""
+        edge_count = self.edge_counts[unitig_id]
+        observations = self.observations[unitig_id]
+        return UnitigSupport(
+            edge_count=edge_count,
+            observations=observations,
+            minimum_edge_support=self.minimum_edge_support[unitig_id],
+            mean_edge_support=observations / edge_count,
+            terminal_observations=self.terminal_observations[unitig_id],
+            internal_observations=self.internal_observations[unitig_id],
+        )
+
+
+def _append_link(
+    graph: CompactedUnitigGraph, source: Handle, target: Handle
+) -> None:
+    degree = graph.out_degrees[source]
+    if degree >= _MAX_LINK_DEGREE:
+        raise ValueError("oriented unitig has more than four outgoing links")
+    graph.out_links[source * _MAX_LINK_DEGREE + degree] = target
+    graph.out_degrees[source] = degree + 1
+
+
+def build_compacted_unitig_graph(
+    source_graph: BidirectedDeBruijnGraph,
+) -> CompactedUnitigGraph:
+    """Compact active non-branching paths while retaining links and evidence."""
+    graph = CompactedUnitigGraph(k=source_graph.node_length + 1)
+    entries: dict[tuple[Handle, int], Handle] = {}
+    internal_exits: set[tuple[Handle, int]] = set()
+
+    for start, edge_ids in iter_bidirected_unitig_paths(source_graph):
+        unitig_id = graph.unitig_count
+        current = start
+        observations = 0
+        minimum_support: int | None = None
+        terminal = 0
+        internal = 0
+        sequence = [oriented_sequence(source_graph, start)]
+
+        for edge_id in edge_ids:
+            support = _edge_support_total(source_graph, edge_id)
+            observations += support
+            minimum_support = (
+                support if minimum_support is None else min(minimum_support, support)
+            )
+            if source_graph.end_window:
+                edge_internal = source_graph.internal_support[edge_id]
+                internal += edge_internal
+                terminal += support - edge_internal
+            else:
+                internal += support
+            current = _successor(source_graph, current, edge_id)
+            sequence.append(_oriented_last_base(source_graph, current))
+
+        graph.sequences.append("".join(sequence))
+        graph.start_handles.append(start)
+        graph.end_handles.append(current)
+        graph.edge_counts.append(len(edge_ids))
+        graph.observations.append(observations)
+        graph.minimum_edge_support.append(minimum_support or 0)
+        graph.terminal_observations.append(terminal)
+        graph.internal_observations.append(internal)
+
+        entries[(start, edge_ids[0])] = unitig_id << 1
+        reverse_entry = (flip_handle(current), edge_ids[-1])
+        entries.setdefault(reverse_entry, (unitig_id << 1) | 1)
+        path_edges = set(edge_ids)
+        for edge_id in _outgoing_edges(source_graph, current):
+            if edge_id in path_edges:
+                internal_exits.add((unitig_id << 1, edge_id))
+        reverse_end = flip_handle(start)
+        for edge_id in _outgoing_edges(source_graph, reverse_end):
+            if edge_id in path_edges:
+                internal_exits.add(((unitig_id << 1) | 1, edge_id))
+
+    handle_count = graph.unitig_count * 2
+    graph.out_degrees = bytearray(handle_count)
+    graph.out_links = array("q", [-1]) * (handle_count * _MAX_LINK_DEGREE)
+
+    for unitig_id in range(graph.unitig_count):
+        for orientation in (0, 1):
+            source = (unitig_id << 1) | orientation
+            end = (
+                graph.end_handles[unitig_id]
+                if orientation == 0
+                else flip_handle(graph.start_handles[unitig_id])
+            )
+            for edge_id in _outgoing_edges(source_graph, end):
+                target = entries.get((end, edge_id))
+                if target is None:
+                    if (source, edge_id) in internal_exits:
+                        continue
+                    raise RuntimeError("unitig entry is missing for an active graph edge")
+                _append_link(graph, source, target)
+
+    return graph

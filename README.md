@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, topology analysis, unitig extraction, conservative tip cleaning, simple-bubble detection, and non-destructive terminal-evidence reporting for graph alternatives.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, and non-destructive terminal-evidence reporting for graph alternatives.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -36,6 +36,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
+- oriented unitig-level graph links with aggregate coverage and terminal evidence;
 - graph topology and support summaries;
 - `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
