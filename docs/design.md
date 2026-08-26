@@ -84,7 +84,9 @@ Detection is non-destructive: it records edge paths and support summaries withou
 
 Weak tips and simple bubble paths are collected before graph cleaning. Their sequences, edge support, terminal/internal evidence, and substitutions are streamed to TSV. Equal-length bubble alternatives are marked damage-compatible only when C→T or G→A substitutions have support at the corresponding oriented molecule end.
 
-Reporting does not change the graph. Tips currently remain unclassified when no competing reference path exists, and no evidence-based simplification decision is implemented yet.
+Weak tips are also matched non-destructively to an equal-length locally competing linear backbone when one exists. Candidate selection prioritizes RY identity, then DNA identity and backbone support. The report records both sequences, substitutions, relative coverage, and oriented damage compatibility. A ten-seed controlled validation matched 3,538 of 3,583 damage tips; all matched damage tips were RY-exact and damage-compatible. All 146 random-error tips also found a backbone candidate, and 9 passed the damage-compatibility rule. Matching therefore recovers a comparison path but is not itself a damage classifier.
+
+Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, broader incomplete branches are not covered, and no evidence-based simplification decision is implemented yet. Terminal evidence is currently aggregated per graph edge rather than linked to the individual molecule carrying a substitution, so incidental terminal support can contribute to a compatible label.
 
 ## Evidence from the current baseline
 
@@ -104,10 +106,11 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Add and validate incomplete-branch and tip classification for damage topologies not represented by bubbles.
-2. Add molecule/link and quality evidence to improve low-coverage error-versus-variation separation.
-3. Implement optional conservative simplification only for high-confidence error-like paths.
-4. Validate N50, accuracy, and strain retention on simulated and empirical mixtures.
-5. Evaluate controlled multi-k assembly and profiled Cython optimization where needed.
+1. Strengthen tip classification with molecule-linked terminal evidence, 3′ G→A and reverse-orientation tests, and a broader error/damage/variation matrix.
+2. Add and validate incomplete-branch matching for damage topologies not represented by bubbles.
+3. Infer a sample-level damage profile and compare damage, sequencing-error, and variation likelihoods.
+4. Implement optional conservative simplification only for high-confidence error-like paths.
+5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
+6. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.

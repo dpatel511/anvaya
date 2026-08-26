@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, unitig-level bubble scoring, and non-destructive evidence-based classification of graph alternatives.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, weak-tip-to-backbone matching, unitig-level bubble scoring, and non-destructive evidence-based classification of graph alternatives.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -33,6 +33,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - compact read-end evidence collected during orientation-aware graph construction;
 - sequence-level TSV reports for weak tips and bubble paths;
 - damage-compatible C→T/G→A annotation for simple bubble alternatives;
+- non-destructive weak-tip matching to equal-length local backbone paths with DNA identity, RY identity, relative coverage, substitutions, and damage compatibility;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
@@ -91,7 +92,7 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
   -o contigs.fasta
 ```
 
-Evidence reporting is non-destructive. It does not yet remove or retain paths automatically, and it does not require a supplied damage profile.
+Evidence reporting is non-destructive. Weak tips are matched to an equal-length locally competing linear backbone when one is available, and the report includes DNA and RY identity, relative coverage, substitutions, and oriented damage compatibility. In a controlled ten-seed simulation, 3,538 of 3,583 damage tips were matched and all matched damage tips were RY-exact and damage-compatible; 9 of 146 random-error tips also passed the compatibility rule. Compatibility is therefore supporting evidence, not proof of biological damage. Reporting does not yet remove or retain paths automatically, and it does not require a supplied damage profile.
 
 Compacted-graph bubble paths can be scored for threshold validation:
 

@@ -50,6 +50,10 @@ All notable project changes will be documented in this file.
 - Non-destructive unitig-path classification as dominant, error-like, damage-like, variation-like, or ambiguous.
 - Auditable classification reasons, substitutions, and damage compatibility in unitig-bubble TSV reports.
 - Classification summaries in the CLI and controlled validation matrix.
+- Non-destructive weak-tip matching to equal-length local backbone paths.
+- Tip-event report fields for matched backbone sequence and support, relative coverage, DNA identity, RY identity, substitutions, and oriented damage compatibility.
+- Controlled ten-seed tip-matching validation covering clean, terminal-damage, and random-error conditions.
+- Unit tests for tip matching, damage compatibility, unchanged graph state, event-report fields, and CLI summaries.
 
 ### Changed
 
