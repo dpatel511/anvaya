@@ -34,6 +34,7 @@ class EventReportTests(unittest.TestCase):
         self.assertEqual(summary.bubbles, 1)
         self.assertEqual(summary.paths, 2)
         self.assertEqual({row["event_type"] for row in rows}, {"bubble"})
+        self.assertTrue(all(None not in row for row in rows))
         reference = next(row for row in rows if row["reference_path"] == "true")
         alternative = next(
             row for row in rows if row["reference_path"] == "false"
@@ -73,6 +74,13 @@ class EventReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["substitutions"], "5:C>T")
         self.assertEqual(rows[0]["damage_compatible"], "true")
         self.assertEqual(rows[0]["ry_identity"], "1.000000")
+        self.assertEqual(rows[0]["tip_classification"], "damage-like")
+        self.assertGreater(float(rows[0]["tip_damage_score"]), 0.8)
+        self.assertEqual(
+            rows[0]["substitution_terminal_observations"],
+            "1",
+        )
+        self.assertEqual(rows[0]["mean_damage_distance"], "1.000000")
         self.assertEqual(bytes(graph.out_degrees), before)
 
     def test_requires_read_end_evidence(self) -> None:

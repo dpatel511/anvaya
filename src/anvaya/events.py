@@ -15,6 +15,7 @@ from anvaya.bubbles import Bubble, BubblePath
 from anvaya.cleaning import TipCandidate
 from anvaya.classification import format_substitutions
 from anvaya.tip_matching import match_tip_to_backbone
+from anvaya.tip_classification import classify_tip_match
 
 
 @dataclass(slots=True, frozen=True)
@@ -25,6 +26,35 @@ class EventReportSummary:
     matched_tips: int = 0
     bubbles: int = 0
     paths: int = 0
+
+
+_TIP_MATCH_FIELDS = (
+    "tip_match_sequence",
+    "backbone_matched",
+    "backbone_sequence",
+    "backbone_edge_count",
+    "backbone_observations",
+    "backbone_minimum_edge_support",
+    "relative_coverage",
+    "sequence_identity",
+    "ry_identity",
+)
+
+_TIP_CLASSIFICATION_FIELDS = (
+    "tip_classification",
+    "tip_classification_reasons",
+    "tip_damage_score",
+    "tip_error_score",
+    "tip_variation_score",
+    "tip_terminal_fraction",
+    "tip_strand_balance",
+    "tip_terminal_enrichment",
+    "substitution_terminal_observations",
+    "substitution_other_terminal_observations",
+    "substitution_internal_observations",
+    "substitution_terminal_fraction",
+    "mean_damage_distance",
+)
 
 
 def _oriented_edge_evidence(
@@ -182,16 +212,9 @@ def _bubble_rows(
                 sequence,
                 _format_substitutions(substitutions),
                 compatibility,
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
             ]
+            + [""]
+            * (len(_TIP_MATCH_FIELDS) + len(_TIP_CLASSIFICATION_FIELDS))
         )
     return rows
 
@@ -213,6 +236,7 @@ def _tip_row(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
     )
     match = match_tip_to_backbone(graph, tip)
+    decision = None if match is None else classify_tip_match(graph, match)
     substitutions = "" if match is None else format_substitutions(match.substitutions)
     compatibility = (
         "unknown" if match is None else str(match.damage_compatible).lower()
@@ -243,6 +267,53 @@ def _tip_row(
         "" if match is None else f"{match.relative_coverage:.6f}",
         "" if match is None else f"{match.sequence_identity:.6f}",
         "" if match is None else f"{match.ry_identity:.6f}",
+        "" if decision is None else decision.label,
+        "" if decision is None else ";".join(decision.reasons),
+        "" if decision is None else f"{decision.damage_score:.6f}",
+        "" if decision is None else f"{decision.error_score:.6f}",
+        "" if decision is None else f"{decision.variation_score:.6f}",
+        (
+            ""
+            if decision is None
+            else f"{decision.evidence.tip_terminal_fraction:.6f}"
+        ),
+        (
+            ""
+            if decision is None
+            or decision.evidence.tip_strand_balance is None
+            else f"{decision.evidence.tip_strand_balance:.6f}"
+        ),
+        (
+            ""
+            if decision is None
+            else f"{decision.evidence.terminal_enrichment:.6f}"
+        ),
+        (
+            ""
+            if decision is None
+            else decision.evidence.substitution_terminal_observations
+        ),
+        (
+            ""
+            if decision is None
+            else decision.evidence.substitution_other_terminal_observations
+        ),
+        (
+            ""
+            if decision is None
+            else decision.evidence.substitution_internal_observations
+        ),
+        (
+            ""
+            if decision is None
+            else f"{decision.evidence.substitution_terminal_fraction:.6f}"
+        ),
+        (
+            ""
+            if decision is None
+            or decision.evidence.mean_damage_distance is None
+            else f"{decision.evidence.mean_damage_distance:.6f}"
+        ),
     ]
     return row, match is not None
 
@@ -279,15 +350,8 @@ def write_event_report(
                 "sequence",
                 "substitutions",
                 "damage_compatible",
-                "tip_match_sequence",
-                "backbone_matched",
-                "backbone_sequence",
-                "backbone_edge_count",
-                "backbone_observations",
-                "backbone_minimum_edge_support",
-                "relative_coverage",
-                "sequence_identity",
-                "ry_identity",
+                *_TIP_MATCH_FIELDS,
+                *_TIP_CLASSIFICATION_FIELDS,
             ]
         )
         path_count = 0
