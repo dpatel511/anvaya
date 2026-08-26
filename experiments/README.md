@@ -398,6 +398,54 @@ The complete 139-test suite passed. A fresh run wrote `parameters.tsv`, `per_run
 
 Damage-tip match recall was 98.74%. Every matched damage tip was RY-exact and damage-compatible, but 9 of 146 random-error tips (6.16%) also passed the compatibility rule. Candidate recovery is therefore strong in this simulation, while the compatibility label is not specific enough to justify correction or graph removal. The next matrix must add reverse-orientation and 3′ G→A controls, multiple substitutions, incidental terminal evidence, alternative backbone topologies, low-abundance strain tips, and incomplete branches.
 
+## Expanded weak-tip matching matrix
+
+### Question
+
+Does weak-tip matching remain sensitive across separate 5′ and 3′ damage profiles, and does the current compatibility rule protect ordinary errors and genuine rare-strain tips?
+
+The matrix follows established ideas rather than treating one simulated damage profile as universal: position-specific terminal substitution profiles follow [mapDamage](https://academic.oup.com/bioinformatics/article/27/15/2153/404129), RY-space comparison follows the damage-tolerant strategy used by [CarpeDeam](https://doi.org/10.1186/s13059-025-03839-5), and rare-strain controls reflect the local-coverage ambiguity described by [metaSPAdes](https://pmc.ncbi.nlm.nih.gov/articles/PMC5411777/).
+
+### Setup
+
+- Twenty random 20,000 bp references using seeds 1501–1520.
+- Bidirectional 60 bp reads at 20× total coverage.
+- `k=21`, `min_count=2`, and a five-base terminal window.
+- Low, standard, and high damage profiles, each applied at the 5′ end only, 3′ end only, and both ends.
+- Independent sequencing-error rates of 0.001, 0.005, and 0.010.
+- A terminal-error control with ordinary substitutions concentrated in the same five-base end windows used as damage evidence.
+- Related strains at 1×, 2×, 5×, and 10× coverage with 12 spaced SNPs.
+
+Run with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/06_tip_matching_validation.py
+```
+
+The ignored output directory `experiments/validation/generated/tip_matching_matrix/` contains `parameters.tsv`, `per_run.tsv`, `candidates.tsv`, and `summary.tsv`.
+
+### Results
+
+| Condition | Weak tips | Matched | Damage-compatible |
+|---|---:|---:|---:|
+| Clean | 0 | 0 | 0 |
+| Terminal damage | 35,202 | 34,762 (98.75%) | 34,762 |
+| Ordinary sequencing error | 1,081 | 1,058 | 31 |
+| Terminally concentrated error | 583 | 583 | 46 (7.89%) |
+| Genuine rare-strain tips | 110 | 110 | 5 (4.55%) |
+
+Separate 5′ and 3′ profiles had comparable recovery, and explicit regression fixtures verified oriented 3′ G→A matching and a tip containing both C→T and G→A substitutions. Clean controls again produced no weak tips.
+
+### Interpretation
+
+- Equal-length local backbone recovery is stable across damage intensity, end, and read orientation.
+- RY-exact, terminally compatible matching is highly sensitive for the simulated damage tips.
+- Terminal localization alone is not specific: ordinary errors placed near molecule ends passed more often than uniformly distributed errors.
+- Five genuine rare-strain tips also passed the current Boolean damage-compatibility rule, so automatic removal would cause measurable biological loss.
+- The next production change must associate substitutions more directly with their supporting molecule/end evidence and compare damage, error, and variation scores. Graph modification remains deferred.
+- Incomplete branches, indels, and non-linear competing backbones still require a later topology matrix.
+
 ## Empirical non-UDG/UDG pilot
 
 Five non-overlapping 100,000-read R1 subsets were compared for untreated and full-UDG libraries from the same PES001.B dental-calculus sample. Reads shorter than `k=19` were excluded identically. Both treatments used `min_count=2`, orientation-aware construction, tip cleaning, bubble detection, and a five-base terminal window.

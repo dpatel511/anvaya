@@ -54,6 +54,8 @@ All notable project changes will be documented in this file.
 - Tip-event report fields for matched backbone sequence and support, relative coverage, DNA identity, RY identity, substitutions, and oriented damage compatibility.
 - Controlled ten-seed tip-matching validation covering clean, terminal-damage, and random-error conditions.
 - Unit tests for tip matching, damage compatibility, unchanged graph state, event-report fields, and CLI summaries.
+- A 20-seed weak-tip matching matrix with separate 5′, 3′, and combined damage profiles, bidirectional reads, ordinary and terminally concentrated errors, and rare strains at four coverages.
+- Candidate-level tip-matching reports and regression tests for 3′ G→A and multiple oriented damage substitutions.
 
 ### Changed
 

@@ -134,6 +134,14 @@ PYTHONPATH=src:tests python3 \
   experiments/05_unitig_bubble_validation.py
 ```
 
+The 20-seed weak-tip matching matrix covering separate 5′/3′ damage,
+ordinary and terminally concentrated errors, and rare strains can be run with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/06_tip_matching_validation.py
+```
+
 Generated candidate and threshold tables are written under `experiments/validation/generated/` and remain ignored by Git.
 
 ## Documentation
