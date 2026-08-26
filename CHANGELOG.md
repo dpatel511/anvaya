@@ -47,6 +47,9 @@ All notable project changes will be documented in this file.
 - Orientation-correct forward/reverse and left/right terminal evidence on compacted unitigs.
 - Terminal fraction, relative internal coverage, terminal enrichment, and strand-balance bubble-path scores.
 - Bidirectional controlled-read simulation and an extended 220-condition validation matrix.
+- Non-destructive unitig-path classification as dominant, error-like, damage-like, variation-like, or ambiguous.
+- Auditable classification reasons, substitutions, and damage compatibility in unitig-bubble TSV reports.
+- Classification summaries in the CLI and controlled validation matrix.
 
 ### Changed
 

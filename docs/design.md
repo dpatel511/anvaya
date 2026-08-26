@@ -66,6 +66,14 @@ The result supports graded classification rather than a universal hard threshold
 
 Removing a false alternative would reconnect the surrounding unitigs and can increase contig length and N50 after recompaction. Removing a genuine strain path would produce the same topological improvement while destroying biological variation, so contiguity cannot be optimized independently of rare-strain retention.
 
+## Explainable path classification
+
+Detected unitig alternatives are now labelled `error-like`, `damage-like`, `variation-like`, or `ambiguous`; the locally strongest path is labelled `dominant`. Every decision records its evidence reasons and sequence substitutions. Classification is non-destructive and does not alter graph topology, contigs, or N50.
+
+The conservative error-like rule combines low local coverage, high sequence similarity, and terminal depletion. A damage-like label additionally requires damage-compatible C→T/G→A substitutions, low local coverage, strand skew, and terminal enrichment. Supported, strand-balanced alternatives are variation-like; conflicting or insufficient evidence remains ambiguous.
+
+Across the 220-condition matrix, the error-like label selected 111 of 182 detected error paths and 20 of 451 biological paths. Tightening the damage rule eliminated damage-like calls among the biological controls. However, terminal-damage simulations produced no detectable unitig bubbles, so the current results establish specificity only—not damage sensitivity. Damage detection must next operate on tips and incomplete branches before cleaning removes them.
+
 ## Simple bubble detection
 
 The experimental detector reports bounded alternatives that leave one oriented handle, remain linear and edge-disjoint internally, and rejoin at the same handle. Reverse-complement observations are deduplicated through their shared physical edge paths.
@@ -96,11 +104,10 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Add non-destructive error-like, damage-like, variation-like, and ambiguous path classification.
+1. Add and validate incomplete-branch and tip classification for damage topologies not represented by bubbles.
 2. Add molecule/link and quality evidence to improve low-coverage error-versus-variation separation.
-3. Add and validate incomplete-branch handling for the damage topology not represented by bubbles.
-4. Implement optional conservative simplification only for high-confidence error-like paths.
-5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures.
-6. Evaluate controlled multi-k assembly and profiled Cython optimization where needed.
+3. Implement optional conservative simplification only for high-confidence error-like paths.
+4. Validate N50, accuracy, and strain retention on simulated and empirical mixtures.
+5. Evaluate controlled multi-k assembly and profiled Cython optimization where needed.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
