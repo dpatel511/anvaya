@@ -86,7 +86,12 @@ def _linear_branch(
     return None
 
 
-def _spell_path(graph: CompactedUnitigGraph, handles: Sequence[int]) -> str:
+def spell_unitig_path(
+    graph: CompactedUnitigGraph, handles: Sequence[int]
+) -> str:
+    """Spell one non-empty oriented path through the compacted graph."""
+    if not handles:
+        raise ValueError("unitig path must not be empty")
     sequence = graph.oriented_sequence(handles[0])
     overlap = graph.k - 1
     return sequence + "".join(
@@ -102,7 +107,7 @@ def _score_path(
     observations = sum(support.observations for support in supports)
     return _RawPath(
         handles=handles,
-        sequence=_spell_path(graph, handles),
+        sequence=spell_unitig_path(graph, handles),
         edge_count=edge_count,
         observations=observations,
         minimum_edge_support=min(

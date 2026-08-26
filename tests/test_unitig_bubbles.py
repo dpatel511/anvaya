@@ -9,6 +9,7 @@ from anvaya.bidirected import build_bidirected_dbg
 from anvaya.cli import main
 from anvaya.unitig_bubbles import (
     find_unitig_bubbles,
+    spell_unitig_path,
     write_unitig_bubble_report,
 )
 from anvaya.unitig_graph import build_compacted_unitig_graph
@@ -44,6 +45,17 @@ class UnitigBubbleTests(unittest.TestCase):
             find_unitig_bubbles(self.compacted, max_nucleotides=1),
             [],
         )
+
+    def test_spells_reported_path(self) -> None:
+        bubble = find_unitig_bubbles(self.compacted)[0]
+
+        for path in bubble.paths:
+            sequence = spell_unitig_path(self.compacted, path.handles)
+            self.assertEqual(len(sequence), path.nucleotide_length)
+
+    def test_rejects_empty_path(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must not be empty"):
+            spell_unitig_path(self.compacted, ())
 
     def test_writes_path_scores(self) -> None:
         bubbles = find_unitig_bubbles(self.compacted)
