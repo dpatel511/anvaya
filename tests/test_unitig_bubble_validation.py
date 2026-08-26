@@ -62,6 +62,7 @@ class UnitigBubbleValidationTests(unittest.TestCase):
     def test_threshold_requires_both_coverage_and_similarity(self) -> None:
         candidate = experiment.CandidateRecord(
             condition="error",
+            scenario="error_0.005",
             seed=1,
             bubble_index=1,
             path_index=0,
@@ -72,13 +73,29 @@ class UnitigBubbleValidationTests(unittest.TestCase):
             observations=2,
             minimum_edge_support=2,
             mean_edge_support=2.0,
+            terminal_fraction=0.2,
+            strand_balance=0.1,
             relative_coverage=0.2,
+            relative_internal_coverage=0.2,
+            terminal_enrichment=-0.1,
             similarity_to_strongest=0.95,
         )
 
-        self.assertTrue(experiment.selected_by_threshold(candidate, 0.2, 0.95))
-        self.assertFalse(experiment.selected_by_threshold(candidate, 0.1, 0.95))
-        self.assertFalse(experiment.selected_by_threshold(candidate, 0.2, 0.98))
+        self.assertTrue(
+            experiment.selected_by_threshold(candidate, 0.2, 0.95, 0.25, -0.05)
+        )
+        self.assertFalse(
+            experiment.selected_by_threshold(candidate, 0.1, 0.95, 0.25, -0.05)
+        )
+        self.assertFalse(
+            experiment.selected_by_threshold(candidate, 0.2, 0.98, 0.25, -0.05)
+        )
+        self.assertFalse(
+            experiment.selected_by_threshold(candidate, 0.2, 0.95, 0.05, -0.05)
+        )
+        self.assertFalse(
+            experiment.selected_by_threshold(candidate, 0.2, 0.95, 0.25, -0.15)
+        )
 
     def test_related_reference_has_spaced_reproducible_snps(self) -> None:
         reference = "A" * experiment.REFERENCE_LENGTH

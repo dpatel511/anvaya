@@ -516,6 +516,67 @@ Similarity floors of 0.90 and 0.95 produced identical selections. A floor of 0.9
 
 Automatic bubble removal remains deferred. The next scoring stage must incorporate terminal/internal and orientation evidence, then repeat this matrix before contiguity changes are accepted. Generated tables remain ignored under `experiments/validation/generated/unitig_bubbles/`.
 
+## Extended combined-evidence validation
+
+### Question
+
+Does terminal/internal or strand evidence produce a bubble rule that removes detected sequencing errors without losing genuine strain paths across broader conditions?
+
+The matrix was expanded to 20 random 20,000 bp references and bidirectional 60 bp reads. It included three independent sequencing-error rates (`0.001`, `0.005`, and `0.010`), low/standard/high terminal-damage profiles, and related strains at 1×, 2×, 5×, and 10× within 20× total coverage. Each related strain contained 12 spaced SNPs. In total, 220 graph conditions and 39,600 threshold combinations were evaluated.
+
+The scorer retained orientation-correct forward/reverse support, left/right terminal observations, internal support, terminal fraction, terminal enrichment relative to the strongest local path, and strand balance. The run completed in 69.38 seconds with a 67,824 KiB peak for the experiment process.
+
+### Detected paths
+
+| Scenario | Introduced events/SNPs | Detected weaker paths |
+|---|---:|---:|
+| Clean | 0 | 0 |
+| Error rate 0.001 | 7,987 | 2 error paths |
+| Error rate 0.005 | 40,362 | 47 error paths |
+| Error rate 0.010 | 80,448 | 133 error paths |
+| Damage, all intensities | 222,262 | 0 bubble paths |
+| Rare strain 1× | 240 SNPs | 11 biological paths |
+| Rare strain 2× | 240 SNPs | 46 biological paths |
+| Rare strain 5× | 240 SNPs | 166 biological paths |
+| Rare strain 10× | 240 SNPs | 228 biological paths |
+
+Detection is topology- and support-dependent, so these counts are not recall against every introduced base event. Rare-path recovery increased strongly with coverage. At 10×/10×, 117 weaker paths matched the nominal major strain and 111 matched the nominal rare strain, demonstrating that “weaker” is not a biological label when abundances are similar.
+
+### Rule comparison
+
+All rules required relative coverage no greater than 0.30 and sequence similarity at least 0.95. The terminal rules additionally required the weaker path's terminal fraction to be lower than the strongest path by the stated amount.
+
+| Rule | Errors selected | Biological paths selected |
+|---|---:|---:|
+| Coverage only | 174/182 (95.6%) | 84/451 (18.6%) |
+| Terminal enrichment ≤−0.05 | 159/182 (87.4%) | 39/451 (8.6%) |
+| Terminal enrichment ≤−0.15 | 111/182 (61.0%) | 20/451 (4.4%) |
+
+For the conservative `−0.15` rule, biological selection was 5/11 at 1×, 10/46 at 2×, 4/166 at 5×, and 1/228 at 10×. It therefore protects moderate/high-coverage strains much better than coverage alone but does not safely distinguish extremely low-coverage strains from errors. Strand-balance restrictions reduced error sensitivity without improving the best overall trade-off.
+
+No tested rule selected any error path while maintaining zero biological-path loss across the full matrix. The earlier five-seed zero-loss result did not reproduce and must be treated as a pilot observation rather than a validated rule.
+
+### Real-data performance check
+
+On the existing 19,643-read FASTQ, baseline and evidence-enabled runs produced byte-identical FASTA files. The evidence report contained eight bubbles and 16 paths.
+
+| Metric | Baseline median | Evidence median |
+|---|---:|---:|
+| Wall time, three paired runs | 4.49 s | 4.77 s |
+| Peak memory | 111,436 KiB | 114,224 KiB |
+
+Combined evidence added approximately 6% median runtime and 2.5% peak memory in this small smoke benchmark. The three-run timing sample is sufficient to detect a modest implementation cost, not to establish general performance.
+
+### Interpretation
+
+- Terminal enrichment materially improves error-versus-variation separation.
+- Low-coverage genuine variants remain confounded with sequencing errors.
+- Strand balance was not independently useful in this matrix.
+- Damage again appeared as tips or incomplete branches rather than simple bubbles.
+- Hard bubble removal remains unjustified; ambiguous paths should remain until stronger molecule, quality, linkage, or damage evidence is available.
+
+Generated tables remain ignored under `experiments/validation/generated/unitig_bubbles_extended/`.
+
 ## K-mer size experiment
 
 ### Question

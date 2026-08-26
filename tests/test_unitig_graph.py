@@ -21,8 +21,43 @@ class CompactedUnitigGraphTests(unittest.TestCase):
         self.assertEqual(support.observations, 5)
         self.assertEqual(support.minimum_edge_support, 1)
         self.assertEqual(support.mean_edge_support, 1.0)
+        self.assertEqual(
+            support.forward_observations
+            + support.reverse_observations
+            + support.palindromic_observations,
+            support.observations,
+        )
+        self.assertEqual(
+            support.left_terminal_observations
+            + support.right_terminal_observations
+            + support.ambiguous_terminal_observations,
+            support.terminal_observations,
+        )
         self.assertEqual(support.terminal_observations, 4)
         self.assertEqual(support.internal_observations, 1)
+
+    def test_oriented_support_swaps_directional_evidence(self) -> None:
+        graph = build_bidirected_dbg(
+            ["AACTGGA", "TCCAGTT"],
+            3,
+            end_window=2,
+        )
+        compacted = build_compacted_unitig_graph(graph)
+
+        forward = compacted.oriented_support(0)
+        reverse = compacted.oriented_support(1)
+
+        self.assertEqual(forward.forward_observations, reverse.reverse_observations)
+        self.assertEqual(forward.reverse_observations, reverse.forward_observations)
+        self.assertEqual(
+            forward.left_terminal_observations,
+            reverse.right_terminal_observations,
+        )
+        self.assertEqual(
+            forward.right_terminal_observations,
+            reverse.left_terminal_observations,
+        )
+        self.assertEqual(forward.internal_observations, reverse.internal_observations)
 
     def test_matches_existing_unitigs_on_branching_graph(self) -> None:
         graph = build_bidirected_dbg(

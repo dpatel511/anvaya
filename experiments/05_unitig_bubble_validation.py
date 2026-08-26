@@ -24,22 +24,28 @@ from helpers.simulation import (
 REFERENCE_LENGTH = 20_000
 READ_LENGTH = 60
 TOTAL_COVERAGE = 20
-MAJOR_COVERAGE = 15
-RARE_COVERAGE = 5
 SNP_COUNT = 12
 K = 21
 MIN_COUNT = 2
-SEEDS = tuple(range(1201, 1206))
-FIVE_PRIME_CT = (0.45, 0.30, 0.20, 0.12, 0.06)
-THREE_PRIME_GA = (0.45, 0.30, 0.20, 0.12, 0.06)
-ERROR_RATE = 0.005
+END_WINDOW = 5
+SEEDS = tuple(range(1201, 1221))
+ERROR_RATES = (0.001, 0.005, 0.010)
+RARE_COVERAGES = (1, 2, 5, 10)
+DAMAGE_PROFILES = {
+    "low": (0.15, 0.10, 0.06, 0.03, 0.01),
+    "standard": (0.45, 0.30, 0.20, 0.12, 0.06),
+    "high": (0.70, 0.50, 0.35, 0.20, 0.10),
+}
 COVERAGE_THRESHOLDS = (0.10, 0.20, 0.30, 0.50)
 SIMILARITY_THRESHOLDS = (0.90, 0.95, 0.98)
+STRAND_BALANCE_THRESHOLDS = (0.25, 0.50, 1.00)
+TERMINAL_ENRICHMENT_THRESHOLDS = (-0.20, -0.15, -0.10, -0.05, 1.00)
 
 
 @dataclass(frozen=True)
 class CandidateRecord:
     condition: str
+    scenario: str
     seed: int
     bubble_index: int
     path_index: int
@@ -50,13 +56,18 @@ class CandidateRecord:
     observations: int
     minimum_edge_support: int
     mean_edge_support: float
+    terminal_fraction: float
+    strand_balance: float | None
     relative_coverage: float
+    relative_internal_coverage: float | None
+    terminal_enrichment: float
     similarity_to_strongest: float
 
 
 @dataclass(frozen=True)
 class RunRecord:
     condition: str
+    scenario: str
     seed: int
     reads: int
     introduced_events: int
@@ -77,9 +88,12 @@ class RunRecord:
 @dataclass(frozen=True)
 class ThresholdRecord:
     condition: str
+    scenario: str
     seed: int
     maximum_coverage: float
     minimum_similarity: float
+    maximum_strand_balance: float
+    maximum_terminal_enrichment: float
     eligible_paths: int
     selected_paths: int
     selected_major: int
@@ -146,16 +160,22 @@ def selected_by_threshold(
     candidate: CandidateRecord,
     maximum_coverage: float,
     minimum_similarity: float,
+    maximum_strand_balance: float,
+    maximum_terminal_enrichment: float,
 ) -> bool:
     """Apply one prospective rule without changing the graph."""
     return (
         candidate.relative_coverage <= maximum_coverage
         and candidate.similarity_to_strongest >= minimum_similarity
+        and candidate.strand_balance is not None
+        and candidate.strand_balance <= maximum_strand_balance
+        and candidate.terminal_enrichment <= maximum_terminal_enrichment
     )
 
 
 def evaluate(
     condition: str,
+    scenario: str,
     seed: int,
     reads: list[SimulatedRead],
     major_reference: str,
@@ -167,6 +187,7 @@ def evaluate(
         [read.sequence for read in reads],
         K,
         MIN_COUNT,
+        END_WINDOW,
     )
     cleaning = remove_weak_tips(graph)
     compacted = build_compacted_unitig_graph(graph)
@@ -181,6 +202,7 @@ def evaluate(
             candidates.append(
                 CandidateRecord(
                     condition=condition,
+                    scenario=scenario,
                     seed=seed,
                     bubble_index=bubble_index,
                     path_index=path_index,
@@ -196,7 +218,11 @@ def evaluate(
                     observations=path.observations,
                     minimum_edge_support=path.minimum_edge_support,
                     mean_edge_support=path.mean_edge_support,
+                    terminal_fraction=path.terminal_fraction,
+                    strand_balance=path.strand_balance,
                     relative_coverage=path.relative_coverage,
+                    relative_internal_coverage=path.relative_internal_coverage,
+                    terminal_enrichment=path.terminal_enrichment,
                     similarity_to_strongest=path.similarity_to_strongest,
                 )
             )
@@ -204,6 +230,7 @@ def evaluate(
     labels = Counter(candidate.label for candidate in candidates)
     run = RunRecord(
         condition=condition,
+        scenario=scenario,
         seed=seed,
         reads=len(reads),
         introduced_events=introduced_events,
@@ -224,32 +251,45 @@ def evaluate(
     thresholds: list[ThresholdRecord] = []
     for maximum_coverage in COVERAGE_THRESHOLDS:
         for minimum_similarity in SIMILARITY_THRESHOLDS:
-            selected = [
-                candidate
-                for candidate in candidates
-                if selected_by_threshold(
-                    candidate,
-                    maximum_coverage,
-                    minimum_similarity,
-                )
-            ]
-            selected_labels = Counter(candidate.label for candidate in selected)
-            thresholds.append(
-                ThresholdRecord(
-                    condition=condition,
-                    seed=seed,
-                    maximum_coverage=maximum_coverage,
-                    minimum_similarity=minimum_similarity,
-                    eligible_paths=len(candidates),
-                    selected_paths=len(selected),
-                    selected_major=selected_labels["major"],
-                    selected_rare=selected_labels["rare"],
-                    selected_error=selected_labels["error"],
-                    selected_damage=selected_labels["damage"],
-                    selected_artifact=selected_labels["artifact"],
-                    selected_shared=selected_labels["shared"],
-                )
-            )
+            for maximum_strand_balance in STRAND_BALANCE_THRESHOLDS:
+                for maximum_terminal_enrichment in (
+                    TERMINAL_ENRICHMENT_THRESHOLDS
+                ):
+                    selected = [
+                        candidate
+                        for candidate in candidates
+                        if selected_by_threshold(
+                            candidate,
+                            maximum_coverage,
+                            minimum_similarity,
+                            maximum_strand_balance,
+                            maximum_terminal_enrichment,
+                        )
+                    ]
+                    selected_labels = Counter(
+                        candidate.label for candidate in selected
+                    )
+                    thresholds.append(
+                        ThresholdRecord(
+                            condition=condition,
+                            scenario=scenario,
+                            seed=seed,
+                            maximum_coverage=maximum_coverage,
+                            minimum_similarity=minimum_similarity,
+                            maximum_strand_balance=maximum_strand_balance,
+                            maximum_terminal_enrichment=(
+                                maximum_terminal_enrichment
+                            ),
+                            eligible_paths=len(candidates),
+                            selected_paths=len(selected),
+                            selected_major=selected_labels["major"],
+                            selected_rare=selected_labels["rare"],
+                            selected_error=selected_labels["error"],
+                            selected_damage=selected_labels["damage"],
+                            selected_artifact=selected_labels["artifact"],
+                            selected_shared=selected_labels["shared"],
+                        )
+                    )
 
     return run, candidates, thresholds
 
@@ -274,17 +314,25 @@ def write_results(
         "reference_length": REFERENCE_LENGTH,
         "read_length": READ_LENGTH,
         "total_coverage": TOTAL_COVERAGE,
-        "major_coverage": MAJOR_COVERAGE,
-        "rare_coverage": RARE_COVERAGE,
+        "rare_coverages": ",".join(map(str, RARE_COVERAGES)),
         "snp_count": SNP_COUNT,
         "k": K,
         "min_count": MIN_COUNT,
+        "end_window": END_WINDOW,
         "seeds": ",".join(map(str, seeds)),
-        "five_prime_ct": ",".join(map(str, FIVE_PRIME_CT)),
-        "three_prime_ga": ",".join(map(str, THREE_PRIME_GA)),
-        "error_rate": ERROR_RATE,
+        "damage_profiles": ";".join(
+            name + ":" + ",".join(map(str, profile))
+            for name, profile in DAMAGE_PROFILES.items()
+        ),
+        "error_rates": ",".join(map(str, ERROR_RATES)),
         "coverage_thresholds": ",".join(map(str, COVERAGE_THRESHOLDS)),
         "similarity_thresholds": ",".join(map(str, SIMILARITY_THRESHOLDS)),
+        "strand_balance_thresholds": ",".join(
+            map(str, STRAND_BALANCE_THRESHOLDS)
+        ),
+        "terminal_enrichment_thresholds": ",".join(
+            map(str, TERMINAL_ENRICHMENT_THRESHOLDS)
+        ),
     }
     with (output_dir / "parameters.tsv").open(
         "w", encoding="utf-8", newline=""
@@ -316,8 +364,11 @@ def write_results(
         writer.writerow(
             (
                 "condition",
+                "scenario",
                 "maximum_coverage",
                 "minimum_similarity",
+                "maximum_strand_balance",
+                "maximum_terminal_enrichment",
                 "metric",
                 "mean",
                 "minimum",
@@ -325,30 +376,47 @@ def write_results(
                 "n",
             )
         )
-        for condition in ("clean", "error", "damage", "rare"):
+        scenarios = sorted({(record.condition, record.scenario) for record in thresholds})
+        for condition, scenario in scenarios:
             for maximum_coverage in COVERAGE_THRESHOLDS:
                 for minimum_similarity in SIMILARITY_THRESHOLDS:
-                    selected = [
-                        record
-                        for record in thresholds
-                        if record.condition == condition
-                        and record.maximum_coverage == maximum_coverage
-                        and record.minimum_similarity == minimum_similarity
-                    ]
-                    for metric in tuple(ThresholdRecord.__dataclass_fields__)[4:]:
-                        values = [getattr(record, metric) for record in selected]
-                        writer.writerow(
-                            (
-                                condition,
-                                maximum_coverage,
-                                minimum_similarity,
-                                metric,
-                                statistics.mean(values),
-                                min(values),
-                                max(values),
-                                len(values),
-                            )
-                        )
+                    for maximum_strand_balance in STRAND_BALANCE_THRESHOLDS:
+                        for maximum_terminal_enrichment in (
+                            TERMINAL_ENRICHMENT_THRESHOLDS
+                        ):
+                            selected = [
+                                record
+                                for record in thresholds
+                                if record.condition == condition
+                                and record.scenario == scenario
+                                and record.maximum_coverage == maximum_coverage
+                                and record.minimum_similarity == minimum_similarity
+                                and record.maximum_strand_balance
+                                == maximum_strand_balance
+                                and record.maximum_terminal_enrichment
+                                == maximum_terminal_enrichment
+                            ]
+                            for metric in tuple(
+                                ThresholdRecord.__dataclass_fields__
+                            )[7:]:
+                                values = [
+                                    getattr(record, metric) for record in selected
+                                ]
+                                writer.writerow(
+                                    (
+                                        condition,
+                                        scenario,
+                                        maximum_coverage,
+                                        minimum_similarity,
+                                        maximum_strand_balance,
+                                        maximum_terminal_enrichment,
+                                        metric,
+                                        statistics.mean(values),
+                                        min(values),
+                                        max(values),
+                                        len(values),
+                                    )
+                                )
 
 
 def event_count(reads: list[SimulatedRead], attribute: str) -> int:
@@ -365,33 +433,78 @@ def run_matrix(
 
     for seed in seeds:
         reference = random_reference(seed)
-        minor_reference, snp_positions = rare_reference(reference, seed + 1_000)
         source = simulate_fragments(
-            reference, READ_LENGTH, TOTAL_COVERAGE, seed + 10_000
+            reference,
+            READ_LENGTH,
+            TOTAL_COVERAGE,
+            seed + 10_000,
+            reverse_fraction=0.5,
         )
-        errors = add_sequencing_errors(source, ERROR_RATE, seed + 20_000)
-        damage = add_terminal_damage(
-            source,
-            FIVE_PRIME_CT,
-            THREE_PRIME_GA,
-            seed + 30_000,
-        )
-        major_reads = simulate_fragments(
-            reference, READ_LENGTH, MAJOR_COVERAGE, seed + 40_000
-        )
-        rare_reads = simulate_fragments(
-            minor_reference, READ_LENGTH, RARE_COVERAGE, seed + 50_000
-        )
-        conditions = (
-            ("clean", source, None, 0),
-            ("error", errors, None, event_count(errors, "error_positions")),
-            ("damage", damage, None, event_count(damage, "damage_positions")),
-            ("rare", major_reads + rare_reads, minor_reference, len(snp_positions)),
-        )
+        conditions: list[tuple[str, str, list[SimulatedRead], str | None, int]] = [
+            ("clean", "clean", source, None, 0)
+        ]
+        for index, error_rate in enumerate(ERROR_RATES):
+            errors = add_sequencing_errors(
+                source,
+                error_rate,
+                seed + 20_000 + index,
+            )
+            conditions.append(
+                (
+                    "error",
+                    f"error_{error_rate:.3f}",
+                    errors,
+                    None,
+                    event_count(errors, "error_positions"),
+                )
+            )
+        for index, (name, profile) in enumerate(DAMAGE_PROFILES.items()):
+            damage = add_terminal_damage(
+                source,
+                profile,
+                profile,
+                seed + 30_000 + index,
+            )
+            conditions.append(
+                (
+                    "damage",
+                    f"damage_{name}",
+                    damage,
+                    None,
+                    event_count(damage, "damage_positions"),
+                )
+            )
+        minor_reference, snp_positions = rare_reference(reference, seed + 1_000)
+        for rare_coverage in RARE_COVERAGES:
+            major_coverage = TOTAL_COVERAGE - rare_coverage
+            major_reads = simulate_fragments(
+                reference,
+                READ_LENGTH,
+                major_coverage,
+                seed + 40_000 + rare_coverage,
+                reverse_fraction=0.5,
+            )
+            rare_reads = simulate_fragments(
+                minor_reference,
+                READ_LENGTH,
+                rare_coverage,
+                seed + 50_000 + rare_coverage,
+                reverse_fraction=0.5,
+            )
+            conditions.append(
+                (
+                    "rare",
+                    f"rare_{rare_coverage}x",
+                    major_reads + rare_reads,
+                    minor_reference,
+                    len(snp_positions),
+                )
+            )
 
-        for condition, reads, minor, introduced in conditions:
+        for condition, scenario, reads, minor, introduced in conditions:
             run, run_candidates, run_thresholds = evaluate(
                 condition,
+                scenario,
                 seed,
                 reads,
                 reference,
@@ -402,7 +515,7 @@ def run_matrix(
             candidates.extend(run_candidates)
             thresholds.extend(run_thresholds)
             print(
-                f"{condition} seed={seed} bubbles={run.bubbles} "
+                f"{scenario} seed={seed} bubbles={run.bubbles} "
                 f"alternatives={run.alternatives} error={run.error_paths} "
                 f"damage={run.damage_paths} rare={run.rare_paths}"
             )

@@ -20,6 +20,7 @@ class UnitigBubbleTests(unittest.TestCase):
         graph = build_bidirected_dbg(
             ["GCTTGTTCCGGA"] * 10 + ["GCTTATTCCGGA"] * 3,
             4,
+            end_window=4,
         )
         self.compacted = build_compacted_unitig_graph(graph)
 
@@ -36,6 +37,21 @@ class UnitigBubbleTests(unittest.TestCase):
         self.assertEqual(strongest.mean_edge_support, 10.0)
         self.assertEqual(weaker.mean_edge_support, 3.0)
         self.assertAlmostEqual(weaker.relative_coverage, 0.3)
+        self.assertEqual(
+            weaker.forward_observations
+            + weaker.reverse_observations
+            + weaker.palindromic_observations,
+            weaker.observations,
+        )
+        self.assertEqual(
+            weaker.terminal_observations + weaker.internal_observations,
+            weaker.observations,
+        )
+        self.assertGreaterEqual(weaker.terminal_fraction, 0.0)
+        self.assertLessEqual(weaker.terminal_fraction, 1.0)
+        if weaker.strand_balance is not None:
+            self.assertGreaterEqual(weaker.strand_balance, 0.0)
+            self.assertLessEqual(weaker.strand_balance, 1.0)
         self.assertLess(weaker.similarity_to_strongest, 1.0)
         self.assertEqual(bytes(self.compacted.out_degrees), degrees_before)
         self.assertEqual(self.compacted.out_links.tobytes(), links_before)
@@ -74,6 +90,9 @@ class UnitigBubbleTests(unittest.TestCase):
             {"true", "false"},
         )
         self.assertIn("relative_coverage", rows[0])
+        self.assertIn("relative_internal_coverage", rows[0])
+        self.assertIn("terminal_fraction", rows[0])
+        self.assertIn("strand_balance", rows[0])
         self.assertIn("similarity_to_strongest", rows[0])
 
     def test_rejects_invalid_bounds(self) -> None:

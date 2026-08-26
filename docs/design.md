@@ -60,6 +60,10 @@ Each path is scored by nucleotide length, edge count, total and minimum support,
 
 The first five-seed validation found substantial coverage overlap between detected error paths and genuine 5× rare-strain paths. A maximum relative coverage of 0.20 selected 13 of 17 detected error paths but also 2 of 39 rare paths; a cutoff of 0.30 selected 16 errors but 11 rare paths. Both classes had approximately 0.976 sequence similarity for single-base alternatives. Coverage and sequence similarity alone therefore do not support safe automatic removal.
 
+An expanded 20-seed matrix added bidirectional reads, three error rates, three damage intensities, and rare strains at 1×, 2×, 5×, and 10×. Relative terminal enrichment reduced biological-path selection from 84 of 451 with coverage alone to 20 of 451, while selecting 111 of 182 detected error paths. However, 15 of those 20 biological losses occurred at 1×–2× rare-strain coverage. No tested rule selected any error path while guaranteeing zero biological loss across the complete matrix.
+
+The result supports graded classification rather than a universal hard threshold. Error-like paths can be simplified only under an explicitly chosen sensitivity/retention policy; ambiguous low-coverage alternatives should remain represented. Terminal damage produced no bubbles at any tested intensity and still requires separate tip and incomplete-branch logic.
+
 Removing a false alternative would reconnect the surrounding unitigs and can increase contig length and N50 after recompaction. Removing a genuine strain path would produce the same topological improvement while destroying biological variation, so contiguity cannot be optimized independently of rare-strain retention.
 
 ## Simple bubble detection
@@ -92,11 +96,11 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Add terminal/internal and orientation evidence to unitig-level alternative scoring.
-2. Validate whether the combined evidence reduces rare-strain false removal.
-3. Add conservative bubble simplification only after a safe decision rule is established.
-4. Add and validate incomplete-branch handling for the damage topology not represented by bubbles.
-5. Validate damage-aware decisions on clean, damaged, rare-strain, and mixed datasets.
-6. Evaluate paired-read links, controlled multi-k assembly, and profiled Cython optimization where needed.
+1. Add non-destructive error-like, damage-like, variation-like, and ambiguous path classification.
+2. Add molecule/link and quality evidence to improve low-coverage error-versus-variation separation.
+3. Add and validate incomplete-branch handling for the damage topology not represented by bubbles.
+4. Implement optional conservative simplification only for high-confidence error-like paths.
+5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures.
+6. Evaluate controlled multi-k assembly and profiled Cython optimization where needed.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
