@@ -469,6 +469,53 @@ The detector is fast and non-destructive, and its raw scores separate several we
 
 The next step is a labelled validation matrix for sequencing errors, terminal damage, and rare strains. Bubble removal will be implemented only after that matrix establishes thresholds that improve contiguity without sacrificing accuracy or biological variation.
 
+## Unitig-level bubble validation matrix
+
+### Question
+
+Can local coverage and sequence similarity identify removable sequencing-error paths without removing genuine low-abundance strain paths?
+
+Five random 20,000 bp references were tested with matched clean, sequencing-error, terminal-damage, and related-strain conditions. Reads were 60 bp at 20× total coverage with `k=21`, `min_count=2`, orientation-aware construction, and conservative tip cleaning. Related-strain mixtures contained 15× major-strain and 5× minor-strain reads with 12 spaced SNPs.
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/05_unitig_bubble_validation.py
+```
+
+### Detected alternatives
+
+| Condition | Bubbles | Labelled weaker paths |
+|---|---:|---:|
+| Clean | 0 | 0 |
+| Sequencing error | 17 | 17 error paths |
+| Terminal damage | 0 | 0 |
+| Rare strain | 40 | 39 rare paths and 1 major path |
+
+Error-path relative coverage ranged from 0.123 to 0.378, while rare paths ranged from 0.175 to 0.827. Both classes had approximately 0.976 sequence similarity because the detected alternatives represented single-base differences.
+
+### Threshold trade-off
+
+The table reports selection among detected weaker paths. Selecting a rare path represents biological loss.
+
+| Maximum relative coverage | Errors selected | Rare paths selected |
+|---|---:|---:|
+| 0.10 | 0/17 | 0/39 |
+| 0.20 | 13/17 (76%) | 2/39 (5%) |
+| 0.30 | 16/17 (94%) | 11/39 (28%) |
+| 0.50 | 17/17 (100%) | 28/39 (72%) |
+
+Similarity floors of 0.90 and 0.95 produced identical selections. A floor of 0.98 rejected every tested error and rare path, so similarity did not improve discrimination in this SNP-only matrix.
+
+### Interpretation
+
+- Coverage is useful but overlaps substantially between errors and low-abundance strains.
+- A 0.20 cutoff is the least harmful tested trade-off, not a validated cleaning rule.
+- Increasing the cutoff would probably merge more unitigs and improve N50, but rapidly increases genuine variant loss.
+- Terminal damage again produced no simple bubbles, so damage-aware assembly also requires tip and incomplete-branch decisions.
+- These percentages describe detected bubble paths, not all introduced sequencing errors or SNPs.
+
+Automatic bubble removal remains deferred. The next scoring stage must incorporate terminal/internal and orientation evidence, then repeat this matrix before contiguity changes are accepted. Generated tables remain ignored under `experiments/validation/generated/unitig_bubbles/`.
+
 ## K-mer size experiment
 
 ### Question

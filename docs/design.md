@@ -58,6 +58,10 @@ The compacted graph detector follows bounded, internally linear unitig alternati
 
 Each path is scored by nucleotide length, edge count, total and minimum support, mean edge support, local coverage relative to the strongest path, and sequence similarity to that path. Scores can be written to TSV, but no unitig or link is removed. This separation allows cleaning thresholds to be validated against sequencing errors, damage, and genuine rare-strain variation before they can affect N50 or accuracy.
 
+The first five-seed validation found substantial coverage overlap between detected error paths and genuine 5× rare-strain paths. A maximum relative coverage of 0.20 selected 13 of 17 detected error paths but also 2 of 39 rare paths; a cutoff of 0.30 selected 16 errors but 11 rare paths. Both classes had approximately 0.976 sequence similarity for single-base alternatives. Coverage and sequence similarity alone therefore do not support safe automatic removal.
+
+Removing a false alternative would reconnect the surrounding unitigs and can increase contig length and N50 after recompaction. Removing a genuine strain path would produce the same topological improvement while destroying biological variation, so contiguity cannot be optimized independently of rare-strain retention.
+
 ## Simple bubble detection
 
 The experimental detector reports bounded alternatives that leave one oriented handle, remain linear and edge-disjoint internally, and rejoin at the same handle. Reverse-complement observations are deduplicated through their shared physical edge paths.
@@ -88,10 +92,10 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Validate unitig-level bubble scores on labelled sequencing-error, damage, and rare-strain alternatives.
-2. Add conservative bubble simplification only after safe thresholds are established.
-3. Add and validate incomplete-branch handling using local support.
-4. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
+1. Add terminal/internal and orientation evidence to unitig-level alternative scoring.
+2. Validate whether the combined evidence reduces rare-strain false removal.
+3. Add conservative bubble simplification only after a safe decision rule is established.
+4. Add and validate incomplete-branch handling for the damage topology not represented by bubbles.
 5. Validate damage-aware decisions on clean, damaged, rare-strain, and mixed datasets.
 6. Evaluate paired-read links, controlled multi-k assembly, and profiled Cython optimization where needed.
 

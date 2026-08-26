@@ -41,6 +41,9 @@ All notable project changes will be documented in this file.
 - Non-destructive bounded bubble detection and scoring on the compacted unitig graph.
 - Optional unitig-path support, local-coverage, and sequence-similarity TSV reporting through `--unitig-bubble-report`.
 - Unitig-bubble tests covering bounds, scoring, unchanged graph state, CLI validation, and byte-identical assembly output.
+- Public oriented unitig-path spelling for ground-truth sequence validation.
+- Reproducible five-seed unitig-bubble matrix covering clean, sequencing-error, terminal-damage, and rare-strain conditions.
+- Candidate-level and threshold-grid TSV reports for measuring error selection against rare-strain loss.
 
 ### Changed
 

@@ -38,6 +38,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - maximal non-branching unitig extraction;
 - oriented unitig-level graph links with aggregate coverage and terminal evidence;
 - bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
+- labelled unitig-bubble validation across clean, error, damage, and rare-strain simulations;
 - graph topology and support summaries;
 - `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
@@ -122,6 +123,15 @@ The controlled terminal-evidence validation can be reproduced with:
 PYTHONPATH=src:tests python3 \
   experiments/04_terminal_evidence_ground_truth.py
 ```
+
+The unitig-bubble threshold matrix can be reproduced with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/05_unitig_bubble_validation.py
+```
+
+Generated candidate and threshold tables are written under `experiments/validation/generated/` and remain ignored by Git.
 
 ## Documentation
 
