@@ -25,6 +25,20 @@ class SimulateFragmentsTests(unittest.TestCase):
 
         self.assertEqual(first, second)
 
+    def test_can_sample_reverse_complement_reads(self) -> None:
+        reference = "AACCGGTTAA"
+
+        reads = simulate_fragments(
+            reference,
+            read_length=len(reference),
+            coverage=1,
+            seed=7,
+            reverse_fraction=1,
+        )
+
+        self.assertEqual(reads[0].sequence, "TTAACCGGTT")
+        self.assertTrue(reads[0].is_reverse)
+
 
 class SequencingErrorTests(unittest.TestCase):
     def test_error_rate_one_changes_every_base(self) -> None:

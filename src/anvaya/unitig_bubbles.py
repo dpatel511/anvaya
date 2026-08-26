@@ -19,7 +19,19 @@ class UnitigBubblePath:
     observations: int
     minimum_edge_support: int
     mean_edge_support: float
+    forward_observations: int
+    reverse_observations: int
+    palindromic_observations: int
+    left_terminal_observations: int
+    right_terminal_observations: int
+    ambiguous_terminal_observations: int
+    terminal_observations: int
+    internal_observations: int
+    terminal_fraction: float
+    strand_balance: float | None
     relative_coverage: float
+    relative_internal_coverage: float | None
+    terminal_enrichment: float
     similarity_to_strongest: float
 
 
@@ -49,6 +61,16 @@ class _RawPath:
     observations: int
     minimum_edge_support: int
     mean_edge_support: float
+    forward_observations: int
+    reverse_observations: int
+    palindromic_observations: int
+    left_terminal_observations: int
+    right_terminal_observations: int
+    ambiguous_terminal_observations: int
+    terminal_observations: int
+    internal_observations: int
+    terminal_fraction: float
+    strand_balance: float | None
 
 
 def _linear_branch(
@@ -102,9 +124,24 @@ def spell_unitig_path(
 def _score_path(
     graph: CompactedUnitigGraph, handles: tuple[int, ...]
 ) -> _RawPath:
-    supports = [graph.support(handle >> 1) for handle in handles]
+    supports = [graph.oriented_support(handle) for handle in handles]
     edge_count = sum(support.edge_count for support in supports)
     observations = sum(support.observations for support in supports)
+    forward = sum(support.forward_observations for support in supports)
+    reverse = sum(support.reverse_observations for support in supports)
+    palindromic = sum(support.palindromic_observations for support in supports)
+    left_terminal = sum(
+        support.left_terminal_observations for support in supports
+    )
+    right_terminal = sum(
+        support.right_terminal_observations for support in supports
+    )
+    ambiguous_terminal = sum(
+        support.ambiguous_terminal_observations for support in supports
+    )
+    terminal = sum(support.terminal_observations for support in supports)
+    internal = sum(support.internal_observations for support in supports)
+    directional = forward + reverse
     return _RawPath(
         handles=handles,
         sequence=spell_unitig_path(graph, handles),
@@ -114,6 +151,18 @@ def _score_path(
             support.minimum_edge_support for support in supports
         ),
         mean_edge_support=observations / edge_count,
+        forward_observations=forward,
+        reverse_observations=reverse,
+        palindromic_observations=palindromic,
+        left_terminal_observations=left_terminal,
+        right_terminal_observations=right_terminal,
+        ambiguous_terminal_observations=ambiguous_terminal,
+        terminal_observations=terminal,
+        internal_observations=internal,
+        terminal_fraction=terminal / observations,
+        strand_balance=(
+            2 * min(forward, reverse) / directional if directional else None
+        ),
     )
 
 
@@ -191,6 +240,9 @@ def find_unitig_bubbles(
             ),
         )
         strongest = raw_paths[strongest_index]
+        strongest_internal_mean = (
+            strongest.internal_observations / strongest.edge_count
+        )
         scored_paths = tuple(
             UnitigBubblePath(
                 handles=path.handles,
@@ -199,8 +251,29 @@ def find_unitig_bubbles(
                 observations=path.observations,
                 minimum_edge_support=path.minimum_edge_support,
                 mean_edge_support=path.mean_edge_support,
+                forward_observations=path.forward_observations,
+                reverse_observations=path.reverse_observations,
+                palindromic_observations=path.palindromic_observations,
+                left_terminal_observations=path.left_terminal_observations,
+                right_terminal_observations=path.right_terminal_observations,
+                ambiguous_terminal_observations=(
+                    path.ambiguous_terminal_observations
+                ),
+                terminal_observations=path.terminal_observations,
+                internal_observations=path.internal_observations,
+                terminal_fraction=path.terminal_fraction,
+                strand_balance=path.strand_balance,
                 relative_coverage=(
                     path.mean_edge_support / strongest.mean_edge_support
+                ),
+                relative_internal_coverage=(
+                    (path.internal_observations / path.edge_count)
+                    / strongest_internal_mean
+                    if strongest_internal_mean
+                    else None
+                ),
+                terminal_enrichment=(
+                    path.terminal_fraction - strongest.terminal_fraction
                 ),
                 similarity_to_strongest=(
                     1.0
@@ -248,7 +321,19 @@ def write_unitig_bubble_report(
                 "observations",
                 "minimum_edge_support",
                 "mean_edge_support",
+                "forward_observations",
+                "reverse_observations",
+                "palindromic_observations",
+                "left_terminal_observations",
+                "right_terminal_observations",
+                "ambiguous_terminal_observations",
+                "terminal_observations",
+                "internal_observations",
+                "terminal_fraction",
+                "strand_balance",
                 "relative_coverage",
+                "relative_internal_coverage",
+                "terminal_enrichment",
                 "similarity_to_strongest",
             ]
         )
@@ -268,7 +353,27 @@ def write_unitig_bubble_report(
                         bubble_path.observations,
                         bubble_path.minimum_edge_support,
                         f"{bubble_path.mean_edge_support:.6f}",
+                        bubble_path.forward_observations,
+                        bubble_path.reverse_observations,
+                        bubble_path.palindromic_observations,
+                        bubble_path.left_terminal_observations,
+                        bubble_path.right_terminal_observations,
+                        bubble_path.ambiguous_terminal_observations,
+                        bubble_path.terminal_observations,
+                        bubble_path.internal_observations,
+                        f"{bubble_path.terminal_fraction:.6f}",
+                        (
+                            ""
+                            if bubble_path.strand_balance is None
+                            else f"{bubble_path.strand_balance:.6f}"
+                        ),
                         f"{bubble_path.relative_coverage:.6f}",
+                        (
+                            ""
+                            if bubble_path.relative_internal_coverage is None
+                            else f"{bubble_path.relative_internal_coverage:.6f}"
+                        ),
+                        f"{bubble_path.terminal_enrichment:.6f}",
                         f"{bubble_path.similarity_to_strongest:.6f}",
                     ]
                 )

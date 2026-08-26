@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from numbers import Real
 from collections.abc import Sequence
 
-from anvaya.sequences import normalize_dna
+from anvaya.sequences import normalize_dna, reverse_complement
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class SimulatedRead:
     reference_end: int
     damage_positions: tuple[int, ...] = ()
     error_positions: tuple[int, ...] = ()
+    is_reverse: bool = False
 
 
 def _validate_probability(value: Real, name: str) -> float:
@@ -36,6 +37,7 @@ def simulate_fragments(
     read_length: int,
     coverage: Real,
     seed: int,
+    reverse_fraction: Real = 0,
 ) -> list[SimulatedRead]:
     """Sample fixed-length forward reads from a reference with replacement."""
     normalized = normalize_dna(reference)
@@ -51,6 +53,10 @@ def simulate_fragments(
         raise ValueError("coverage must be greater than 0")
     if not isinstance(seed, int) or isinstance(seed, bool):
         raise TypeError("seed must be an integer")
+    reverse_probability = _validate_probability(
+        reverse_fraction,
+        "reverse_fraction",
+    )
 
     read_count = math.ceil(float(coverage) * len(normalized) / read_length)
     random_generator = random.Random(seed)
@@ -60,6 +66,12 @@ def simulate_fragments(
         start = random_generator.randrange(len(normalized) - read_length + 1)
         end = start + read_length
         source = normalized[start:end]
+        is_reverse = (
+            reverse_probability > 0
+            and random_generator.random() < reverse_probability
+        )
+        if is_reverse:
+            source = reverse_complement(source)
         reads.append(
             SimulatedRead(
                 name=f"read-{index}",
@@ -67,6 +79,7 @@ def simulate_fragments(
                 source_sequence=source,
                 reference_start=start,
                 reference_end=end,
+                is_reverse=is_reverse,
             )
         )
 
