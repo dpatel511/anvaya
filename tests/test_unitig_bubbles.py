@@ -78,7 +78,7 @@ class UnitigBubbleTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "unitig-bubbles.tsv"
-            summary = write_unitig_bubble_report(bubbles, report)
+            summary = write_unitig_bubble_report(self.compacted, bubbles, report)
             with report.open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle, delimiter="\t"))
 
@@ -89,6 +89,13 @@ class UnitigBubbleTests(unittest.TestCase):
             {row["strongest_path"] for row in rows},
             {"true", "false"},
         )
+        self.assertIn("dominant", {row["classification"] for row in rows})
+        self.assertTrue(
+            {row["classification"] for row in rows}
+            & {"error-like", "damage-like", "variation-like", "ambiguous"}
+        )
+        self.assertIn("classification_reasons", rows[0])
+        self.assertIn("damage_compatible", rows[0])
         self.assertIn("relative_coverage", rows[0])
         self.assertIn("relative_internal_coverage", rows[0])
         self.assertIn("terminal_fraction", rows[0])
@@ -140,7 +147,10 @@ class UnitigBubbleCliTests(unittest.TestCase):
 
             self.assertTrue(report.exists())
             self.assertIn("unitig_bubbles_detected=1", stdout.getvalue())
-            self.assertIn("Scoring compacted-graph bubbles", stderr.getvalue())
+            self.assertIn(
+                "Scoring and classifying compacted-graph bubbles",
+                stderr.getvalue(),
+            )
             self.assertEqual(reported.read_bytes(), baseline.read_bytes())
 
     def test_cli_report_requires_orientation_aware_graph(self) -> None:

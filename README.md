@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, unitig-level bubble scoring, and non-destructive evidence reporting for graph alternatives.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, unitig-level bubble scoring, and non-destructive evidence-based classification of graph alternatives.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -40,6 +40,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
 - labelled unitig-bubble validation across clean, error, damage, and rare-strain simulations;
 - unitig-path terminal/internal evidence, terminal enrichment, and strand-balance scores;
+- explainable `error-like`, `damage-like`, `variation-like`, and `ambiguous` unitig-path labels;
 - graph topology and support summaries;
 - `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
@@ -101,7 +102,7 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
   -o contigs.fasta
 ```
 
-This report records path support, local coverage ratio, and sequence similarity. It does not simplify the graph or change the output assembly.
+This report records path support, local coverage, sequence similarity, substitutions, and an evidence-based classification with auditable reasons. Classification is conservative and does not simplify the graph or change the output assembly.
 
 ## Testing
 

@@ -577,6 +577,35 @@ Combined evidence added approximately 6% median runtime and 2.5% peak memory in 
 
 Generated tables remain ignored under `experiments/validation/generated/unitig_bubbles_extended/`.
 
+## Non-destructive unitig-path classification
+
+### Question
+
+Can the validated evidence be converted into explainable path labels without changing the assembly, and can damage-like labels avoid confusing genuine strain variation with terminal damage?
+
+The 220-condition combined-evidence matrix was rerun after adding `error-like`, `damage-like`, `variation-like`, and `ambiguous` labels. The locally strongest path is reported separately as `dominant`. Each TSV decision includes machine-readable reasons, substitutions relative to the strongest path, and damage compatibility.
+
+### Results
+
+| Truth class | Error-like | Damage-like | Variation-like | Ambiguous |
+|---|---:|---:|---:|---:|
+| Sequencing error (182 paths) | 111 | 0 | 2 | 69 |
+| Biological variation (451 paths) | 20 | 0 | 272 | 159 |
+
+The error-like label had 84.7% precision among selected paths and retained 95.6% of detected biological paths from error classification. An initial substitution-plus-enrichment damage rule incorrectly labelled 37 biological paths as damage-like. Requiring low local coverage and strand skew removed those false calls in this matrix.
+
+On the local 19,643-read FASTQ, classification reported eight bubbles and eight weaker alternatives, all ambiguous. Reporting took 0.03 seconds and produced a byte-identical FASTA compared with reporting disabled.
+
+### Interpretation
+
+- Classification is explainable, fast, and non-destructive.
+- The error-like label is useful for prioritization but is not safe enough for automatic deletion.
+- The absence of false damage-like calls supports conservative specificity.
+- No damage-derived bubble was detected, so damage-label sensitivity is unmeasured.
+- The next damage-aware implementation must classify weak tips and incomplete branches before tip cleaning.
+
+Generated classification tables remain ignored under `experiments/validation/generated/unitig_path_classification/`.
+
 ## K-mer size experiment
 
 ### Question
