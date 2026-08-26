@@ -39,6 +39,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - oriented unitig-level graph links with aggregate coverage and terminal evidence;
 - bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
 - labelled unitig-bubble validation across clean, error, damage, and rare-strain simulations;
+- unitig-path terminal/internal evidence, terminal enrichment, and strand-balance scores;
 - graph topology and support summaries;
 - `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
@@ -124,7 +125,7 @@ PYTHONPATH=src:tests python3 \
   experiments/04_terminal_evidence_ground_truth.py
 ```
 
-The unitig-bubble threshold matrix can be reproduced with:
+The extended 20-seed unitig-bubble threshold matrix can be reproduced with:
 
 ```bash
 PYTHONPATH=src:tests python3 \

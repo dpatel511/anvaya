@@ -44,6 +44,9 @@ All notable project changes will be documented in this file.
 - Public oriented unitig-path spelling for ground-truth sequence validation.
 - Reproducible five-seed unitig-bubble matrix covering clean, sequencing-error, terminal-damage, and rare-strain conditions.
 - Candidate-level and threshold-grid TSV reports for measuring error selection against rare-strain loss.
+- Orientation-correct forward/reverse and left/right terminal evidence on compacted unitigs.
+- Terminal fraction, relative internal coverage, terminal enrichment, and strand-balance bubble-path scores.
+- Bidirectional controlled-read simulation and an extended 220-condition validation matrix.
 
 ### Changed
 
