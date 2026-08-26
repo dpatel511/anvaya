@@ -64,6 +64,48 @@ class TipBackboneMatchingTests(unittest.TestCase):
         assert match is not None
         self.assertFalse(match.damage_compatible)
 
+    def test_reports_three_prime_g_to_a_substitution(self) -> None:
+        graph = build_bidirected_dbg(
+            ["ACATACACG"] * 10 + ["ACATACACA"],
+            5,
+            end_window=3,
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+
+        match = match_tip_to_backbone(graph, tip)
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(
+            [
+                (change.position, change.reference, change.alternative)
+                for change in match.substitutions
+            ],
+            [(5, "G", "A")],
+        )
+        self.assertTrue(match.damage_compatible)
+
+    def test_accepts_multiple_oriented_damage_substitutions(self) -> None:
+        graph = build_bidirected_dbg(
+            ["TCTCGTGAAGCC"] * 10 + ["TCTTATGAAGCC"],
+            5,
+            end_window=4,
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+
+        match = match_tip_to_backbone(graph, tip)
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(
+            [
+                (change.position, change.reference, change.alternative)
+                for change in match.substitutions
+            ],
+            [(5, "C", "T"), (6, "G", "A")],
+        )
+        self.assertTrue(match.damage_compatible)
+
 
 if __name__ == "__main__":
     unittest.main()
