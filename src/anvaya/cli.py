@@ -235,7 +235,8 @@ def _run_assemble(
             event_report,
         )
         _progress(
-            f"Reported {event_summary.tips} tips and "
+            f"Reported {event_summary.tips} tips "
+            f"({event_summary.matched_tips} matched to backbones) and "
             f"{event_summary.bubbles} bubbles to {event_report} in "
             f"{time.perf_counter() - stage_started:.2f}s"
         )
@@ -318,6 +319,7 @@ def _run_assemble(
         f"{graph.terminal_observations if orientation_aware else 0}"
     )
     print(f"reported_tips={event_summary.tips}")
+    print(f"reported_tip_matches={event_summary.matched_tips}")
     print(f"reported_bubbles={event_summary.bubbles}")
     print(f"reported_paths={event_summary.paths}")
     print(f"event_report={event_report or ''}")

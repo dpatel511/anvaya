@@ -17,6 +17,7 @@ from anvaya.bidirected import (
 )
 from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import find_weak_tip_candidates
+from anvaya.tip_matching import match_tip_to_backbone
 from helpers.simulation import (
     SimulatedRead,
     add_sequencing_errors,
@@ -49,6 +50,12 @@ class RunResult:
     candidate_precision: float | None
     terminal_only_candidate_edges: int
     tips: int
+    truth_tips: int
+    matched_tips: int
+    matched_truth_tips: int
+    ry_exact_matches: int
+    damage_compatible_matches: int
+    damage_compatible_truth_matches: int
     bubbles: int
     branching_nodes: int
     unitigs: int
@@ -139,6 +146,23 @@ def evaluate(condition, seed, reads, truth_codes, position_attribute) -> RunResu
     true_positives = candidates & retained_truth
     false_positives = candidates - retained_truth
     terminal_candidates = terminal_only_edges(graph, candidates)
+    truth_tips = 0
+    matched_tips = 0
+    matched_truth_tips = 0
+    ry_exact_matches = 0
+    damage_compatible_matches = 0
+    damage_compatible_truth_matches = 0
+    for tip in tips:
+        is_truth = bool(set(tip.edge_ids) & retained_truth)
+        truth_tips += is_truth
+        match = match_tip_to_backbone(graph, tip)
+        if match is None:
+            continue
+        matched_tips += 1
+        matched_truth_tips += is_truth
+        ry_exact_matches += match.ry_identity == 1.0
+        damage_compatible_matches += match.damage_compatible
+        damage_compatible_truth_matches += match.damage_compatible and is_truth
     unitig_sequences = extract_bidirected_unitigs(graph)
     summary = summarize_bidirected_graph(graph, unitig_sequences)
     introduced = (
@@ -152,7 +176,10 @@ def evaluate(condition, seed, reads, truth_codes, position_attribute) -> RunResu
         len(true_positives) / len(retained_truth) if retained_truth else None,
         len(true_positives) / len(candidates) if candidates else None,
         len(terminal_candidates),
-        len(tips), len(bubbles), summary.branching_nodes, summary.unitigs,
+        len(tips), truth_tips, matched_tips, matched_truth_tips,
+        ry_exact_matches, damage_compatible_matches,
+        damage_compatible_truth_matches, len(bubbles),
+        summary.branching_nodes, summary.unitigs,
         max(map(len, unitig_sequences)), terminal_fraction(graph) or 0.0,
         terminal_fraction(graph, candidates),
     )
@@ -229,6 +256,8 @@ def main() -> None:
                 f"{condition} seed={seed} tips={result.tips} bubbles={result.bubbles} "
                 f"candidates={result.candidate_edges} truth={result.retained_truth_edges} "
                 f"matched={result.truth_candidate_edges} "
+                f"tip_matches={result.matched_tips} "
+                f"damage_compatible={result.damage_compatible_matches} "
                 f"terminal_only={result.terminal_only_candidate_edges}"
             )
 

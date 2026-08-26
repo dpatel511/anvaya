@@ -23,6 +23,7 @@ from anvaya.metrics import GraphSummary, summarize_graph
 from anvaya.output import write_fasta
 from anvaya.reads import Read, load_reads
 from anvaya.sequences import canonical_sequence, normalize_dna, reverse_complement
+from anvaya.tip_matching import TipBackboneMatch, match_tip_to_backbone
 from anvaya.unitigs import extract_unitigs
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "Read",
     "StrandSupport",
     "TipCleaningSummary",
+    "TipBackboneMatch",
     "assemble",
     "assemble_file",
     "branching_nodes",
@@ -43,6 +45,7 @@ __all__ = [
     "in_degree",
     "kmers",
     "load_reads",
+    "match_tip_to_backbone",
     "normalize_dna",
     "out_degree",
     "reverse_complement",

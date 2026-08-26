@@ -383,6 +383,21 @@ Across retained damage-derived edges, terminal-only detection had 75.24% sensiti
 - The current detector misses about one quarter of retained damage edges and does not yet cover incomplete branches.
 - This validates the evidence representation under controlled conditions, not a complete damage-aware cleaning decision.
 
+### Weak-tip-to-backbone matching extension
+
+The same deterministic ten-seed matrix was extended to match each weak tip to an equal-length locally competing linear backbone. Matches report DNA identity, purine/pyrimidine (RY) identity, relative coverage, substitutions, and whether C→T/G→A changes have terminal evidence in the expected orientation.
+
+The complete 139-test suite passed. A fresh run wrote `parameters.tsv`, `per_run.tsv`, and `summary.tsv` under `experiments/validation/generated/backbone_matching_review/` and reproduced the preceding user-run reports byte-for-byte.
+
+| Metric | Clean | Terminal damage | Sequencing error |
+|---|---:|---:|---:|
+| Weak tips | 0 | 3,583 | 146 |
+| Tips matched to a backbone | 0 | 3,538 | 146 |
+| RY-exact matches | 0 | 3,538 | 47 |
+| Damage-compatible matches | 0 | 3,538 | 9 |
+
+Damage-tip match recall was 98.74%. Every matched damage tip was RY-exact and damage-compatible, but 9 of 146 random-error tips (6.16%) also passed the compatibility rule. Candidate recovery is therefore strong in this simulation, while the compatibility label is not specific enough to justify correction or graph removal. The next matrix must add reverse-orientation and 3′ G→A controls, multiple substitutions, incidental terminal evidence, alternative backbone topologies, low-abundance strain tips, and incomplete branches.
+
 ## Empirical non-UDG/UDG pilot
 
 Five non-overlapping 100,000-read R1 subsets were compared for untreated and full-UDG libraries from the same PES001.B dental-calculus sample. Reads shorter than `k=19` were excluded identically. Both treatments used `min_count=2`, orientation-aware construction, tip cleaning, bubble detection, and a five-base terminal window.

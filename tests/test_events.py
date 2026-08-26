@@ -49,7 +49,7 @@ class EventReportTests(unittest.TestCase):
 
     def test_reports_weak_tip_before_graph_cleaning(self) -> None:
         graph = build_bidirected_dbg(
-            ["AAGCCCAAT"] * 10 + ["AAGCCTAAA"],
+            ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
             5,
             end_window=3,
         )
@@ -62,10 +62,17 @@ class EventReportTests(unittest.TestCase):
             rows = _read_rows(output)
 
         self.assertEqual(summary.tips, 1)
+        self.assertEqual(summary.matched_tips, 1)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["event_type"], "tip")
         self.assertTrue(rows[0]["sequence"])
         self.assertGreater(int(rows[0]["left_terminal"]), 0)
+        self.assertEqual(rows[0]["backbone_matched"], "true")
+        self.assertEqual(rows[0]["tip_match_sequence"], "AGCCTAAA")
+        self.assertEqual(rows[0]["backbone_sequence"], "AGCCCAAA")
+        self.assertEqual(rows[0]["substitutions"], "5:C>T")
+        self.assertEqual(rows[0]["damage_compatible"], "true")
+        self.assertEqual(rows[0]["ry_identity"], "1.000000")
         self.assertEqual(bytes(graph.out_degrees), before)
 
     def test_requires_read_end_evidence(self) -> None:
@@ -119,6 +126,7 @@ class EventReportCliTests(unittest.TestCase):
 
             self.assertTrue(report.exists())
             self.assertIn("reported_bubbles=1", stdout.getvalue())
+            self.assertIn("reported_tip_matches=0", stdout.getvalue())
             self.assertIn(f"event_report={report}", stdout.getvalue())
             self.assertEqual(reported.read_bytes(), baseline.read_bytes())
 
