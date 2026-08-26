@@ -19,6 +19,11 @@ from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
 from anvaya.reads import load_reads
 from anvaya.unitigs import extract_unitigs
+from anvaya.unitig_bubbles import (
+    UnitigBubbleReportSummary,
+    find_unitig_bubbles,
+    write_unitig_bubble_report,
+)
 from anvaya.unitig_graph import build_compacted_unitig_graph
 
 
@@ -131,6 +136,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="write pre-cleaning tip and bubble evidence as TSV",
     )
     assemble_parser.add_argument(
+        "--unitig-bubble-report",
+        type=Path,
+        help="score compacted-graph bubble paths and write them as TSV",
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -163,6 +173,7 @@ def _run_assemble(
     detect_bubbles: bool,
     end_window: int,
     event_report: Path | None,
+    unitig_bubble_report: Path | None,
 ) -> int:
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
@@ -173,6 +184,10 @@ def _run_assemble(
         raise ValueError("--end-window requires --orientation-aware")
     if event_report is not None and end_window == 0:
         raise ValueError("--event-report requires a positive --end-window")
+    if unitig_bubble_report is not None and not orientation_aware:
+        raise ValueError(
+            "--unitig-bubble-report requires --orientation-aware"
+        )
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -256,6 +271,21 @@ def _run_assemble(
         unitigs = extract_unitigs(graph)
     _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
 
+    unitig_bubble_summary = UnitigBubbleReportSummary()
+    if unitig_bubble_report is not None:
+        stage_started = time.perf_counter()
+        _progress("Scoring compacted-graph bubbles")
+        unitig_bubbles = find_unitig_bubbles(unitig_graph)
+        unitig_bubble_summary = write_unitig_bubble_report(
+            unitig_bubbles,
+            unitig_bubble_report,
+        )
+        _progress(
+            f"Reported {unitig_bubble_summary.bubbles} compacted-graph "
+            f"bubbles to {unitig_bubble_report} in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
+
     stage_started = time.perf_counter()
     _progress("Calculating graph statistics")
     if orientation_aware:
@@ -290,6 +320,9 @@ def _run_assemble(
     print(f"reported_bubbles={event_summary.bubbles}")
     print(f"reported_paths={event_summary.paths}")
     print(f"event_report={event_report or ''}")
+    print(f"unitig_bubbles_detected={unitig_bubble_summary.bubbles}")
+    print(f"unitig_bubble_paths={unitig_bubble_summary.paths}")
+    print(f"unitig_bubble_report={unitig_bubble_report or ''}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -321,6 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.detect_bubbles,
                 arguments.end_window,
                 arguments.event_report,
+                arguments.unitig_bubble_report,
             )
     except (OSError, ValueError) as error:
         parser.error(str(error))
