@@ -13,6 +13,8 @@ from anvaya.bidirected import (
 )
 from anvaya.bubbles import Bubble, BubblePath
 from anvaya.cleaning import TipCandidate
+from anvaya.classification import format_substitutions
+from anvaya.tip_matching import match_tip_to_backbone
 
 
 @dataclass(slots=True, frozen=True)
@@ -20,6 +22,7 @@ class EventReportSummary:
     """Counts written to one graph-event report."""
 
     tips: int = 0
+    matched_tips: int = 0
     bubbles: int = 0
     paths: int = 0
 
@@ -179,6 +182,15 @@ def _bubble_rows(
                 sequence,
                 _format_substitutions(substitutions),
                 compatibility,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
             ]
         )
     return rows
@@ -188,7 +200,7 @@ def _tip_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     tip: TipCandidate,
-) -> list[object]:
+) -> tuple[list[object], bool]:
     left, right, internal, ambiguous = _path_evidence(
         graph,
         tip.start,
@@ -200,7 +212,12 @@ def _tip_row(
     minimum_support = min(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
     )
-    return [
+    match = match_tip_to_backbone(graph, tip)
+    substitutions = "" if match is None else format_substitutions(match.substitutions)
+    compatibility = (
+        "unknown" if match is None else str(match.damage_compatible).lower()
+    )
+    row = [
         event_id,
         "tip",
         0,
@@ -215,9 +232,19 @@ def _tip_row(
         internal,
         ambiguous,
         spell_edge_path(graph, tip.start, tip.edge_ids),
-        "",
-        "unknown",
+        substitutions,
+        compatibility,
+        "" if match is None else match.tip_sequence,
+        str(match is not None).lower(),
+        "" if match is None else match.backbone_sequence,
+        "" if match is None else len(match.backbone_edge_ids),
+        "" if match is None else match.backbone_observations,
+        "" if match is None else match.backbone_minimum_edge_support,
+        "" if match is None else f"{match.relative_coverage:.6f}",
+        "" if match is None else f"{match.sequence_identity:.6f}",
+        "" if match is None else f"{match.ry_identity:.6f}",
     ]
+    return row, match is not None
 
 
 def write_event_report(
@@ -252,11 +279,23 @@ def write_event_report(
                 "sequence",
                 "substitutions",
                 "damage_compatible",
+                "tip_match_sequence",
+                "backbone_matched",
+                "backbone_sequence",
+                "backbone_edge_count",
+                "backbone_observations",
+                "backbone_minimum_edge_support",
+                "relative_coverage",
+                "sequence_identity",
+                "ry_identity",
             ]
         )
         path_count = 0
+        matched_tip_count = 0
         for index, tip in enumerate(tips, start=1):
-            writer.writerow(_tip_row(graph, f"tip-{index}", tip))
+            row, matched = _tip_row(graph, f"tip-{index}", tip)
+            writer.writerow(row)
+            matched_tip_count += matched
             path_count += 1
         for index, bubble in enumerate(bubbles, start=1):
             rows = _bubble_rows(graph, f"bubble-{index}", bubble)
@@ -265,6 +304,7 @@ def write_event_report(
 
     return EventReportSummary(
         tips=len(tips),
+        matched_tips=matched_tip_count,
         bubbles=len(bubbles),
         paths=path_count,
     )
