@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, and non-destructive terminal-evidence reporting for graph alternatives.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, unitig-level bubble scoring, and non-destructive evidence reporting for graph alternatives.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -37,6 +37,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
 - oriented unitig-level graph links with aggregate coverage and terminal evidence;
+- bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
 - graph topology and support summaries;
 - `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
@@ -88,6 +89,17 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
 ```
 
 Evidence reporting is non-destructive. It does not yet remove or retain paths automatically, and it does not require a supplied damage profile.
+
+Compacted-graph bubble paths can be scored for threshold validation:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
+  --orientation-aware --clean-tips \
+  --unitig-bubble-report unitig_bubbles.tsv \
+  -o contigs.fasta
+```
+
+This report records path support, local coverage ratio, and sequence similarity. It does not simplify the graph or change the output assembly.
 
 ## Testing
 

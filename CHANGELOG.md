@@ -38,6 +38,9 @@ All notable project changes will be documented in this file.
 - Unit tests for end-evidence orientation, unchanged assembly output, event sequences, and CLI validation.
 - Compacted oriented unitig graph with links, coverage summaries, and terminal/internal evidence.
 - Unitig-graph tests covering branches, cycles, reverse links, evidence, and sequence equivalence.
+- Non-destructive bounded bubble detection and scoring on the compacted unitig graph.
+- Optional unitig-path support, local-coverage, and sequence-similarity TSV reporting through `--unitig-bubble-report`.
+- Unitig-bubble tests covering bounds, scoring, unchanged graph state, CLI validation, and byte-identical assembly output.
 
 ### Changed
 
