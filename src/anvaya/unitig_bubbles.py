@@ -1,11 +1,16 @@
 """Non-destructive bubble scoring on the compacted unitig graph."""
 
 import csv
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from anvaya.classification import (
+    classify_unitig_path,
+    format_substitutions,
+)
 from anvaya.unitig_graph import CompactedUnitigGraph
 
 
@@ -51,6 +56,10 @@ class UnitigBubbleReportSummary:
 
     bubbles: int = 0
     paths: int = 0
+    error_like: int = 0
+    damage_like: int = 0
+    variation_like: int = 0
+    ambiguous: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -301,9 +310,11 @@ def find_unitig_bubbles(
 
 
 def write_unitig_bubble_report(
-    bubbles: Sequence[UnitigBubble], path: str | Path
+    graph: CompactedUnitigGraph,
+    bubbles: Sequence[UnitigBubble],
+    path: str | Path,
 ) -> UnitigBubbleReportSummary:
-    """Write raw path scores for threshold validation as TSV."""
+    """Write raw scores and explainable classifications as TSV."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
@@ -313,6 +324,10 @@ def write_unitig_bubble_report(
                 "bubble_id",
                 "path_index",
                 "strongest_path",
+                "classification",
+                "classification_reasons",
+                "substitutions",
+                "damage_compatible",
                 "start_handle",
                 "end_handle",
                 "unitig_handles",
@@ -338,13 +353,31 @@ def write_unitig_bubble_report(
             ]
         )
         path_count = 0
+        classification_counts: Counter[str] = Counter()
         for bubble_index, bubble in enumerate(bubbles, start=1):
+            sequences = [
+                spell_unitig_path(graph, bubble_path.handles)
+                for bubble_path in bubble.paths
+            ]
+            reference_sequence = sequences[bubble.strongest_path_index]
             for path_index, bubble_path in enumerate(bubble.paths):
+                decision = classify_unitig_path(
+                    reference_sequence,
+                    sequences[path_index],
+                    bubble_path,
+                    dominant=path_index == bubble.strongest_path_index,
+                )
+                if decision.label != "dominant":
+                    classification_counts[decision.label] += 1
                 writer.writerow(
                     [
                         f"unitig-bubble-{bubble_index}",
                         path_index,
                         str(path_index == bubble.strongest_path_index).lower(),
+                        decision.label,
+                        ";".join(decision.reasons),
+                        format_substitutions(decision.substitutions),
+                        str(decision.damage_compatible).lower(),
                         bubble.start,
                         bubble.end,
                         ",".join(map(str, bubble_path.handles)),
@@ -382,4 +415,8 @@ def write_unitig_bubble_report(
     return UnitigBubbleReportSummary(
         bubbles=len(bubbles),
         paths=path_count,
+        error_like=classification_counts["error-like"],
+        damage_like=classification_counts["damage-like"],
+        variation_like=classification_counts["variation-like"],
+        ambiguous=classification_counts["ambiguous"],
     )

@@ -274,9 +274,10 @@ def _run_assemble(
     unitig_bubble_summary = UnitigBubbleReportSummary()
     if unitig_bubble_report is not None:
         stage_started = time.perf_counter()
-        _progress("Scoring compacted-graph bubbles")
+        _progress("Scoring and classifying compacted-graph bubbles")
         unitig_bubbles = find_unitig_bubbles(unitig_graph)
         unitig_bubble_summary = write_unitig_bubble_report(
+            unitig_graph,
             unitig_bubbles,
             unitig_bubble_report,
         )
@@ -322,6 +323,10 @@ def _run_assemble(
     print(f"event_report={event_report or ''}")
     print(f"unitig_bubbles_detected={unitig_bubble_summary.bubbles}")
     print(f"unitig_bubble_paths={unitig_bubble_summary.paths}")
+    print(f"unitig_error_like={unitig_bubble_summary.error_like}")
+    print(f"unitig_damage_like={unitig_bubble_summary.damage_like}")
+    print(f"unitig_variation_like={unitig_bubble_summary.variation_like}")
+    print(f"unitig_ambiguous={unitig_bubble_summary.ambiguous}")
     print(f"unitig_bubble_report={unitig_bubble_report or ''}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")

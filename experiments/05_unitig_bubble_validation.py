@@ -10,6 +10,7 @@ from pathlib import Path
 
 from anvaya.bidirected import build_bidirected_dbg
 from anvaya.cleaning import remove_weak_tips
+from anvaya.classification import classify_unitig_path
 from anvaya.sequences import reverse_complement
 from anvaya.unitig_bubbles import find_unitig_bubbles, spell_unitig_path
 from anvaya.unitig_graph import build_compacted_unitig_graph
@@ -50,6 +51,9 @@ class CandidateRecord:
     bubble_index: int
     path_index: int
     label: str
+    classification: str
+    classification_reasons: str
+    damage_compatible: bool
     sequence: str
     nucleotide_length: int
     edge_count: int
@@ -195,10 +199,20 @@ def evaluate(
     candidates: list[CandidateRecord] = []
 
     for bubble_index, bubble in enumerate(bubbles, start=1):
+        sequences = [
+            spell_unitig_path(compacted, path.handles)
+            for path in bubble.paths
+        ]
+        reference_sequence = sequences[bubble.strongest_path_index]
         for path_index, path in enumerate(bubble.paths):
             if path_index == bubble.strongest_path_index:
                 continue
-            sequence = spell_unitig_path(compacted, path.handles)
+            sequence = sequences[path_index]
+            decision = classify_unitig_path(
+                reference_sequence,
+                sequence,
+                path,
+            )
             candidates.append(
                 CandidateRecord(
                     condition=condition,
@@ -212,6 +226,9 @@ def evaluate(
                         major_reference,
                         minor_reference,
                     ),
+                    classification=decision.label,
+                    classification_reasons=";".join(decision.reasons),
+                    damage_compatible=decision.damage_compatible,
                     sequence=sequence,
                     nucleotide_length=path.nucleotide_length,
                     edge_count=path.edge_count,
@@ -356,6 +373,18 @@ def write_results(
         list(thresholds),
         tuple(ThresholdRecord.__dataclass_fields__),
     )
+
+    classification_counts = Counter(
+        (candidate.scenario, candidate.label, candidate.classification)
+        for candidate in candidates
+    )
+    with (output_dir / "classification_summary.tsv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(("scenario", "truth_label", "classification", "count"))
+        for key, count in sorted(classification_counts.items()):
+            writer.writerow((*key, count))
 
     with (output_dir / "summary.tsv").open(
         "w", encoding="utf-8", newline=""
