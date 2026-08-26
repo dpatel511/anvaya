@@ -30,6 +30,16 @@ class StrandSupport:
         return self.forward + self.reverse + self.palindromic
 
 
+@dataclass(slots=True, frozen=True)
+class EndSupport:
+    """Read-end evidence normalized to the canonical edge orientation."""
+
+    left: tuple[int, ...]
+    right: tuple[int, ...]
+    internal: int = 0
+    ambiguous_terminal: int = 0
+
+
 @dataclass(slots=True)
 class BidirectedDeBruijnGraph:
     """Canonical nodes and physical edges stored in compact integer arrays."""
@@ -41,10 +51,16 @@ class BidirectedDeBruijnGraph:
     forward_support: array = field(default_factory=lambda: array("I"))
     reverse_support: array = field(default_factory=lambda: array("I"))
     palindromic_support: array = field(default_factory=lambda: array("I"))
+    end_window: int = 0
+    left_end_support: array = field(default_factory=lambda: array("I"))
+    right_end_support: array = field(default_factory=lambda: array("I"))
+    internal_support: array = field(default_factory=lambda: array("I"))
+    ambiguous_end_support: array = field(default_factory=lambda: array("I"))
     out_edges: array = field(default_factory=lambda: array("i"))
     out_degrees: bytearray = field(default_factory=bytearray)
     active_edge_count: int = 0
     observations: int = 0
+    terminal_observations: int = 0
 
     @property
     def node_count(self) -> int:
@@ -60,6 +76,19 @@ class BidirectedDeBruijnGraph:
             self.forward_support[edge_id],
             self.reverse_support[edge_id],
             self.palindromic_support[edge_id],
+        )
+
+    def end_support(self, edge_id: int) -> EndSupport:
+        """Return terminal and internal support for one physical edge."""
+        if self.end_window == 0:
+            raise ValueError("read-end evidence was not collected")
+        offset = edge_id * self.end_window
+        end = offset + self.end_window
+        return EndSupport(
+            left=tuple(self.left_end_support[offset:end]),
+            right=tuple(self.right_end_support[offset:end]),
+            internal=self.internal_support[edge_id],
+            ambiguous_terminal=self.ambiguous_end_support[edge_id],
         )
 
 
@@ -87,6 +116,14 @@ def _decode_dna(code: int, length: int) -> str:
 
 def _encoded_kmers(sequence: str, k: int) -> Iterator[tuple[int, int]]:
     """Yield canonical k-mer codes and their strand classification."""
+    for _, canonical, orientation in _positioned_encoded_kmers(sequence, k):
+        yield canonical, orientation
+
+
+def _positioned_encoded_kmers(
+    sequence: str, k: int
+) -> Iterator[tuple[int, int, int]]:
+    """Yield read offsets, canonical k-mers, and strand classifications."""
     normalized = normalize_dna(sequence)
     mask = (1 << (2 * k)) - 1
     reverse_shift = 2 * (k - 1)
@@ -94,7 +131,7 @@ def _encoded_kmers(sequence: str, k: int) -> Iterator[tuple[int, int]]:
     reverse = 0
     valid_bases = 0
 
-    for base in normalized:
+    for index, base in enumerate(normalized):
         if base == "N":
             forward = 0
             reverse = 0
@@ -109,11 +146,11 @@ def _encoded_kmers(sequence: str, k: int) -> Iterator[tuple[int, int]]:
             continue
 
         if forward < reverse:
-            yield forward, 0
+            yield index - k + 1, forward, 0
         elif reverse < forward:
-            yield reverse, 1
+            yield index - k + 1, reverse, 1
         else:
-            yield forward, 2
+            yield index - k + 1, forward, 2
 
 
 def _unpack_support(packed: int) -> StrandSupport:
@@ -149,7 +186,10 @@ def _append_arc(graph: BidirectedDeBruijnGraph, source: Handle, edge_id: int) ->
 
 
 def build_bidirected_dbg(
-    reads: Sequence[str], k: int, min_count: int = 1
+    reads: Sequence[str],
+    k: int,
+    min_count: int = 1,
+    end_window: int = 0,
 ) -> BidirectedDeBruijnGraph:
     """Build a compact canonical graph with strand-specific edge support."""
     if not reads:
@@ -162,12 +202,18 @@ def build_bidirected_dbg(
         raise TypeError("min_count must be an integer")
     if min_count < 1:
         raise ValueError("min_count must be at least 1")
+    if not isinstance(end_window, int) or isinstance(end_window, bool):
+        raise TypeError("end_window must be an integer")
+    if end_window < 0:
+        raise ValueError("end_window must not be negative")
 
     observed: dict[int, int] = {}
+    terminal: dict[int, list[int]] = {}
     for read in reads:
         if len(read) < k:
             raise ValueError("each read must be at least k bases long")
-        for canonical, orientation in _encoded_kmers(read, k):
+        last_start = len(read) - k
+        for start, canonical, orientation in _positioned_encoded_kmers(read, k):
             if orientation == 0:
                 increment = 1
             elif orientation == 1:
@@ -176,13 +222,39 @@ def build_bidirected_dbg(
                 increment = _PALINDROMIC_INCREMENT
             observed[canonical] = observed.get(canonical, 0) + increment
 
-    graph = BidirectedDeBruijnGraph(node_length=k - 1)
+            if end_window == 0:
+                continue
+            left_distance = start
+            right_distance = last_start - start
+            if orientation == 1:
+                left_distance, right_distance = right_distance, left_distance
+            is_terminal = (
+                left_distance < end_window or right_distance < end_window
+            )
+            if not is_terminal:
+                continue
+
+            evidence = terminal.get(canonical)
+            if evidence is None:
+                evidence = [0] * (2 * end_window + 2)
+                terminal[canonical] = evidence
+            if orientation == 2:
+                evidence[-1] += 1
+                continue
+            if left_distance < end_window:
+                evidence[left_distance] += 1
+            if right_distance < end_window:
+                evidence[end_window + right_distance] += 1
+            evidence[-2] += 1
+
+    graph = BidirectedDeBruijnGraph(node_length=k - 1, end_window=end_window)
     node_ids: dict[int, int] = {}
     node_mask = (1 << (2 * (k - 1))) - 1
 
     while observed:
         kmer_code, packed = observed.popitem()
         support = _unpack_support(packed)
+        evidence = terminal.pop(kmer_code, None)
         if support.total < min_count:
             continue
 
@@ -198,6 +270,15 @@ def build_bidirected_dbg(
         graph.reverse_support.append(support.reverse)
         graph.palindromic_support.append(support.palindromic)
         graph.observations += support.total
+        if end_window:
+            if evidence is None:
+                evidence = [0] * (2 * end_window + 2)
+            graph.left_end_support.extend(evidence[:end_window])
+            graph.right_end_support.extend(evidence[end_window : 2 * end_window])
+            terminal_support = evidence[-2] + evidence[-1]
+            graph.internal_support.append(support.total - terminal_support)
+            graph.ambiguous_end_support.append(evidence[-1])
+            graph.terminal_observations += terminal_support
 
     handle_count = graph.node_count * 2
     graph.out_degrees = bytearray(handle_count)
@@ -277,6 +358,10 @@ def _deactivate_edge(graph: BidirectedDeBruijnGraph, edge_id: int) -> int:
     support = _edge_support_total(graph, edge_id)
     graph.active_edge_count -= 1
     graph.observations -= support
+    if graph.end_window:
+        graph.terminal_observations -= (
+            support - graph.internal_support[edge_id]
+        )
     return support
 
 
@@ -285,6 +370,20 @@ def _spell_path(graph: BidirectedDeBruijnGraph, path: list[Handle]) -> str:
     return sequence + "".join(
         oriented_sequence(graph, handle)[-1] for handle in path[1:]
     )
+
+
+def spell_edge_path(
+    graph: BidirectedDeBruijnGraph,
+    start: Handle,
+    edge_ids: Sequence[int],
+) -> str:
+    """Spell an oriented sequence from a start handle and physical edges."""
+    handles = [start]
+    current = start
+    for edge_id in edge_ids:
+        current = _successor(graph, current, edge_id)
+        handles.append(current)
+    return _spell_path(graph, handles)
 
 
 def extract_bidirected_unitigs(graph: BidirectedDeBruijnGraph) -> list[str]:

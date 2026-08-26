@@ -26,11 +26,20 @@ class TipCleaningSummary:
     rounds: int = 0
 
 
+@dataclass(slots=True, frozen=True)
+class TipCandidate:
+    """A weak dead-end path reported before graph modification."""
+
+    start: int
+    end: int
+    edge_ids: tuple[int, ...]
+
+
 def _tip_candidate(
     graph: BidirectedDeBruijnGraph,
     start: int,
     max_tip_length: int,
-) -> list[int] | None:
+) -> TipCandidate | None:
     path: list[int] = []
     current = start
     maximum_support = 0
@@ -63,7 +72,36 @@ def _tip_candidate(
     )
     if maximum_support * _SUPPORT_RATIO_DENOMINATOR > competing_support:
         return None
-    return path
+    return TipCandidate(start=start, end=current, edge_ids=tuple(path))
+
+
+def find_weak_tip_candidates(
+    graph: BidirectedDeBruijnGraph,
+    max_tip_length: int | None = None,
+) -> list[TipCandidate]:
+    """Report weak tips without changing the graph."""
+    if max_tip_length is None:
+        max_tip_length = 2 * (graph.node_length + 1)
+    if max_tip_length < graph.node_length + 1:
+        raise ValueError("max_tip_length must be at least k")
+
+    candidates: list[TipCandidate] = []
+    seen: set[tuple[int, ...]] = set()
+    for start in range(graph.node_count * 2):
+        if (
+            graph.out_degrees[flip_handle(start)] != 0
+            or graph.out_degrees[start] != 1
+        ):
+            continue
+        candidate = _tip_candidate(graph, start, max_tip_length)
+        if candidate is None:
+            continue
+        signature = tuple(sorted(candidate.edge_ids))
+        if signature in seen:
+            continue
+        seen.add(signature)
+        candidates.append(candidate)
+    return candidates
 
 
 def remove_weak_tips(
@@ -90,14 +128,14 @@ def remove_weak_tips(
             ):
                 continue
 
-            path = _tip_candidate(graph, start, max_tip_length)
-            if path is None:
+            candidate = _tip_candidate(graph, start, max_tip_length)
+            if candidate is None:
                 continue
 
-            for edge_id in path:
+            for edge_id in candidate.edge_ids:
                 observations_removed += _deactivate_edge(graph, edge_id)
             tips_removed += 1
-            edges_removed += len(path)
+            edges_removed += len(candidate.edge_ids)
             removed_this_round += 1
 
         if removed_this_round == 0:
