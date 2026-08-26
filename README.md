@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, topology analysis, unitig extraction, and controlled graph-disturbance tests.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, topology analysis, unitig extraction, conservative tip cleaning, and non-destructive simple-bubble detection.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -29,6 +29,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - combined forward and reverse-complement k-mer support;
 - optional minimum k-mer support filtering;
 - experimental conservative tip cleaning for short, weak dead-end paths;
+- non-destructive detection of bounded, simple graph bubbles;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
@@ -62,6 +63,16 @@ anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
 ```
 
 Tip cleaning is not yet a default because it must be validated on damaged reads and low-abundance strains.
+
+Simple bubbles can be reported without changing the graph or output unitigs:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
+  --orientation-aware --clean-tips --detect-bubbles \
+  -o contigs.fasta
+```
+
+Initial controlled tests found that rare-strain SNPs and sequencing errors can both form simple bubbles, while terminal damage primarily formed tips and incomplete branches. Bubble detection is therefore an analysis primitive, not yet a graph-cleaning or damage-classification rule.
 
 ## Testing
 

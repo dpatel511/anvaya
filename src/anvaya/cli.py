@@ -11,6 +11,7 @@ from anvaya.bidirected import (
     extract_bidirected_unitigs,
     summarize_bidirected_graph,
 )
+from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
 from anvaya.graph import build_dbg
 from anvaya.metrics import summarize_graph
@@ -97,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="experimentally remove short, weak dead-end paths",
     )
     assemble_parser.add_argument(
+        "--detect-bubbles",
+        action="store_true",
+        help="report simple graph bubbles without changing the assembly",
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -126,10 +132,13 @@ def _run_assemble(
     min_count: int,
     orientation_aware: bool,
     clean_tips: bool,
+    detect_bubbles: bool,
 ) -> int:
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
         raise ValueError("--clean-tips requires --orientation-aware")
+    if detect_bubbles and not orientation_aware:
+        raise ValueError("--detect-bubbles requires --orientation-aware")
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -170,6 +179,16 @@ def _run_assemble(
             f"{time.perf_counter() - stage_started:.2f}s"
         )
 
+    bubbles = []
+    if detect_bubbles:
+        stage_started = time.perf_counter()
+        _progress("Detecting simple bubbles")
+        bubbles = find_simple_bubbles(graph)
+        _progress(
+            f"Detected {len(bubbles)} simple bubbles in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
+
     stage_started = time.perf_counter()
     _progress("Extracting unitigs")
     if orientation_aware:
@@ -201,6 +220,8 @@ def _run_assemble(
     print(f"tips_removed={cleaning_summary.tips_removed}")
     print(f"tip_edges_removed={cleaning_summary.edges_removed}")
     print(f"tip_observations_removed={cleaning_summary.observations_removed}")
+    print(f"bubble_detection={str(detect_bubbles).lower()}")
+    print(f"bubbles_detected={len(bubbles)}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -225,6 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.min_count,
                 arguments.orientation_aware,
                 arguments.clean_tips,
+                arguments.detect_bubbles,
             )
     except (OSError, ValueError) as error:
         parser.error(str(error))

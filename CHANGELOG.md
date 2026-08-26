@@ -28,6 +28,9 @@ All notable project changes will be documented in this file.
 - Experimental conservative tip cleaning through `--clean-tips`.
 - In-place compact-graph edge deactivation and active graph accounting.
 - Reproducible clean tip-validation matrix with verified stage resumption and TSV summaries.
+- Non-destructive bounded simple-bubble detection for the compact bidirected graph.
+- Optional bubble reporting through `--detect-bubbles`.
+- Bubble tests covering support, bounds, orientation deduplication, determinism, CLI reporting, and unchanged assembly output.
 
 ### Changed
 
