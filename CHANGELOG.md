@@ -36,6 +36,8 @@ All notable project changes will be documented in this file.
 - Sequence, support, substitution, and damage-compatibility fields for graph alternatives.
 - Controlled ten-seed terminal-damage validation with reproducible parameter, per-run, and summary tables.
 - Unit tests for end-evidence orientation, unchanged assembly output, event sequences, and CLI validation.
+- Compacted oriented unitig graph with links, coverage summaries, and terminal/internal evidence.
+- Unitig-graph tests covering branches, cycles, reverse links, evidence, and sequence equivalence.
 
 ### Changed
 
@@ -44,3 +46,5 @@ All notable project changes will be documented in this file.
 - Replaced string-based orientation-aware k-mers with rolling 2-bit encoding.
 - Replaced nested orientation-aware graph objects with compact integer arrays and byte-array traversal state.
 - Reduced the orientation-aware benchmark wall time by 41% and peak memory by 60% without changing QUAST accuracy metrics.
+- Replaced full node decoding during path spelling with constant-time oriented base extraction.
+- Routed orientation-aware CLI output through the compacted unitig graph without changing FASTA output.

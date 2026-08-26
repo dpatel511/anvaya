@@ -40,6 +40,12 @@ Base quality, molecule identity, paired-fragment links, and an inferred library-
 
 The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
 
+## Compacted unitig graph
+
+After k-mer-level cleaning and event reporting, each active maximal non-branching path is represented as one physical unitig. Oriented unitig handles retain links in both directions without duplicating reverse-complement sequences. Each unitig stores its sequence, path length, total, minimum, and mean edge support, plus aggregated terminal and internal observations.
+
+The CLI now writes sequences from this representation. No simplification decision is made at the unitig level yet, so compaction must preserve the previous FASTA exactly. The connected unitig graph is the intended substrate for local-coverage bubble and branch decisions because those operations can inspect thousands of unitigs rather than millions of k-mer edges.
+
 ## Conservative tip cleaning
 
 The experimental cleaner considers only dead-end paths no longer than `2 × k`. A path is removed when its strongest edge has at most 20% of the support of a competing edge at the attachment branch. Long tips, isolated paths, and strongly supported alternatives are preserved.
@@ -76,11 +82,11 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Extend event representation to incomplete branches and provenance-linked support.
-2. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
-3. Validate conservative decisions on clean, damaged, rare-strain, and mixed datasets.
-4. Evaluate additional matched empirical non-UDG/UDG libraries.
-5. Evaluate paired-read links and controlled multi-k assembly after the first damage-aware prototype is accurate.
+1. Add conservative unitig-level bubble and incomplete-branch simplification using local support.
+2. Validate contiguity, accuracy, and rare-strain retention with damage evidence disabled.
+3. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
+4. Validate damage-aware decisions on clean, damaged, rare-strain, and mixed datasets.
+5. Evaluate additional empirical libraries, paired-read links, and controlled multi-k assembly.
 6. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.

@@ -397,6 +397,42 @@ Five non-overlapping 100,000-read R1 subsets were compared for untreated and ful
 
 Non-UDG data had more normalized bubbles, branching nodes, and unitigs in all five replicates, supporting greater graph disturbance without UDG treatment. Tip and terminal-enrichment differences were not significant, and the libraries differ in layout and read-length composition. This pilot therefore supports a graph-level effect but does not independently prove that the observed difference is caused only by terminal damage.
 
+## Compacted unitig-graph validation
+
+### Question
+
+Can the orientation-aware k-mer graph be compacted into a connected unitig-level graph without changing assembly sequences or losing coverage and terminal evidence?
+
+### Validation
+
+- All 113 unit tests passed.
+- A 676,696-read clean bacterial benchmark was assembled with `k=31`, `min_count=2`, orientation-aware construction, and tip cleaning.
+- The historical, initial compacted, and optimized compacted FASTA files had the same SHA-256 hash.
+- Ten clean, ten terminal-damage, ten sequencing-error, and five rare-strain simulations were checked independently.
+- All 35 controlled graphs preserved exact unitig order and sequences, total observations, terminal observations, and reverse-symmetric links.
+
+### Large clean benchmark
+
+| Metric | Historical extraction | Initial compaction | Optimized compaction |
+|---|---:|---:|---:|
+| Unitigs | 4,760 | 4,760 | 4,760 |
+| Oriented unitig links | — | 12,986 | 12,986 |
+| Largest contig | 46,465 bp | 46,465 bp | 46,465 bp |
+| Raw FASTA N50 | 7,721 bp | 7,721 bp | 7,721 bp |
+| Wall time | 117.52 s | 134.37 s | 130.64 s |
+| Peak memory | 2,903,640 KiB | 2,937,744 KiB | 2,915,928 KiB |
+| Compaction stage | — | 21.11 s | 6.82 s |
+
+Constant-time oriented base extraction and removal of the temporary edge-owner array made the compaction stage 68% faster and reduced its measured peak-memory overhead by about 21 MiB relative to the initial implementation. The optimized complete run remained about 11% slower and 0.4% higher in peak memory than the historical run; read loading and k-mer graph construction also varied between runs, so these totals are directional rather than a controlled microbenchmark.
+
+### Interpretation
+
+- Scientific output and evidence accounting are unchanged.
+- Compaction itself does not improve N50; it creates the connected assembly graph required for simplification.
+- The current implementation briefly holds both graph representations, so construction-time peak memory does not decrease yet.
+- Subsequent simplification can operate on 4,760 unitigs instead of roughly five million active k-mer edges.
+- Generated validation outputs remain ignored under `experiments/validation/generated/unitig_graph/`.
+
 ## K-mer size experiment
 
 ### Question
