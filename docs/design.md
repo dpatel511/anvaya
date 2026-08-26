@@ -34,7 +34,9 @@ Internal damage calibration will be part of the assembler. PyDamage and similar 
 
 The experimental graph stores each canonical `(k-1)`-mer once and uses oriented integer handles to traverse either strand. A physical k-mer edge therefore represents both its forward traversal and the reverse-complement traversal. Forward, reverse, and palindromic observations are retained separately, while `min_count` is applied to their combined support.
 
-This representation prevents the two DNA strands from producing duplicate assemblies and establishes the structure needed for later orientation-dependent damage evidence. It does not yet store read-end position, base quality, molecule identity, or library-level damage evidence.
+This representation prevents the two DNA strands from producing duplicate assemblies. With a positive end window, each physical edge now stores compact distance-binned support from both canonical ends, internal support, and ambiguous palindromic terminal support. Reverse observations swap their end distances into canonical orientation.
+
+Base quality, molecule identity, paired-fragment links, and an inferred library-level damage model are not yet stored.
 
 The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
 
@@ -50,6 +52,12 @@ The experimental detector reports bounded alternatives that leave one oriented h
 
 Detection is non-destructive: it records edge paths and support summaries without deactivating edges or changing unitigs. Cycles, long alternatives, and complex tangles are skipped rather than guessed. The detector is a prerequisite for later evidence-aware decisions, not a bubble-removal rule.
 
+## Terminal-evidence reporting
+
+Weak tips and simple bubble paths are collected before graph cleaning. Their sequences, edge support, terminal/internal evidence, and substitutions are streamed to TSV. Equal-length bubble alternatives are marked damage-compatible only when C→T or G→A substitutions have support at the corresponding oriented molecule end.
+
+Reporting does not change the graph. Tips currently remain unclassified when no competing reference path exists, and no evidence-based simplification decision is implemented yet.
+
 ## Evidence from the current baseline
 
 Minimum-support filtering showed that unsupported k-mers cause most initial graph fragmentation. On the clean single-genome benchmark, `min_count=2` increased genome recovery from 21.444% to 94.940% without introducing a reported misassembly.
@@ -64,12 +72,14 @@ Controlled bubble tests showed zero detections in clean conditions. Sequencing e
 
 Terminal damage produced hundreds of weak tips but no simple bubbles under the tested `k=21`, `min_count=2` conditions. Damage-aware decisions must therefore evaluate tips and incomplete branches as well as bubbles, and must operate before irreversible tip removal. The current count threshold also limits recovery of very low-coverage strain alternatives.
 
+In a ten-seed controlled validation, terminal-only candidate edges recovered 75.24% of retained damage-derived edges with 98.52% pooled precision against clean and sequencing-error controls. All 5,460 detected damage candidates were terminal-only; 82 terminal-only candidates occurred in error controls. An empirical five-replicate comparison of matched non-UDG and full-UDG R1 subsets showed significantly more normalized bubbles and branching in non-UDG data, but terminal-event enrichment was not significant. These results validate the evidence primitive, not a final damage classifier.
+
 ## Near-term development sequence
 
-1. Add compact terminal-position and orientation evidence during graph construction.
-2. Evaluate tips, simple bubbles, and incomplete branches before graph cleaning.
-3. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
-4. Validate conservative decisions on clean, damaged, rare-strain, and mixed datasets.
+1. Extend event representation to incomplete branches and provenance-linked support.
+2. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
+3. Validate conservative decisions on clean, damaged, rare-strain, and mixed datasets.
+4. Evaluate additional matched empirical non-UDG/UDG libraries.
 5. Evaluate paired-read links and controlled multi-k assembly after the first damage-aware prototype is accurate.
 6. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
 

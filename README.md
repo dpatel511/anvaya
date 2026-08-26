@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, topology analysis, unitig extraction, conservative tip cleaning, and non-destructive simple-bubble detection.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, topology analysis, unitig extraction, conservative tip cleaning, simple-bubble detection, and non-destructive terminal-evidence reporting for graph alternatives.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -30,6 +30,9 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - optional minimum k-mer support filtering;
 - experimental conservative tip cleaning for short, weak dead-end paths;
 - non-destructive detection of bounded, simple graph bubbles;
+- compact read-end evidence collected during orientation-aware graph construction;
+- sequence-level TSV reports for weak tips and bubble paths;
+- damage-compatible C→T/G→A annotation for simple bubble alternatives;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
@@ -74,6 +77,17 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
 
 Initial controlled tests found that rare-strain SNPs and sequencing errors can both form simple bubbles, while terminal damage primarily formed tips and incomplete branches. Bubble detection is therefore an analysis primitive, not yet a graph-cleaning or damage-classification rule.
 
+Read-end evidence and event sequences can be reported before cleaning:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
+  --orientation-aware --end-window 5 \
+  --clean-tips --detect-bubbles --event-report events.tsv \
+  -o contigs.fasta
+```
+
+Evidence reporting is non-destructive. It does not yet remove or retain paths automatically, and it does not require a supplied damage profile.
+
 ## Testing
 
 ```bash
@@ -88,6 +102,13 @@ python3 experiments/03_tip_cleaning_validation.py \
 ```
 
 Completed simulation, assembly, and QUAST stages are verified and skipped.
+
+The controlled terminal-evidence validation can be reproduced with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/04_terminal_evidence_ground_truth.py
+```
 
 ## Documentation
 

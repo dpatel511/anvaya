@@ -337,6 +337,66 @@ On the local 19,643-read FASTQ used for prior performance checks, the tip-cleane
 
 These are controlled development results, not publication-level sensitivity or specificity estimates. Exact event-level precision and recall require bubble path sequences and provenance-linked ground truth.
 
+## Terminal-evidence ground-truth validation
+
+### Question
+
+Can read-end evidence recover graph edges created by terminal aDNA damage while distinguishing them from clean data and ordinary sequencing errors?
+
+### Setup
+
+- Ten random 20,000 bp references using seeds 901–910.
+- Identical 60 bp, 20× source molecules for clean, damage, and error conditions within each seed.
+- `k=21`, `min_count=2`, orientation-aware graph, and a five-base terminal window.
+- C→T/G→A terminal rates of 0.45, 0.30, 0.20, 0.12, and 0.06.
+- Independent sequencing-error rate of 0.005.
+- Ground truth defined as changed k-mer edges that remained after `min_count=2`.
+
+Run with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/04_terminal_evidence_ground_truth.py
+```
+
+The ignored output directory contains `parameters.tsv`, `per_run.tsv`, and `summary.tsv`.
+
+### Results
+
+| Metric | Clean | Terminal damage | Sequencing error |
+|---|---:|---:|---:|
+| Introduced base events | 0 | 37,908 | 20,149 |
+| Retained changed edges | 0 | 7,257 | 2,376 |
+| Candidate edges | 0 | 5,460 | 1,753 |
+| Ground-truth candidate edges | 0 | 5,460 | 1,501 |
+| Terminal-only candidate edges | 0 | 5,460 | 82 |
+| Tips | 0 | 3,583 | 146 |
+| Simple bubbles | 0 | 0 | 12 |
+
+Across retained damage-derived edges, terminal-only detection had 75.24% sensitivity. Against the clean and sequencing-error controls, pooled terminal-only precision was 98.52%. Damage reduced the mean longest unitig from 19,849 bp in clean graphs to 305 bp. All damage candidates were tips; none formed a simple bubble.
+
+### Interpretation
+
+- Topology alone is insufficient because sequencing errors also form candidate paths.
+- Terminal localization strongly separates the simulated damage candidates from error candidates.
+- Evaluation must use retained graph truth: most introduced base events do not survive support filtering as distinct graph edges.
+- The current detector misses about one quarter of retained damage edges and does not yet cover incomplete branches.
+- This validates the evidence representation under controlled conditions, not a complete damage-aware cleaning decision.
+
+## Empirical non-UDG/UDG pilot
+
+Five non-overlapping 100,000-read R1 subsets were compared for untreated and full-UDG libraries from the same PES001.B dental-calculus sample. Reads shorter than `k=19` were excluded identically. Both treatments used `min_count=2`, orientation-aware construction, tip cleaning, bubble detection, and a five-base terminal window.
+
+| Metric per million retained observations | Non-UDG | Full-UDG | Exact permutation p |
+|---|---:|---:|---:|
+| Bubbles | 11.73 | 5.66 | 0.0159 |
+| Branching nodes | 391.04 | 269.15 | 0.0079 |
+| Unitigs | 16,663.80 | 16,014.96 | 0.0079 |
+| Tips | 8.65 | 7.51 | 0.4444 |
+| Event terminal fraction | 9.5% | 7.6% | 0.3730 |
+
+Non-UDG data had more normalized bubbles, branching nodes, and unitigs in all five replicates, supporting greater graph disturbance without UDG treatment. Tip and terminal-enrichment differences were not significant, and the libraries differ in layout and read-length composition. This pilot therefore supports a graph-level effect but does not independently prove that the observed difference is caused only by terminal damage.
+
 ## K-mer size experiment
 
 ### Question

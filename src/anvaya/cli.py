@@ -13,6 +13,8 @@ from anvaya.bidirected import (
 )
 from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
+from anvaya.cleaning import find_weak_tip_candidates
+from anvaya.events import EventReportSummary, write_event_report
 from anvaya.graph import build_dbg
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
@@ -38,6 +40,18 @@ def _minimum_count(value: str) -> int:
     if count < 1:
         raise argparse.ArgumentTypeError("minimum count must be at least 1")
     return count
+
+
+def _end_window(value: str) -> int:
+    try:
+        window = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "end window must be an integer"
+        ) from error
+    if window < 0:
+        raise argparse.ArgumentTypeError("end window must not be negative")
+    return window
 
 
 def _progress(message: str) -> None:
@@ -103,6 +117,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="report simple graph bubbles without changing the assembly",
     )
     assemble_parser.add_argument(
+        "--end-window",
+        type=_end_window,
+        default=0,
+        help=(
+            "collect canonicalized read-end evidence within this many "
+            "k-mer positions (default: 0, disabled)"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--event-report",
+        type=Path,
+        help="write pre-cleaning tip and bubble evidence as TSV",
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -133,12 +161,18 @@ def _run_assemble(
     orientation_aware: bool,
     clean_tips: bool,
     detect_bubbles: bool,
+    end_window: int,
+    event_report: Path | None,
 ) -> int:
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
         raise ValueError("--clean-tips requires --orientation-aware")
     if detect_bubbles and not orientation_aware:
         raise ValueError("--detect-bubbles requires --orientation-aware")
+    if end_window and not orientation_aware:
+        raise ValueError("--end-window requires --orientation-aware")
+    if event_report is not None and end_window == 0:
+        raise ValueError("--event-report requires a positive --end-window")
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -156,7 +190,12 @@ def _run_assemble(
         f"k={k}, min_count={min_count}"
     )
     if orientation_aware:
-        graph = build_bidirected_dbg(sequences, k, min_count)
+        graph = build_bidirected_dbg(
+            sequences,
+            k,
+            min_count,
+            end_window=end_window,
+        )
         node_count = graph.node_count
         edge_count = graph.edge_count
     else:
@@ -167,6 +206,24 @@ def _run_assemble(
         f"Built graph with {node_count} nodes and {edge_count} edges "
         f"in {time.perf_counter() - stage_started:.2f}s"
     )
+
+    event_summary = EventReportSummary()
+    if event_report is not None:
+        stage_started = time.perf_counter()
+        _progress("Reporting pre-cleaning graph events")
+        tip_candidates = find_weak_tip_candidates(graph)
+        bubble_candidates = find_simple_bubbles(graph)
+        event_summary = write_event_report(
+            graph,
+            tip_candidates,
+            bubble_candidates,
+            event_report,
+        )
+        _progress(
+            f"Reported {event_summary.tips} tips and "
+            f"{event_summary.bubbles} bubbles to {event_report} in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
 
     cleaning_summary = TipCleaningSummary()
     if clean_tips:
@@ -222,6 +279,15 @@ def _run_assemble(
     print(f"tip_observations_removed={cleaning_summary.observations_removed}")
     print(f"bubble_detection={str(detect_bubbles).lower()}")
     print(f"bubbles_detected={len(bubbles)}")
+    print(f"end_window={end_window}")
+    print(
+        "terminal_observations="
+        f"{graph.terminal_observations if orientation_aware else 0}"
+    )
+    print(f"reported_tips={event_summary.tips}")
+    print(f"reported_bubbles={event_summary.bubbles}")
+    print(f"reported_paths={event_summary.paths}")
+    print(f"event_report={event_report or ''}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -247,6 +313,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.orientation_aware,
                 arguments.clean_tips,
                 arguments.detect_bubbles,
+                arguments.end_window,
+                arguments.event_report,
             )
     except (OSError, ValueError) as error:
         parser.error(str(error))
