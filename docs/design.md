@@ -52,6 +52,12 @@ The experimental cleaner considers only dead-end paths no longer than `2 × k`. 
 
 Edges are deactivated directly in the compact adjacency arrays, and degrees and active graph totals are updated in place. This avoids copying the graph or allocating per-edge cleaning objects. The operation remains opt-in until it is validated on damaged and low-abundance data.
 
+## Unitig-level bubble scoring
+
+The compacted graph detector follows bounded, internally linear unitig alternatives that leave and rejoin the same oriented unitigs. It skips cycles, complex tangles, overlapping paths, and alternatives beyond the configured search bounds.
+
+Each path is scored by nucleotide length, edge count, total and minimum support, mean edge support, local coverage relative to the strongest path, and sequence similarity to that path. Scores can be written to TSV, but no unitig or link is removed. This separation allows cleaning thresholds to be validated against sequencing errors, damage, and genuine rare-strain variation before they can affect N50 or accuracy.
+
 ## Simple bubble detection
 
 The experimental detector reports bounded alternatives that leave one oriented handle, remain linear and edge-disjoint internally, and rejoin at the same handle. Reverse-complement observations are deduplicated through their shared physical edge paths.
@@ -82,11 +88,11 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Add conservative unitig-level bubble and incomplete-branch simplification using local support.
-2. Validate contiguity, accuracy, and rare-strain retention with damage evidence disabled.
-3. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
-4. Validate damage-aware decisions on clean, damaged, rare-strain, and mixed datasets.
-5. Evaluate additional empirical libraries, paired-read links, and controlled multi-k assembly.
-6. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
+1. Validate unitig-level bubble scores on labelled sequencing-error, damage, and rare-strain alternatives.
+2. Add conservative bubble simplification only after safe thresholds are established.
+3. Add and validate incomplete-branch handling using local support.
+4. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
+5. Validate damage-aware decisions on clean, damaged, rare-strain, and mixed datasets.
+6. Evaluate paired-read links, controlled multi-k assembly, and profiled Cython optimization where needed.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.

@@ -433,6 +433,42 @@ Constant-time oriented base extraction and removal of the temporary edge-owner a
 - Subsequent simplification can operate on 4,760 unitigs instead of roughly five million active k-mer edges.
 - Generated validation outputs remain ignored under `experiments/validation/generated/unitig_graph/`.
 
+## Unitig-level bubble-scoring smoke test
+
+### Question
+
+Can bounded alternatives be scored on the compacted graph without changing assembly output or adding meaningful runtime overhead?
+
+The known two-path control contained one 10× path and one 3× path. The detector found the bubble and measured the weaker path at a local coverage ratio of 0.30. The complete test suite passed 119 tests, including unchanged graph state and byte-identical CLI output checks.
+
+The local 19,643-read FASTQ was then assembled with `k=21`, `min_count=2`, orientation-aware construction, and tip cleaning:
+
+```bash
+anvaya assemble -i example.fastq.gz --k 21 --min-count 2 \
+  --orientation-aware --clean-tips \
+  --unitig-bubble-report unitig_bubbles.tsv \
+  -o contigs.fasta
+```
+
+### Results
+
+| Metric | Result |
+|---|---:|
+| Compacted unitigs | 3,637 |
+| Unitig-level bubbles | 8 |
+| Alternative paths | 8 |
+| Alternatives with coverage ratio ≤0.30 and similarity ≥0.90 | 6 |
+| Detection and report time | 0.03 s |
+| Complete run time | 4.19 s |
+| Complete-run peak memory | 111,344 KiB |
+| FASTA compared with reporting disabled | Byte-identical |
+
+### Interpretation
+
+The detector is fast and non-destructive, and its raw scores separate several weak, highly similar alternatives from their locally strongest paths. The six threshold-matching alternatives are candidates only: this smoke test does not identify whether they are sequencing errors, damage-derived paths, or genuine low-abundance variation. N50 and contig lengths are unchanged by design.
+
+The next step is a labelled validation matrix for sequencing errors, terminal damage, and rare strains. Bubble removal will be implemented only after that matrix establishes thresholds that improve contiguity without sacrificing accuracy or biological variation.
+
 ## K-mer size experiment
 
 ### Question
