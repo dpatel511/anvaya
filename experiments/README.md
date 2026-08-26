@@ -446,6 +446,21 @@ Separate 5′ and 3′ profiles had comparable recovery, and explicit regression
 - The next production change must associate substitutions more directly with their supporting molecule/end evidence and compare damage, error, and variation scores. Graph modification remains deferred.
 - Incomplete branches, indels, and non-linear competing backbones still require a later topology matrix.
 
+### Evidence-scoring follow-up
+
+The same 360-run matrix now evaluates the non-destructive matched-tip classifier. Each substitution is associated with its exact oriented tip edge. Candidate tables include terminal/internal observations, expected-end distance, terminal enrichment, strand balance, three heuristic scores, the selected label, and auditable reasons.
+
+| Truth/control | Tips | Damage-like | Error-like | Variation-like | Ambiguous | Unmatched |
+|---|---:|---:|---:|---:|---:|---:|
+| Terminal damage | 35,202 | 30,960 | 0 | 0 | 3,802 | 440 |
+| Ordinary sequencing error | 1,081 | 5 | 97 | 0 | 956 | 23 |
+| Terminally concentrated error | 583 | 27 | 0 | 0 | 556 | 0 |
+| Genuine rare-strain tips | 110 | 0 | 1 | 0 | 109 | 0 |
+
+Among matched damage tips, damage-like recall was 89.06%. Against matched error and genuine rare-strain controls, 30,960 of 30,992 damage-like calls were true simulated damage (99.90%). The 32 false calls show that biochemical compatibility plus aggregate terminal support cannot prove that the same molecule carried the substitution. No genuine rare tip was called damage-like.
+
+The error-like gate requires terminal depletion. It therefore identifies only a small, high-specificity subset and keeps most low-coverage alternatives ambiguous; this avoids relabelling rare biological paths as errors on coverage alone. Variation-like tip calls were withheld by the minimum-coverage gate in this matrix. Scores are heuristics rather than calibrated probabilities, and graph/FASTA output remains unchanged.
+
 ## Empirical non-UDG/UDG pilot
 
 Five non-overlapping 100,000-read R1 subsets were compared for untreated and full-UDG libraries from the same PES001.B dental-calculus sample. Reads shorter than `k=19` were excluded identically. Both treatments used `min_count=2`, orientation-aware construction, tip cleaning, bubble detection, and a five-base terminal window.

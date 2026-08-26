@@ -34,6 +34,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - sequence-level TSV reports for weak tips and bubble paths;
 - damage-compatible C→T/G→A annotation for simple bubble alternatives;
 - non-destructive weak-tip matching to equal-length local backbone paths with DNA identity, RY identity, relative coverage, substitutions, and damage compatibility;
+- explainable weak-tip evidence scores and conservative damage-like, error-like, variation-like, or ambiguous labels;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;

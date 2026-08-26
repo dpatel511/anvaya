@@ -84,9 +84,17 @@ Detection is non-destructive: it records edge paths and support summaries withou
 
 Weak tips and simple bubble paths are collected before graph cleaning. Their sequences, edge support, terminal/internal evidence, and substitutions are streamed to TSV. Equal-length bubble alternatives are marked damage-compatible only when C→T or G→A substitutions have support at the corresponding oriented molecule end.
 
-Weak tips are also matched non-destructively to an equal-length locally competing linear backbone when one exists. Candidate selection prioritizes RY identity, then DNA identity and backbone support. The report records both sequences, substitutions, relative coverage, and oriented damage compatibility. A ten-seed controlled validation matched 3,538 of 3,583 damage tips; all matched damage tips were RY-exact and damage-compatible. All 146 random-error tips also found a backbone candidate, and 9 passed the damage-compatibility rule. Matching therefore recovers a comparison path but is not itself a damage classifier.
+Weak tips are also matched non-destructively to an equal-length locally competing linear backbone when one exists. Candidate selection prioritizes RY identity, then DNA identity and backbone support. The report records both sequences, substitutions, relative coverage, oriented damage compatibility, terminal/internal support, end distance, strand balance, three evidence scores, and an auditable classification.
 
-Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, broader incomplete branches are not covered, and no evidence-based simplification decision is implemented yet. Terminal evidence is currently aggregated per graph edge rather than linked to the individual molecule carrying a substitution, so incidental terminal support can contribute to a compatible label.
+In the 20-seed matrix, 30,960 of 34,762 matched damage tips were classified damage-like (89.06%). Thirty-two of 1,641 matched error tips and none of 110 genuine rare-strain tips were called damage-like, giving 99.90% precision against those controls. Error-like calls additionally require terminal depletion: this protects 109 of 110 rare tips but deliberately leaves most errors ambiguous. These are heuristic evidence scores, not calibrated probabilities or an authorization to remove graph paths.
+
+Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, broader incomplete branches are not covered, and no evidence-based simplification decision is implemented yet. The classifier associates each substitution with its exact oriented tip edge, but terminal evidence is still aggregated per edge rather than linked to the individual molecule carrying that substitution. Incidental terminal support can therefore still contribute to a positive damage call.
+
+## Matched-tip evidence classification
+
+Matched weak tips receive normalized heuristic scores for damage, sequencing error, and biological variation. The damage score combines oriented C→T/G→A compatibility, RY identity, support for the substitution on its exact terminal edge, distance from the expected molecule end, and low local coverage. Error and variation scores reuse coverage, terminal/internal support, terminal enrichment, sequence identity, and strand balance. Threshold, evidence, and margin gates keep conflicting cases ambiguous.
+
+The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors.
 
 ## Evidence from the current baseline
 
@@ -106,9 +114,9 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Strengthen tip classification with molecule-linked terminal evidence, 3′ G→A and reverse-orientation tests, and a broader error/damage/variation matrix.
-2. Add and validate incomplete-branch matching for damage topologies not represented by bubbles.
-3. Infer a sample-level damage profile and compare damage, sequencing-error, and variation likelihoods.
+1. Add and validate incomplete-branch matching for damage topologies not represented by simple tips or bubbles.
+2. Retain molecule-linked substitution/end evidence and infer a sample-level damage profile.
+3. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods.
 4. Implement optional conservative simplification only for high-confidence error-like paths.
 5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
 6. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
