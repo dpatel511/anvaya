@@ -285,6 +285,58 @@ The remaining safety tests are low-abundance related strains and realistic ancie
 
 Generated data and reports remain ignored under `experiments/validation/results/clean_pilot/`. The combined generated table is `summary.tsv` in that directory.
 
+## Simple-bubble validation
+
+### Question
+
+Does the non-destructive detector find simple alternatives reproducibly, and how do clean reads, terminal damage, sequencing errors, and low-abundance strain variation affect the detected topology?
+
+### Setup
+
+- Random 20,000 bp reference with fixed seed 901.
+- Fixed 60 bp fragments at 20× total coverage.
+- `k=21`, `min_count=2`, orientation-aware graph, then conservative tip cleaning.
+- Three simulation seeds for clean, damage-only, sequencing-error, 2× rare-strain, and mixed conditions.
+- Terminal C→T/G→A rates of 0.45, 0.30, 0.20, 0.12, and 0.06 from each end.
+- Twelve spaced SNPs for the related-strain sensitivity test, repeated across five seeds and 1×, 2×, 5×, and 10× minor-strain coverage.
+
+### Condition results
+
+| Condition | Mean simple bubbles | Range |
+|---|---:|---:|
+| Clean | 0.00 | 0–0 |
+| Terminal damage | 0.00 | 0–0 |
+| Sequencing errors | 3.33 | 1–6 |
+| Rare strain at 2× | 2.33 | 1–5 |
+| Damage and rare strain | 2.00 | 0–5 |
+
+Damage-only runs contained 3,704–3,862 recorded terminal events and 312–374 removed tips. Under these settings, terminal damage therefore appeared mainly as tips or incomplete branches rather than simple bubbles.
+
+### Rare-strain sensitivity
+
+| Minor-strain coverage | Mean bubbles detected from 12 introduced SNPs | Range |
+|---|---:|---:|
+| 1× | 1.0 | 0–3 |
+| 2× | 2.6 | 1–5 |
+| 5× | 8.4 | 6–11 |
+| 10× | 11.6 | 11–12 |
+
+Tip cleaning did not change the detected bubble count in any of the 20 strain-sensitivity runs. Very low-coverage alternatives were nevertheless often absent after `min_count=2`, showing that a fixed support threshold limits rare-strain recovery before topology analysis begins.
+
+### Real-data smoke test
+
+On the local 19,643-read FASTQ used for prior performance checks, the tip-cleaned graph contained 1,778 branching nodes and 10 detected simple bubbles. Detection took 0.03 seconds. Five control and five detection runs produced byte-identical FASTA outputs, confirming that reporting does not alter assembly.
+
+### Interpretation
+
+- The detector is deterministic, non-destructive, and inexpensive.
+- Clean controls remained free of detected simple bubbles in this matrix.
+- Sequencing errors and genuine strain variants can create the same simple topology, so coverage alone is not a sufficient classifier.
+- Terminal damage must be evaluated in tips and incomplete branches as well as bubbles.
+- The next scientific step is compact read-end and orientation evidence collected before tip cleaning, followed by conservative damage/error/variation scoring.
+
+These are controlled development results, not publication-level sensitivity or specificity estimates. Exact event-level precision and recall require bubble path sequences and provenance-linked ground truth.
+
 ## K-mer size experiment
 
 ### Question

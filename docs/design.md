@@ -44,6 +44,12 @@ The experimental cleaner considers only dead-end paths no longer than `2 × k`. 
 
 Edges are deactivated directly in the compact adjacency arrays, and degrees and active graph totals are updated in place. This avoids copying the graph or allocating per-edge cleaning objects. The operation remains opt-in until it is validated on damaged and low-abundance data.
 
+## Simple bubble detection
+
+The experimental detector reports bounded alternatives that leave one oriented handle, remain linear and edge-disjoint internally, and rejoin at the same handle. Reverse-complement observations are deduplicated through their shared physical edge paths.
+
+Detection is non-destructive: it records edge paths and support summaries without deactivating edges or changing unitigs. Cycles, long alternatives, and complex tangles are skipped rather than guessed. The detector is a prerequisite for later evidence-aware decisions, not a bubble-removal rule.
+
 ## Evidence from the current baseline
 
 Minimum-support filtering showed that unsupported k-mers cause most initial graph fragmentation. On the clean single-genome benchmark, `min_count=2` increased genome recovery from 21.444% to 94.940% without introducing a reported misassembly.
@@ -54,13 +60,17 @@ The directed filtered assemblies have a duplication ratio near 2.0. The orientat
 
 Across two clean bacterial genomes, two seeds, and 5×/20× coverage, conservative tip cleaning introduced no reported misassemblies. At 20×, N50 improved by 56–67% and the largest contig by 52–128%. At 5×, cleaning made few changes and did not reduce genome fraction. This supports the current rule on clean isolates but does not establish safety for damaged molecules or rare strains.
 
+Controlled bubble tests showed zero detections in clean conditions. Sequencing errors and low-abundance strain SNPs both produced simple bubbles, confirming that topology and abundance alone cannot distinguish them. Recovery of 12 introduced SNPs rose from a mean of 1.0 bubble at 1× minor-strain coverage to 11.6 at 10×.
+
+Terminal damage produced hundreds of weak tips but no simple bubbles under the tested `k=21`, `min_count=2` conditions. Damage-aware decisions must therefore evaluate tips and incomplete branches as well as bubbles, and must operate before irreversible tip removal. The current count threshold also limits recovery of very low-coverage strain alternatives.
+
 ## Near-term development sequence
 
-1. Validate tip cleaning on damaged reads and low-abundance related strains.
-2. Add conservative bubble handling as an optional, independently benchmarked operation.
-3. Evaluate paired-read links and a controlled multi-k strategy for resolving remaining branches.
-4. Freeze and validate the ordinary baseline across clean isolates, controlled strain mixtures, and small communities.
-5. Add terminal position, orientation, quality, and molecule evidence for damage-aware branch decisions.
+1. Add compact terminal-position and orientation evidence during graph construction.
+2. Evaluate tips, simple bubbles, and incomplete branches before graph cleaning.
+3. Infer an internal damage model and score damage, sequencing-error, and genuine-variation explanations.
+4. Validate conservative decisions on clean, damaged, rare-strain, and mixed datasets.
+5. Evaluate paired-read links and controlled multi-k assembly after the first damage-aware prototype is accurate.
 6. Profile stable hot loops and consider Cython only where pure Python remains a bottleneck.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
