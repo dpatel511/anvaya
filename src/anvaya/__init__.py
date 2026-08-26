@@ -24,6 +24,14 @@ from anvaya.output import write_fasta
 from anvaya.reads import Read, load_reads
 from anvaya.sequences import canonical_sequence, normalize_dna, reverse_complement
 from anvaya.tip_matching import TipBackboneMatch, match_tip_to_backbone
+from anvaya.tip_classification import (
+    TipClassification,
+    TipClassificationThresholds,
+    TipEvidence,
+    TipSubstitutionEvidence,
+    classify_tip_match,
+    collect_tip_evidence,
+)
 from anvaya.unitigs import extract_unitigs
 
 __all__ = [
@@ -34,6 +42,10 @@ __all__ = [
     "StrandSupport",
     "TipCleaningSummary",
     "TipBackboneMatch",
+    "TipClassification",
+    "TipClassificationThresholds",
+    "TipEvidence",
+    "TipSubstitutionEvidence",
     "assemble",
     "assemble_file",
     "branching_nodes",
@@ -46,6 +58,8 @@ __all__ = [
     "kmers",
     "load_reads",
     "match_tip_to_backbone",
+    "classify_tip_match",
+    "collect_tip_evidence",
     "normalize_dna",
     "out_degree",
     "reverse_complement",

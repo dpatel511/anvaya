@@ -16,6 +16,7 @@ from anvaya.bidirected import (
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.classification import format_substitutions
 from anvaya.sequences import reverse_complement
+from anvaya.tip_classification import classify_tip_match
 from anvaya.tip_matching import match_tip_to_backbone
 from helpers.simulation import (
     SimulatedRead,
@@ -57,6 +58,19 @@ class CandidateRecord:
     sequence_identity: float | None
     ry_identity: float | None
     substitutions: str
+    classification: str
+    classification_reasons: str
+    damage_score: float | None
+    error_score: float | None
+    variation_score: float | None
+    tip_terminal_fraction: float | None
+    tip_strand_balance: float | None
+    terminal_enrichment: float | None
+    substitution_terminal_observations: int | None
+    substitution_other_terminal_observations: int | None
+    substitution_internal_observations: int | None
+    substitution_terminal_fraction: float | None
+    mean_damage_distance: float | None
 
 
 @dataclass(frozen=True)
@@ -76,6 +90,14 @@ class RunRecord:
     rare_tips: int
     rare_matched_tips: int
     rare_damage_compatible_tips: int
+    damage_like_tips: int
+    error_like_tips: int
+    variation_like_tips: int
+    ambiguous_matched_tips: int
+    damage_truth_damage_like_tips: int
+    error_truth_error_like_tips: int
+    rare_variation_like_tips: int
+    rare_damage_like_tips: int
 
 
 RUN_FIELDS = tuple(RunRecord.__dataclass_fields__)
@@ -219,6 +241,7 @@ def evaluate(
     candidates: list[CandidateRecord] = []
     for tip_index, tip in enumerate(tips, start=1):
         match = match_tip_to_backbone(graph, tip)
+        decision = None if match is None else classify_tip_match(graph, match)
         sequence = (
             match.tip_sequence
             if match is not None
@@ -254,6 +277,59 @@ def evaluate(
                 substitutions=(
                     "" if match is None else format_substitutions(match.substitutions)
                 ),
+                classification=(
+                    "unmatched" if decision is None else decision.label
+                ),
+                classification_reasons=(
+                    "" if decision is None else ";".join(decision.reasons)
+                ),
+                damage_score=(
+                    None if decision is None else decision.damage_score
+                ),
+                error_score=None if decision is None else decision.error_score,
+                variation_score=(
+                    None if decision is None else decision.variation_score
+                ),
+                tip_terminal_fraction=(
+                    None
+                    if decision is None
+                    else decision.evidence.tip_terminal_fraction
+                ),
+                tip_strand_balance=(
+                    None
+                    if decision is None
+                    else decision.evidence.tip_strand_balance
+                ),
+                terminal_enrichment=(
+                    None
+                    if decision is None
+                    else decision.evidence.terminal_enrichment
+                ),
+                substitution_terminal_observations=(
+                    None
+                    if decision is None
+                    else decision.evidence.substitution_terminal_observations
+                ),
+                substitution_other_terminal_observations=(
+                    None
+                    if decision is None
+                    else decision.evidence.substitution_other_terminal_observations
+                ),
+                substitution_internal_observations=(
+                    None
+                    if decision is None
+                    else decision.evidence.substitution_internal_observations
+                ),
+                substitution_terminal_fraction=(
+                    None
+                    if decision is None
+                    else decision.evidence.substitution_terminal_fraction
+                ),
+                mean_damage_distance=(
+                    None
+                    if decision is None
+                    else decision.evidence.mean_damage_distance
+                ),
             )
         )
 
@@ -286,6 +362,42 @@ def evaluate(
         ),
         rare_damage_compatible_tips=sum(
             candidate.damage_compatible and candidate.label == "rare"
+            for candidate in candidates
+        ),
+        damage_like_tips=sum(
+            candidate.classification == "damage-like"
+            for candidate in candidates
+        ),
+        error_like_tips=sum(
+            candidate.classification == "error-like"
+            for candidate in candidates
+        ),
+        variation_like_tips=sum(
+            candidate.classification == "variation-like"
+            for candidate in candidates
+        ),
+        ambiguous_matched_tips=sum(
+            candidate.classification == "ambiguous"
+            for candidate in candidates
+        ),
+        damage_truth_damage_like_tips=sum(
+            candidate.label == "damage"
+            and candidate.classification == "damage-like"
+            for candidate in candidates
+        ),
+        error_truth_error_like_tips=sum(
+            candidate.label == "error"
+            and candidate.classification == "error-like"
+            for candidate in candidates
+        ),
+        rare_variation_like_tips=sum(
+            candidate.label == "rare"
+            and candidate.classification == "variation-like"
+            for candidate in candidates
+        ),
+        rare_damage_like_tips=sum(
+            candidate.label == "rare"
+            and candidate.classification == "damage-like"
             for candidate in candidates
         ),
     ), candidates

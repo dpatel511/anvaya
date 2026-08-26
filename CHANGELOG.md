@@ -56,6 +56,9 @@ All notable project changes will be documented in this file.
 - Unit tests for tip matching, damage compatibility, unchanged graph state, event-report fields, and CLI summaries.
 - A 20-seed weak-tip matching matrix with separate 5′, 3′, and combined damage profiles, bidirectional reads, ordinary and terminally concentrated errors, and rare strains at four coverages.
 - Candidate-level tip-matching reports and regression tests for 3′ G→A and multiple oriented damage substitutions.
+- Non-destructive matched-tip evidence scoring using exact oriented substitution edges, end distance, terminal/internal support, coverage, identity, and strand balance.
+- Conservative matched-tip classifications and auditable reasons in event reports and validation tables.
+- A 20-seed classification matrix measuring damage sensitivity, error specificity, and rare-strain safety without graph modification.
 
 ### Changed
 
