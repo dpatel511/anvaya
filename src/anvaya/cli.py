@@ -8,7 +8,6 @@ from pathlib import Path
 
 from anvaya.bidirected import (
     build_bidirected_dbg,
-    extract_bidirected_unitigs,
     summarize_bidirected_graph,
 )
 from anvaya.bubbles import find_simple_bubbles
@@ -20,6 +19,7 @@ from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
 from anvaya.reads import load_reads
 from anvaya.unitigs import extract_unitigs
+from anvaya.unitig_graph import build_compacted_unitig_graph
 
 
 def _kmer_size(value: str) -> int:
@@ -249,8 +249,10 @@ def _run_assemble(
     stage_started = time.perf_counter()
     _progress("Extracting unitigs")
     if orientation_aware:
-        unitigs = extract_bidirected_unitigs(graph)
+        unitig_graph = build_compacted_unitig_graph(graph)
+        unitigs = unitig_graph.sequences
     else:
+        unitig_graph = None
         unitigs = extract_unitigs(graph)
     _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
 
@@ -293,6 +295,10 @@ def _run_assemble(
     print(f"observations={summary.observations}")
     print(f"branching_nodes={summary.branching_nodes}")
     print(f"unitigs={summary.unitigs}")
+    print(
+        "unitig_links="
+        f"{unitig_graph.oriented_link_count if unitig_graph is not None else 0}"
+    )
     print(f"output={output_path}")
     return 0
 

@@ -305,6 +305,17 @@ def oriented_sequence(graph: BidirectedDeBruijnGraph, handle: Handle) -> str:
     return _decode_dna(code, graph.node_length)
 
 
+def _oriented_last_base(
+    graph: BidirectedDeBruijnGraph, handle: Handle
+) -> str:
+    """Return the final base of an oriented node without decoding it."""
+    code = graph.node_codes[handle >> 1]
+    if handle & 1:
+        bits = (code >> (2 * (graph.node_length - 1))) & 3
+        return "ACGT"[3 - bits]
+    return "ACGT"[code & 3]
+
+
 def _successor(
     graph: BidirectedDeBruijnGraph, handle: Handle, edge_id: int
 ) -> Handle:
@@ -368,7 +379,7 @@ def _deactivate_edge(graph: BidirectedDeBruijnGraph, edge_id: int) -> int:
 def _spell_path(graph: BidirectedDeBruijnGraph, path: list[Handle]) -> str:
     sequence = oriented_sequence(graph, path[0])
     return sequence + "".join(
-        oriented_sequence(graph, handle)[-1] for handle in path[1:]
+        _oriented_last_base(graph, handle) for handle in path[1:]
     )
 
 
@@ -378,18 +389,19 @@ def spell_edge_path(
     edge_ids: Sequence[int],
 ) -> str:
     """Spell an oriented sequence from a start handle and physical edges."""
-    handles = [start]
+    sequence = [oriented_sequence(graph, start)]
     current = start
     for edge_id in edge_ids:
         current = _successor(graph, current, edge_id)
-        handles.append(current)
-    return _spell_path(graph, handles)
+        sequence.append(_oriented_last_base(graph, current))
+    return "".join(sequence)
 
 
-def extract_bidirected_unitigs(graph: BidirectedDeBruijnGraph) -> list[str]:
-    """Return one sequence for each maximal non-branching physical path."""
+def iter_bidirected_unitig_paths(
+    graph: BidirectedDeBruijnGraph,
+) -> Iterator[tuple[Handle, tuple[int, ...]]]:
+    """Yield each maximal physical path as a start handle and edge IDs."""
     visited = bytearray(graph.edge_count)
-    unitigs: list[str] = []
     handle_count = graph.node_count * 2
 
     for start in range(handle_count):
@@ -402,10 +414,9 @@ def extract_bidirected_unitigs(graph: BidirectedDeBruijnGraph) -> list[str]:
             if visited[edge_id]:
                 continue
 
-            successor = _successor(graph, start, edge_id)
-            path = [start, successor]
+            path = [edge_id]
             visited[edge_id] = 1
-            current = successor
+            current = _successor(graph, start, edge_id)
 
             while (
                 graph.out_degrees[flip_handle(current)] == 1
@@ -415,32 +426,37 @@ def extract_bidirected_unitigs(graph: BidirectedDeBruijnGraph) -> list[str]:
                 if visited[following_edge]:
                     break
                 current = _successor(graph, current, following_edge)
-                path.append(current)
+                path.append(following_edge)
                 visited[following_edge] = 1
 
-            unitigs.append(_spell_path(graph, path))
+            yield start, tuple(path)
 
     for start in range(handle_count):
         for edge_id in _outgoing_edges(graph, start):
             if visited[edge_id]:
                 continue
 
-            successor = _successor(graph, start, edge_id)
-            path = [start, successor]
+            path = [edge_id]
             visited[edge_id] = 1
-            current = successor
+            current = _successor(graph, start, edge_id)
 
             while current != start:
                 following_edge = graph.out_edges[current * _MAX_OUT_DEGREE]
                 if visited[following_edge]:
                     break
                 current = _successor(graph, current, following_edge)
-                path.append(current)
+                path.append(following_edge)
                 visited[following_edge] = 1
 
-            unitigs.append(_spell_path(graph, path))
+            yield start, tuple(path)
 
-    return unitigs
+
+def extract_bidirected_unitigs(graph: BidirectedDeBruijnGraph) -> list[str]:
+    """Return one sequence for each maximal non-branching physical path."""
+    return [
+        spell_edge_path(graph, start, edge_ids)
+        for start, edge_ids in iter_bidirected_unitig_paths(graph)
+    ]
 
 
 def summarize_bidirected_graph(
