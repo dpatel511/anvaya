@@ -10,6 +10,8 @@
 
 Each simulation will separate sequencing error, postmortem damage, and genuine variation before combining them.
 
+Controlled damage tests report both introduced events and damage-derived k-mer edges that survive graph filtering. Sensitivity is calculated against retained ground-truth edges so events removed by `min_count` are not incorrectly counted as detector failures. Empirical non-UDG/UDG comparisons use equal read counts, identical graph parameters, normalized topology rates, and replicate-level statistics.
+
 ## Comparisons
 
 - Anvaya with damage decisions disabled;
@@ -36,4 +38,3 @@ Runtime and memory will be recorded but will not guide the first research decisi
 ## Go/no-go criterion
 
 Optimization begins only if damage-aware decisions reproducibly improve the accuracy-recovery trade-off without unacceptable strain collapse.
-

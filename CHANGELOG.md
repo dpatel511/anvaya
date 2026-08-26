@@ -31,6 +31,11 @@ All notable project changes will be documented in this file.
 - Non-destructive bounded simple-bubble detection for the compact bidirected graph.
 - Optional bubble reporting through `--detect-bubbles`.
 - Bubble tests covering support, bounds, orientation deduplication, determinism, CLI reporting, and unchanged assembly output.
+- Optional compact read-end evidence collection through `--end-window`.
+- Non-destructive tip and bubble-path TSV reporting through `--event-report`.
+- Sequence, support, substitution, and damage-compatibility fields for graph alternatives.
+- Controlled ten-seed terminal-damage validation with reproducible parameter, per-run, and summary tables.
+- Unit tests for end-evidence orientation, unchanged assembly output, event sequences, and CLI validation.
 
 ### Changed
 
