@@ -461,6 +461,40 @@ Among matched damage tips, damage-like recall was 89.06%. Against matched error 
 
 The error-like gate requires terminal depletion. It therefore identifies only a small, high-specificity subset and keeps most low-coverage alternatives ambiguous; this avoids relabelling rare biological paths as errors on coverage alone. Variation-like tip calls were withheld by the minimum-coverage gate in this matrix. Scores are heuristics rather than calibrated probabilities, and graph/FASTA output remains unchanged.
 
+## Incomplete-branch validation
+
+### Question
+
+Can bounded weak branches outside the existing short-tip and simple-bubble representations recover additional damage-derived graph edges without labelling clean, error, or rare-strain controls as damage-like?
+
+### Setup
+
+- Twenty random 20,000 bp references using seeds 1501–1520.
+- Bidirectional 60 bp reads at 20× coverage, `k=21`, `min_count=2`, and a five-base terminal window.
+- Clean, standard two-ended damage, 1% sequencing-error, and 2× related-strain conditions.
+- Branches bounded at 64 edges and at no more than 50% of matched-backbone support.
+- Exact retained k-mer truth for damage and error; exact reference membership for rare-strain candidates.
+
+Run with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/07_incomplete_branch_validation.py
+```
+
+### Results
+
+| Condition | Candidates | Truth candidates | Damage-like | Ambiguous |
+|---|---:|---:|---:|---:|
+| Clean | 0 | 0 | 0 | 0 |
+| Terminal damage | 1,482 | 1,482 | 557 | 925 |
+| Sequencing error | 72 | 72 | 0 | 67 |
+| Genuine rare strain | 2 | 2 | 0 | 2 |
+
+The five remaining error candidates were classified as two error-like and three variation-like. Existing tip and bubble candidates covered 10,584 of 14,194 retained damage-derived edges (74.57%). Incomplete branches contributed 2,394 additional truth edges, increasing combined coverage to 12,978 of 14,194 (91.43%). This recovered 66.32% of the damage truth previously missed by those two topology detectors.
+
+The detector is intentionally broader than the tip cleaner: detection accepts support ratios through 0.50 because it does not modify the graph, while cleaning retains its 0.20 rule. The current validation supports non-destructive reporting only. Unequal-length alternatives, complex tangles, molecule-linked evidence, and additional damage/error/strain profiles remain future work.
+
 ## Empirical non-UDG/UDG pilot
 
 Five non-overlapping 100,000-read R1 subsets were compared for untreated and full-UDG libraries from the same PES001.B dental-calculus sample. Reads shorter than `k=19` were excluded identically. Both treatments used `min_count=2`, orientation-aware construction, tip cleaning, bubble detection, and a five-base terminal window.

@@ -59,6 +59,9 @@ All notable project changes will be documented in this file.
 - Non-destructive matched-tip evidence scoring using exact oriented substitution edges, end distance, terminal/internal support, coverage, identity, and strand balance.
 - Conservative matched-tip classifications and auditable reasons in event reports and validation tables.
 - A 20-seed classification matrix measuring damage sensitivity, error specificity, and rare-strain safety without graph modification.
+- Non-destructive bounded incomplete-branch detection with standard-tip and simple-bubble deduplication.
+- Equal-length incomplete-branch backbone matching, evidence classification, event-report fields, and CLI summaries.
+- A 20-seed incomplete-branch matrix covering clean, damage, sequencing-error, and rare-strain controls.
 
 ### Changed
 

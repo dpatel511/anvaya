@@ -15,6 +15,7 @@ from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.events import EventReportSummary, write_event_report
 from anvaya.graph import build_dbg
+from anvaya.incomplete_branches import find_incomplete_branch_candidates
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
 from anvaya.reads import load_reads
@@ -227,16 +228,20 @@ def _run_assemble(
         stage_started = time.perf_counter()
         _progress("Reporting pre-cleaning graph events")
         tip_candidates = find_weak_tip_candidates(graph)
+        incomplete_branch_candidates = find_incomplete_branch_candidates(graph)
         bubble_candidates = find_simple_bubbles(graph)
         event_summary = write_event_report(
             graph,
             tip_candidates,
             bubble_candidates,
             event_report,
+            incomplete_branches=incomplete_branch_candidates,
         )
         _progress(
             f"Reported {event_summary.tips} tips "
             f"({event_summary.matched_tips} matched to backbones) and "
+            f"{event_summary.incomplete_branches} incomplete branches "
+            f"({event_summary.matched_incomplete_branches} matched) and "
             f"{event_summary.bubbles} bubbles to {event_report} in "
             f"{time.perf_counter() - stage_started:.2f}s"
         )
@@ -320,6 +325,11 @@ def _run_assemble(
     )
     print(f"reported_tips={event_summary.tips}")
     print(f"reported_tip_matches={event_summary.matched_tips}")
+    print(f"reported_incomplete_branches={event_summary.incomplete_branches}")
+    print(
+        "reported_incomplete_branch_matches="
+        f"{event_summary.matched_incomplete_branches}"
+    )
     print(f"reported_bubbles={event_summary.bubbles}")
     print(f"reported_paths={event_summary.paths}")
     print(f"event_report={event_report or ''}")

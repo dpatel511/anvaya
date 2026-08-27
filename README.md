@@ -35,6 +35,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - damage-compatible C→T/G→A annotation for simple bubble alternatives;
 - non-destructive weak-tip matching to equal-length local backbone paths with DNA identity, RY identity, relative coverage, substitutions, and damage compatibility;
 - explainable weak-tip evidence scores and conservative damage-like, error-like, variation-like, or ambiguous labels;
+- non-destructive detection, backbone matching, and classification of bounded weak branches not represented as standard tips or bubbles;
 - linear-time node degree calculation;
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
@@ -93,7 +94,7 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
   -o contigs.fasta
 ```
 
-Evidence reporting is non-destructive. Weak tips are matched to an equal-length locally competing linear backbone when one is available, and the report includes DNA and RY identity, relative coverage, substitutions, and oriented damage compatibility. In a controlled ten-seed simulation, 3,538 of 3,583 damage tips were matched and all matched damage tips were RY-exact and damage-compatible; 9 of 146 random-error tips also passed the compatibility rule. Compatibility is therefore supporting evidence, not proof of biological damage. Reporting does not yet remove or retain paths automatically, and it does not require a supplied damage profile.
+Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, three heuristic scores, and an auditable classification. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
 
 Compacted-graph bubble paths can be scored for threshold validation:
 
@@ -141,6 +142,13 @@ ordinary and terminally concentrated errors, and rare strains can be run with:
 ```bash
 PYTHONPATH=src:tests python3 \
   experiments/06_tip_matching_validation.py
+```
+
+The 20-seed incomplete-branch matrix can be reproduced with:
+
+```bash
+PYTHONPATH=src:tests python3 \
+  experiments/07_incomplete_branch_validation.py
 ```
 
 Generated candidate and threshold tables are written under `experiments/validation/generated/` and remain ignored by Git.

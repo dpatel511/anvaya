@@ -128,11 +128,24 @@ def match_tip_to_backbone(
 
     branch_handle = flip_handle(tip.end)
     tip_edge_ids = tuple(reversed(tip.edge_ids))
+    return match_branch_to_backbone(graph, branch_handle, tip_edge_ids)
+
+
+def match_branch_to_backbone(
+    graph: BidirectedDeBruijnGraph,
+    branch_handle: int,
+    branch_edge_ids: tuple[int, ...],
+) -> TipBackboneMatch | None:
+    """Match one oriented branch to its best equal-length linear competitor."""
+    if not branch_edge_ids:
+        return None
+
+    tip_edge_ids = branch_edge_ids
     tip_sequence = spell_edge_path(graph, branch_handle, tip_edge_ids)
     tip_observations = sum(
         _edge_support_total(graph, edge_id) for edge_id in tip_edge_ids
     )
-    excluded = set(tip.edge_ids)
+    excluded = set(tip_edge_ids)
     best: TipBackboneMatch | None = None
     best_key: tuple[float, float, int, int] | None = None
 

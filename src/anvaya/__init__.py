@@ -19,11 +19,20 @@ from anvaya.graph import (
     source_nodes,
 )
 from anvaya.kmers import kmers
+from anvaya.incomplete_branches import (
+    IncompleteBranchCandidate,
+    find_incomplete_branch_candidates,
+    match_incomplete_branch_to_backbone,
+)
 from anvaya.metrics import GraphSummary, summarize_graph
 from anvaya.output import write_fasta
 from anvaya.reads import Read, load_reads
 from anvaya.sequences import canonical_sequence, normalize_dna, reverse_complement
-from anvaya.tip_matching import TipBackboneMatch, match_tip_to_backbone
+from anvaya.tip_matching import (
+    TipBackboneMatch,
+    match_branch_to_backbone,
+    match_tip_to_backbone,
+)
 from anvaya.tip_classification import (
     TipClassification,
     TipClassificationThresholds,
@@ -38,6 +47,7 @@ __all__ = [
     "BidirectedDeBruijnGraph",
     "DeBruijnGraph",
     "GraphSummary",
+    "IncompleteBranchCandidate",
     "Read",
     "StrandSupport",
     "TipCleaningSummary",
@@ -54,9 +64,12 @@ __all__ = [
     "canonical_sequence",
     "extract_bidirected_unitigs",
     "extract_unitigs",
+    "find_incomplete_branch_candidates",
     "in_degree",
     "kmers",
     "load_reads",
+    "match_branch_to_backbone",
+    "match_incomplete_branch_to_backbone",
     "match_tip_to_backbone",
     "classify_tip_match",
     "collect_tip_evidence",
