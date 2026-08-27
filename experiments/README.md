@@ -876,6 +876,45 @@ damage estimate.
 Generated control tables remain ignored under
 `experiments/validation/generated/candidate_damage_likelihood_validation/`.
 
+## Quality-evidence validation
+
+`11_quality_evidence_validation.py` checks the exact observation path from
+FASTQ Phred scores through compact molecule links to matched-tip evidence. The
+20-condition matrix combines one to five supporting molecules with Phred 8,
+20, and 35 alternatives plus missing-quality input. For every quality-bearing
+condition, the reported per-observation log likelihood exactly matched
+`log(10^(-Q/10) / 3)`: -2.9407 at Q8, -5.7038 at Q20, and -9.1577 at Q35.
+Across one to five observations the joint log likelihood scaled linearly, as
+required by the current conditional-independence model. All missing-quality
+conditions reported zero quality observations, one to five missing
+observations, and no invented likelihood.
+
+These results validate propagation and arithmetic, not biological
+classification. Low-quality alternative calls are more compatible with the
+sequencing-error explanation, but high-quality damage and genuine variation
+remain indistinguishable from quality alone. The likelihood is therefore
+report-only and must next be compared with held-out damage and variation
+models. Generated tables remain ignored under
+`experiments/validation/generated/quality_evidence_validation/`.
+
+The quality-aware build was also run on the paired `SRR32866683` dataset. It
+preserved the previous public-run summary exactly: 9,456,876 nodes, 9,423,529
+edges, 21,279 tips, 82,711 incomplete branches, 3,703 bubbles, 14,615 matched
+tips, and 740,785 unitigs. The 111,399 event rows contained 7,561 quality
+observations across 2,504 matched candidate rows, with zero missing-quality
+observations and a weighted mean Phred score of 38.01. The candidate damage
+fit also remained unchanged at 513 observed loci, decay 0.807, and LR statistic
+47.99. The contig file's SHA-256 was
+`8dff90623e1f5159f3052c85d50a67ada4dc129db38a9cf964bfe485e0a01da1`;
+the earlier contig file was no longer available for a direct byte comparison.
+
+The run completed in 379.94 seconds. This is 60.22 seconds slower than the
+fastest v3 run but 6.01 seconds faster than the earlier corrected public run;
+graph construction and reporting varied together across those unpaired runs.
+The available timings therefore do not establish a quality-storage regression.
+A paired repeated timing comparison is required if performance becomes the
+next decision gate.
+
 ## K-mer size experiment
 
 ### Question

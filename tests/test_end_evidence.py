@@ -97,6 +97,53 @@ class EndEvidenceGraphTests(unittest.TestCase):
         )
         self.assertEqual(len(graph.molecule_link_offsets), graph.edge_count + 1)
 
+    def test_links_side_specific_base_quality_to_terminal_observation(self) -> None:
+        reads = ["CAACTGGA", "TAACTGGA"]
+        graph = build_bidirected_dbg(
+            reads,
+            3,
+            end_window=3,
+            track_molecule_links=True,
+            read_qualities=[(30,) * 8, (7, 20, 31, 40, 40, 40, 40, 40)],
+        )
+        damaged_edge = next(
+            edge_id
+            for edge_id in range(graph.edge_count)
+            if graph.strand_support(edge_id).total == 1
+            and graph.end_support(edge_id).left[0] == 1
+        )
+
+        links = graph.molecule_end_links(damaged_edge)
+
+        self.assertIn(
+            (1, "left", 0, 31),
+            {
+                (
+                    link.read_index,
+                    link.end,
+                    link.distance,
+                    link.base_quality,
+                )
+                for link in links
+            },
+        )
+
+    def test_marks_missing_terminal_base_quality(self) -> None:
+        graph = build_bidirected_dbg(
+            ["CAACTGGA", "TAACTGGA"],
+            3,
+            end_window=3,
+            track_molecule_links=True,
+        )
+
+        self.assertTrue(
+            all(
+                link.base_quality is None
+                for edge_id in range(graph.edge_count)
+                for link in graph.molecule_end_links(edge_id)
+            )
+        )
+
     def test_molecule_links_are_opt_in(self) -> None:
         graph = build_bidirected_dbg(["AACCTGGAA"], 3, end_window=2)
 
@@ -195,6 +242,13 @@ class EndEvidenceGraphTests(unittest.TestCase):
                 3,
                 end_window=2,
                 track_molecule_links=1,  # type: ignore[arg-type]
+            )
+        with self.assertRaisesRegex(ValueError, "one-to-one"):
+            build_bidirected_dbg(
+                ["AACTGGA"],
+                3,
+                end_window=2,
+                read_qualities=[],
             )
 
     def test_requires_evidence_before_access(self) -> None:

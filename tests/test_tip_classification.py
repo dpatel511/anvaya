@@ -1,3 +1,4 @@
+import math
 import unittest
 
 from anvaya.bidirected import build_bidirected_dbg
@@ -66,6 +67,52 @@ class TipClassificationTests(unittest.TestCase):
         self.assertEqual(decision.evidence.joint_molecule_observations, 1)
         self.assertEqual(decision.evidence.joint_molecule_fraction, 1.0)
         self.assertNotIn("molecule_linked_substitutions", decision.reasons)
+
+    def test_reports_quality_based_sequencing_error_likelihood(self) -> None:
+        reads = ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"]
+        graph = build_bidirected_dbg(
+            reads,
+            5,
+            end_window=11,
+            track_molecule_links=True,
+            read_qualities=[(40,) * 9] * 10 + [(10,) * 9],
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+        match = match_tip_to_backbone(graph, tip)
+        self.assertIsNotNone(match)
+        assert match is not None
+
+        decision = classify_tip_match(graph, match)
+
+        expected = math.log((10.0 ** -1.0) / 3.0)
+        self.assertEqual(decision.evidence.quality_observations, 1)
+        self.assertEqual(decision.evidence.missing_quality_observations, 0)
+        self.assertEqual(decision.evidence.mean_base_quality, 10.0)
+        self.assertAlmostEqual(
+            decision.evidence.sequencing_error_log_likelihood,
+            expected,
+        )
+
+    def test_missing_quality_does_not_invent_error_likelihood(self) -> None:
+        graph = build_bidirected_dbg(
+            ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
+            5,
+            end_window=11,
+            track_molecule_links=True,
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+        match = match_tip_to_backbone(graph, tip)
+        self.assertIsNotNone(match)
+        assert match is not None
+
+        decision = classify_tip_match(graph, match)
+
+        self.assertEqual(decision.evidence.quality_observations, 0)
+        self.assertEqual(decision.evidence.missing_quality_observations, 1)
+        self.assertIsNone(decision.evidence.mean_base_quality)
+        self.assertIsNone(
+            decision.evidence.sequencing_error_log_likelihood
+        )
 
     def test_intersects_molecules_across_multiple_substitutions(self) -> None:
         graph = build_bidirected_dbg(

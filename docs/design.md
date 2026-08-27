@@ -36,7 +36,7 @@ The experimental graph stores each canonical `(k-1)`-mer once and uses oriented 
 
 This representation prevents the two DNA strands from producing duplicate assemblies. With a positive end window, each physical edge now stores compact distance-binned support from both canonical ends, internal support, and ambiguous palindromic terminal support. Reverse observations swap their end distances into canonical orientation.
 
-Base quality and paired-fragment links are not yet stored. Source-read identity is retained for terminal observations when event reporting is enabled, and a candidate-locus damage profile can now be inferred from matched alternatives. This profile is not yet a whole-library calibrated damage model.
+When event reporting is enabled, source-read identity and side-specific Phred quality are retained for terminal observations in compact edge-indexed arrays. The quality corresponds to the nucleotide appended in the relevant oriented traversal, rather than an arbitrary endpoint of the supporting k-mer. Paired-fragment links are not yet stored. A candidate-locus damage profile can now be inferred from matched alternatives, but it is not yet a whole-library calibrated damage model.
 
 The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
 
@@ -90,6 +90,10 @@ In the original 20-seed matrix, 30,960 of 34,762 matched damage tips were classi
 
 Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, and no evidence-based simplification decision is implemented yet. When an event report is requested, retained terminal edge observations are now stored in compact edge-indexed arrays with their source-read index, oriented end, and end distance. For paths with multiple substitutions, the classifier intersects source-read identities and adds linkage evidence only when the same reads support every expected C→T/G→A change. A single substitution receives no linkage score bonus because its exact edge already associates it with a read.
 
+FASTQ observations additionally retain the Phred quality of the exact nucleotide represented by each oriented terminal-edge observation. Event reports include observed and missing quality counts, mean quality, and the sum of `log(10^(-Q/10) / 3)` over damage-compatible alternative observations. This is the likelihood of the specific alternative calls under an independent, symmetric sequencing-error model. FASTA input remains supported and produces explicit missing-quality evidence instead of an assumed quality. The value is report-only: it does not include damage or polymorphism likelihoods, does not assume independence between overlapping graph events, and does not alter the heuristic classification.
+
+On the paired `SRR32866683` public dataset, this path retained 7,561 qualities across 2,504 candidate rows with no missing values and weighted mean Q38.01. All topology and event counts matched the previous run, and the independently computed candidate damage fit remained unchanged. Most event rows correctly have no quality likelihood because only an exact, damage-compatible changed-base observation is currently eligible; ordinary substitutions, unmatched paths, and bubble-only reporting are not silently assigned evidence.
+
 ## Matched-tip evidence classification
 
 Matched weak tips receive normalized heuristic scores for damage, sequencing error, and biological variation. The damage score combines oriented C→T/G→A compatibility, RY identity, support for the substitution on its exact terminal edge, distance from the expected molecule end, and low local coverage. Error and variation scores reuse coverage, terminal/internal support, terminal enrichment, sequence identity, and strand balance. Threshold, evidence, and margin gates keep conflicting cases ambiguous.
@@ -138,8 +142,8 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Expand the candidate-conditioned likelihood model with whole-library opportunities and fully profiled or bootstrap uncertainty.
-2. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods using held-out profile fit.
+1. Combine the retained quality evidence with held-out damage, sequencing-error, and variation likelihoods; fit the sample damage profile without the event being scored.
+2. Expand the candidate-conditioned damage model with whole-library opportunities and fully profiled or bootstrap uncertainty.
 3. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 4. Implement optional conservative simplification only for high-confidence error-like paths.
 5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.

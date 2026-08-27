@@ -1,5 +1,6 @@
 """Explainable, non-destructive classification of matched weak tips."""
 
+import math
 from dataclasses import dataclass
 
 from anvaya.bidirected import (
@@ -35,6 +36,10 @@ class TipSubstitutionEvidence:
     internal_observations: int
     mean_terminal_distance: float | None
     expected_molecule_count: int | None
+    quality_observations: int
+    missing_quality_observations: int
+    mean_base_quality: float | None
+    sequencing_error_log_likelihood: float | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -56,6 +61,10 @@ class TipEvidence:
     molecule_links_collected: bool
     joint_molecule_observations: int | None
     joint_molecule_fraction: float | None
+    quality_observations: int
+    missing_quality_observations: int
+    mean_base_quality: float | None
+    sequencing_error_log_likelihood: float | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -79,12 +88,22 @@ class _OrientedEdgeEvidence:
     ambiguous_terminal: int
     forward: int
     reverse: int
-    left_molecules: tuple[tuple[int, int], ...] | None
-    right_molecules: tuple[tuple[int, int], ...] | None
+    left_molecules: tuple[tuple[int, int, int | None], ...] | None
+    right_molecules: tuple[tuple[int, int, int | None], ...] | None
 
 
 def _clamp(value: float) -> float:
     return max(0.0, min(1.0, value))
+
+
+def _sequencing_error_log_likelihood(qualities: list[int]) -> float | None:
+    """Return the log likelihood of specific wrong calls under Phred error."""
+    if not qualities:
+        return None
+    return sum(
+        math.log((10.0 ** (-quality / 10.0)) / 3.0)
+        for quality in qualities
+    )
 
 
 def _oriented_path_evidence(
@@ -100,17 +119,17 @@ def _oriented_path_evidence(
         right = end_support.right
         forward = graph.forward_support[edge_id]
         reverse = graph.reverse_support[edge_id]
-        left_molecules: tuple[tuple[int, int], ...] | None = None
-        right_molecules: tuple[tuple[int, int], ...] | None = None
+        left_molecules: tuple[tuple[int, int, int | None], ...] | None = None
+        right_molecules: tuple[tuple[int, int, int | None], ...] | None = None
         if graph.molecule_links_collected:
             links = graph.molecule_end_links(edge_id)
             left_molecules = tuple(
-                (link.read_index, link.distance)
+                (link.read_index, link.distance, link.base_quality)
                 for link in links
                 if link.end == "left"
             )
             right_molecules = tuple(
-                (link.read_index, link.distance)
+                (link.read_index, link.distance, link.base_quality)
                 for link in links
                 if link.end == "right"
             )
@@ -201,6 +220,8 @@ def collect_tip_evidence(
     internal_total = 0
     weighted_distance = 0.0
     expected_molecule_sets: list[set[int]] = []
+    observed_qualities: list[int] = []
+    missing_quality_total = 0
 
     for change in match.substitutions:
         edge_index = change.position - graph.node_length - 1
@@ -211,6 +232,8 @@ def collect_tip_evidence(
         expected_molecules: set[int] | None = (
             set() if graph.molecule_links_collected else None
         )
+        substitution_qualities: list[int] = []
+        missing_qualities = 0
         if 0 <= edge_index < len(tip_edges):
             edge = tip_edges[edge_index]
             internal = edge.internal
@@ -220,9 +243,20 @@ def collect_tip_evidence(
                 if edge.left_molecules is not None:
                     expected_molecules = {
                         read_index
-                        for read_index, distance in edge.left_molecules
+                        for read_index, distance, _ in edge.left_molecules
                         if distance + graph.node_length < graph.end_window
                     }
+                    substitution_qualities = [
+                        quality
+                        for _, distance, quality in edge.left_molecules
+                        if distance + graph.node_length < graph.end_window
+                        and quality is not None
+                    ]
+                    missing_qualities = sum(
+                        quality is None
+                        for _, distance, quality in edge.left_molecules
+                        if distance + graph.node_length < graph.end_window
+                    )
                 other_terminal = sum(edge.right) + edge.ambiguous_terminal
             elif change.reference == "G" and change.alternative == "A":
                 expected_end = "right"
@@ -230,9 +264,19 @@ def collect_tip_evidence(
                 if edge.right_molecules is not None:
                     expected_molecules = {
                         read_index
-                        for read_index, distance in edge.right_molecules
+                        for read_index, distance, _ in edge.right_molecules
                         if distance < graph.end_window
                     }
+                    substitution_qualities = [
+                        quality
+                        for _, distance, quality in edge.right_molecules
+                        if distance < graph.end_window and quality is not None
+                    ]
+                    missing_qualities = sum(
+                        quality is None
+                        for _, distance, quality in edge.right_molecules
+                        if distance < graph.end_window
+                    )
                 other_terminal = sum(edge.left) + edge.ambiguous_terminal
             else:
                 other_terminal = (
@@ -254,6 +298,11 @@ def collect_tip_evidence(
         weighted_distance += distance_sum
         if expected_molecules is not None:
             expected_molecule_sets.append(expected_molecules)
+        observed_qualities.extend(substitution_qualities)
+        missing_quality_total += missing_qualities
+        error_log_likelihood = _sequencing_error_log_likelihood(
+            substitution_qualities
+        )
         substitutions.append(
             TipSubstitutionEvidence(
                 position=change.position,
@@ -271,6 +320,14 @@ def collect_tip_evidence(
                     if expected_molecules is None
                     else len(expected_molecules)
                 ),
+                quality_observations=len(substitution_qualities),
+                missing_quality_observations=missing_qualities,
+                mean_base_quality=(
+                    sum(substitution_qualities) / len(substitution_qualities)
+                    if substitution_qualities
+                    else None
+                ),
+                sequencing_error_log_likelihood=error_log_likelihood,
             )
         )
 
@@ -314,6 +371,16 @@ def collect_tip_evidence(
             None if joint_molecules is None else len(joint_molecules)
         ),
         joint_molecule_fraction=joint_fraction,
+        quality_observations=len(observed_qualities),
+        missing_quality_observations=missing_quality_total,
+        mean_base_quality=(
+            sum(observed_qualities) / len(observed_qualities)
+            if observed_qualities
+            else None
+        ),
+        sequencing_error_log_likelihood=_sequencing_error_log_likelihood(
+            observed_qualities
+        ),
     )
     return evidence, tuple(substitutions)
 
