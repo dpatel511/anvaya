@@ -17,6 +17,11 @@ from anvaya.damage_profile import (
     infer_damage_profile,
     write_damage_profile,
 )
+from anvaya.damage_likelihood import (
+    CandidateDamageFit,
+    ParameterEstimate,
+    fit_candidate_damage_model,
+)
 from anvaya.graph import (
     DeBruijnGraph,
     branching_nodes,
@@ -57,10 +62,12 @@ __all__ = [
     "DamageProfile",
     "DamageProfileBin",
     "DamageProfileLocus",
+    "CandidateDamageFit",
     "GraphSummary",
     "IncompleteBranchCandidate",
     "MoleculeEndLink",
     "Read",
+    "ParameterEstimate",
     "StrandSupport",
     "TipCleaningSummary",
     "TipBackboneMatch",
@@ -77,6 +84,7 @@ __all__ = [
     "extract_bidirected_unitigs",
     "extract_unitigs",
     "find_incomplete_branch_candidates",
+    "fit_candidate_damage_model",
     "in_degree",
     "infer_damage_profile",
     "kmers",

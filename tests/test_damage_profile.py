@@ -145,7 +145,7 @@ class DamageProfileTests(unittest.TestCase):
             write_damage_profile(profile, path)
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["schema_version"], 4)
+        self.assertEqual(payload["schema_version"], 5)
         self.assertEqual(
             payload["interpretation"],
             "matched_candidate_locus_fraction",
@@ -153,6 +153,10 @@ class DamageProfileTests(unittest.TestCase):
         self.assertEqual(payload["coverage_cap"], 20)
         self.assertEqual(payload["matched_loci"], 1)
         self.assertEqual(payload["observed_loci"], 1)
+        self.assertEqual(
+            payload["candidate_damage_fit"]["status"],
+            "insufficient_evidence",
+        )
         self.assertEqual(len(payload["loci"]), 1)
         self.assertEqual(len(payload["bins"]), graph.end_window)
 
