@@ -46,6 +46,70 @@ class TipClassificationTests(unittest.TestCase):
         self.assertEqual(decision.substitutions[0].expected_end, "right")
         self.assertEqual(decision.evidence.mean_damage_distance, 0.0)
 
+    def test_reports_molecule_linked_substitution_support(self) -> None:
+        graph = build_bidirected_dbg(
+            ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
+            5,
+            end_window=3,
+            track_molecule_links=True,
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+        match = match_tip_to_backbone(graph, tip)
+        self.assertIsNotNone(match)
+        assert match is not None
+
+        decision = classify_tip_match(graph, match)
+        self.assertTrue(decision.evidence.molecule_links_collected)
+        self.assertEqual(decision.evidence.joint_molecule_observations, 1)
+        self.assertEqual(decision.evidence.joint_molecule_fraction, 1.0)
+        self.assertNotIn("molecule_linked_substitutions", decision.reasons)
+
+    def test_intersects_molecules_across_multiple_substitutions(self) -> None:
+        graph = build_bidirected_dbg(
+            ["TCTCGTGAAGCC"] * 10 + ["TCTTATGAAGCC"],
+            5,
+            end_window=4,
+            track_molecule_links=True,
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+        match = match_tip_to_backbone(graph, tip)
+        self.assertIsNotNone(match)
+        assert match is not None
+
+        decision = classify_tip_match(graph, match)
+        aggregate_decision = classify_tip_match(
+            graph,
+            match,
+            include_molecule_linkage=False,
+        )
+
+        self.assertEqual(len(decision.substitutions), 2)
+        self.assertEqual(
+            [change.expected_molecule_count for change in decision.substitutions],
+            [1, 1],
+        )
+        self.assertEqual(decision.evidence.joint_molecule_observations, 1)
+        self.assertEqual(decision.evidence.joint_molecule_fraction, 1.0)
+        self.assertIn("molecule_linked_substitutions", decision.reasons)
+        self.assertGreater(
+            decision.damage_score,
+            aggregate_decision.damage_score,
+        )
+        self.assertNotIn(
+            "molecule_linked_substitutions",
+            aggregate_decision.reasons,
+        )
+
+    def test_rejects_invalid_molecule_linkage_flag(self) -> None:
+        graph, match, _ = self._classify("AAGCCCAAA", "AAGCCTAAA")
+
+        with self.assertRaisesRegex(TypeError, "must be a boolean"):
+            classify_tip_match(
+                graph,
+                match,
+                include_molecule_linkage=1,  # type: ignore[arg-type]
+            )
+
     def test_leaves_mixed_substitution_tip_ambiguous(self) -> None:
         _, _, decision = self._classify("AAGCCCAAT", "AAGCCTAAA")
 

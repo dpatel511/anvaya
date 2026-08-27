@@ -94,7 +94,7 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
   -o contigs.fasta
 ```
 
-Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, three heuristic scores, and an auditable classification. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
+Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, source-read linkage across substitutions, three heuristic scores, and an auditable classification. Linkage strengthens only multi-substitution evidence; it cannot by itself distinguish damage from correlated sequencing errors. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
 
 Compacted-graph bubble paths can be scored for threshold validation:
 

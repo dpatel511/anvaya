@@ -86,13 +86,17 @@ Weak tips and simple bubble paths are collected before graph cleaning. Their seq
 
 Weak tips are also matched non-destructively to an equal-length locally competing linear backbone when one exists. Candidate selection prioritizes RY identity, then DNA identity and backbone support. The report records both sequences, substitutions, relative coverage, oriented damage compatibility, terminal/internal support, end distance, strand balance, three evidence scores, and an auditable classification.
 
-In the 20-seed matrix, 30,960 of 34,762 matched damage tips were classified damage-like (89.06%). Thirty-two of 1,641 matched error tips and none of 110 genuine rare-strain tips were called damage-like, giving 99.90% precision against those controls. Error-like calls additionally require terminal depletion: this protects 109 of 110 rare tips but deliberately leaves most errors ambiguous. These are heuristic evidence scores, not calibrated probabilities or an authorization to remove graph paths.
+In the original 20-seed matrix, 30,960 of 34,762 matched damage tips were classified damage-like (89.06%). Thirty-two of 1,641 matched error tips and none of 110 genuine rare-strain tips were called damage-like. Error-like calls additionally require terminal depletion: this protects low-abundance variation but deliberately leaves most errors ambiguous. These are heuristic evidence scores, not calibrated probabilities or an authorization to remove graph paths.
 
-Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, and no evidence-based simplification decision is implemented yet. The classifier associates each substitution with its exact oriented candidate edge, but terminal evidence is still aggregated per edge rather than linked to the individual molecule carrying that substitution. Incidental terminal support can therefore still contribute to a positive damage call.
+Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, and no evidence-based simplification decision is implemented yet. When an event report is requested, retained terminal edge observations are now stored in compact edge-indexed arrays with their source-read index, oriented end, and end distance. For paths with multiple substitutions, the classifier intersects source-read identities and adds linkage evidence only when the same reads support every expected C→T/G→A change. A single substitution receives no linkage score bonus because its exact edge already associates it with a read.
 
 ## Matched-tip evidence classification
 
 Matched weak tips receive normalized heuristic scores for damage, sequencing error, and biological variation. The damage score combines oriented C→T/G→A compatibility, RY identity, support for the substitution on its exact terminal edge, distance from the expected molecule end, and low local coverage. Error and variation scores reuse coverage, terminal/internal support, terminal enrichment, sequence identity, and strand balance. Threshold, evidence, and margin gates keep conflicting cases ambiguous.
+
+In a 20-seed, 460-condition paired ablation, molecule linkage increased overall damage-like recall from 30,960/34,762 (89.06%) to 31,018/34,762 (89.23%). For the 1,155 multi-substitution damage tips, recall increased from 1,093 (94.63%) to 1,151 (99.65%). All 58 label changes were true damage candidates moving from ambiguous to damage-like, distributed across 18 of 20 seeds; no candidate moved in the opposite direction. The paired-error and rare-strain labels did not change. Build time was 2.04× higher while linkage was enabled, with about 672 KB mean compact-array storage per 20 kb/20× graph.
+
+This validates read-level co-occurrence, not biochemical causality. The expanded controls contained 166/1,810 error tips and 1/124 rare tips called damage-like under both scoring modes. In particular, 134/169 deliberately correlated terminal-error tips were already damage-like. Those errors and the molecule-spanning rare SNP pair were represented as separate single-substitution tips, so they did not exercise the multi-substitution linkage gate. A controlled graph fixture or broader path matcher that produces linked and unlinked multi-substitution non-damage alternatives is still required before linkage can justify graph simplification.
 
 The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors.
 
@@ -102,7 +106,7 @@ The event detector now also follows bounded weak paths leaving a branch until th
 
 Across 20 clean, standard-damage, 1% sequencing-error, and 2× rare-strain replicates, existing tips and bubbles covered 10,584 of 14,194 retained damage-derived edges (74.57%). Incomplete branches added 2,394 distinct truth edges and raised combined coverage to 12,978 edges (91.43%). All 1,482 damage-condition branch candidates overlapped damage truth; 557 were damage-like and 925 remained ambiguous. No candidate appeared in clean controls. None of 72 error branches or two genuine rare-strain branches was damage-like.
 
-These results validate broader event recovery, not removal. The matrix uses one damage profile, one error rate, and one rare-strain coverage, and the candidate evidence remains edge-aggregated.
+These results validate broader event recovery, not removal. The matrix uses one damage profile, one error rate, and one rare-strain coverage. Incomplete branches now receive molecule-linked evidence during event reporting, but their linkage-specific sensitivity and safety still need the expanded adversarial matrix used for weak tips.
 
 ## Evidence from the current baseline
 
@@ -122,7 +126,7 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Retain molecule-linked substitution/end evidence and infer a sample-level damage profile.
+1. Infer a sample-level damage profile from molecule-linked substitution/end evidence.
 2. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods.
 3. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 4. Implement optional conservative simplification only for high-confidence error-like paths.

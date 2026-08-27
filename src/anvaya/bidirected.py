@@ -40,6 +40,15 @@ class EndSupport:
     ambiguous_terminal: int = 0
 
 
+@dataclass(slots=True, frozen=True)
+class MoleculeEndLink:
+    """One terminal edge observation linked to its source read."""
+
+    read_index: int
+    end: str
+    distance: int
+
+
 @dataclass(slots=True)
 class BidirectedDeBruijnGraph:
     """Canonical nodes and physical edges stored in compact integer arrays."""
@@ -56,6 +65,9 @@ class BidirectedDeBruijnGraph:
     right_end_support: array = field(default_factory=lambda: array("I"))
     internal_support: array = field(default_factory=lambda: array("I"))
     ambiguous_end_support: array = field(default_factory=lambda: array("I"))
+    molecule_links_collected: bool = False
+    molecule_link_offsets: array = field(default_factory=lambda: array("Q"))
+    molecule_link_tokens: array = field(default_factory=lambda: array("Q"))
     out_edges: array = field(default_factory=lambda: array("i"))
     out_degrees: bytearray = field(default_factory=bytearray)
     active_edge_count: int = 0
@@ -90,6 +102,28 @@ class BidirectedDeBruijnGraph:
             internal=self.internal_support[edge_id],
             ambiguous_terminal=self.ambiguous_end_support[edge_id],
         )
+
+    def molecule_end_links(
+        self,
+        edge_id: int,
+    ) -> tuple[MoleculeEndLink, ...]:
+        """Return terminal observations linked to source-read indices."""
+        if not self.molecule_links_collected:
+            raise ValueError("molecule links were not collected")
+        start = self.molecule_link_offsets[edge_id]
+        end = self.molecule_link_offsets[edge_id + 1]
+        links: list[MoleculeEndLink] = []
+        for token in self.molecule_link_tokens[start:end]:
+            read_side, distance = divmod(token, self.end_window)
+            read_index, side = divmod(read_side, 2)
+            links.append(
+                MoleculeEndLink(
+                    read_index=read_index,
+                    end="left" if side == 0 else "right",
+                    distance=distance,
+                )
+            )
+        return tuple(links)
 
 
 def flip_handle(handle: Handle) -> Handle:
@@ -190,6 +224,7 @@ def build_bidirected_dbg(
     k: int,
     min_count: int = 1,
     end_window: int = 0,
+    track_molecule_links: bool = False,
 ) -> BidirectedDeBruijnGraph:
     """Build a compact canonical graph with strand-specific edge support."""
     if not reads:
@@ -206,6 +241,10 @@ def build_bidirected_dbg(
         raise TypeError("end_window must be an integer")
     if end_window < 0:
         raise ValueError("end_window must not be negative")
+    if not isinstance(track_molecule_links, bool):
+        raise TypeError("track_molecule_links must be a boolean")
+    if track_molecule_links and end_window == 0:
+        raise ValueError("molecule links require read-end evidence")
 
     observed: dict[int, int] = {}
     terminal: dict[int, list[int]] = {}
@@ -249,6 +288,7 @@ def build_bidirected_dbg(
 
     graph = BidirectedDeBruijnGraph(node_length=k - 1, end_window=end_window)
     node_ids: dict[int, int] = {}
+    edge_ids_by_code: dict[int, int] = {}
     node_mask = (1 << (2 * (k - 1))) - 1
 
     while observed:
@@ -270,6 +310,8 @@ def build_bidirected_dbg(
         graph.reverse_support.append(support.reverse)
         graph.palindromic_support.append(support.palindromic)
         graph.observations += support.total
+        if track_molecule_links:
+            edge_ids_by_code[kmer_code] = graph.edge_count - 1
         if end_window:
             if evidence is None:
                 evidence = [0] * (2 * end_window + 2)
@@ -279,6 +321,9 @@ def build_bidirected_dbg(
             graph.internal_support.append(support.total - terminal_support)
             graph.ambiguous_end_support.append(evidence[-1])
             graph.terminal_observations += terminal_support
+
+    if track_molecule_links:
+        _collect_molecule_links(graph, reads, k, edge_ids_by_code)
 
     handle_count = graph.node_count * 2
     graph.out_degrees = bytearray(handle_count)
@@ -295,6 +340,59 @@ def build_bidirected_dbg(
     graph.active_edge_count = graph.edge_count
 
     return graph
+
+
+def _collect_molecule_links(
+    graph: BidirectedDeBruijnGraph,
+    reads: Sequence[str],
+    k: int,
+    edge_ids_by_code: dict[int, int],
+) -> None:
+    """Store retained terminal observations in compact edge-indexed arrays."""
+    counts = array("Q", [0]) * graph.edge_count
+
+    def observations():
+        for read_index, read in enumerate(reads):
+            last_start = len(read) - k
+            for start, canonical, orientation in _positioned_encoded_kmers(
+                read,
+                k,
+            ):
+                edge_id = edge_ids_by_code.get(canonical)
+                if edge_id is None or orientation == 2:
+                    continue
+                left_distance = start
+                right_distance = last_start - start
+                if orientation == 1:
+                    left_distance, right_distance = (
+                        right_distance,
+                        left_distance,
+                    )
+                if left_distance < graph.end_window:
+                    yield edge_id, read_index, 0, left_distance
+                if right_distance < graph.end_window:
+                    yield edge_id, read_index, 1, right_distance
+
+    for edge_id, _, _, _ in observations():
+        counts[edge_id] += 1
+
+    graph.molecule_link_offsets.append(0)
+    for count in counts:
+        graph.molecule_link_offsets.append(
+            graph.molecule_link_offsets[-1] + count
+        )
+    graph.molecule_link_tokens = array(
+        "Q",
+        [0],
+    ) * graph.molecule_link_offsets[-1]
+    cursors = list(graph.molecule_link_offsets[:-1])
+    for edge_id, read_index, side, distance in observations():
+        token = (
+            (read_index * 2 + side) * graph.end_window + distance
+        )
+        graph.molecule_link_tokens[cursors[edge_id]] = token
+        cursors[edge_id] += 1
+    graph.molecule_links_collected = True
 
 
 def oriented_sequence(graph: BidirectedDeBruijnGraph, handle: Handle) -> str:

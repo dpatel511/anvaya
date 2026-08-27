@@ -54,6 +54,7 @@ class EventReportTests(unittest.TestCase):
             ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
             5,
             end_window=3,
+            track_molecule_links=True,
         )
         before = bytes(graph.out_degrees)
         tips = find_weak_tip_candidates(graph)
@@ -82,6 +83,9 @@ class EventReportTests(unittest.TestCase):
             "1",
         )
         self.assertEqual(rows[0]["mean_damage_distance"], "1.000000")
+        self.assertEqual(rows[0]["molecule_links_collected"], "true")
+        self.assertEqual(rows[0]["joint_molecule_observations"], "1")
+        self.assertEqual(rows[0]["joint_molecule_fraction"], "1.000000")
         self.assertEqual(bytes(graph.out_degrees), before)
 
     def test_reports_classified_incomplete_branch(self) -> None:

@@ -60,6 +60,9 @@ _TIP_CLASSIFICATION_FIELDS = (
     "substitution_internal_observations",
     "substitution_terminal_fraction",
     "mean_damage_distance",
+    "molecule_links_collected",
+    "joint_molecule_observations",
+    "joint_molecule_fraction",
 )
 
 
@@ -270,6 +273,17 @@ def _match_columns(
             ""
             if decision.evidence.mean_damage_distance is None
             else f"{decision.evidence.mean_damage_distance:.6f}"
+        ),
+        str(decision.evidence.molecule_links_collected).lower(),
+        (
+            ""
+            if decision.evidence.joint_molecule_observations is None
+            else decision.evidence.joint_molecule_observations
+        ),
+        (
+            ""
+            if decision.evidence.joint_molecule_fraction is None
+            else f"{decision.evidence.joint_molecule_fraction:.6f}"
         ),
     ]
     return (
