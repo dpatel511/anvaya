@@ -3,6 +3,7 @@
 from anvaya.assembly import assemble, assemble_file
 from anvaya.bidirected import (
     BidirectedDeBruijnGraph,
+    MoleculeEndLink,
     StrandSupport,
     build_bidirected_dbg,
     extract_bidirected_unitigs,
@@ -48,6 +49,7 @@ __all__ = [
     "DeBruijnGraph",
     "GraphSummary",
     "IncompleteBranchCandidate",
+    "MoleculeEndLink",
     "Read",
     "StrandSupport",
     "TipCleaningSummary",

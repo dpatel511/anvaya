@@ -68,6 +68,37 @@ class EndEvidenceGraphTests(unittest.TestCase):
         self.assertEqual(sum(evidence.right), 0)
         self.assertEqual(evidence.internal, 0)
 
+    def test_links_terminal_edge_observation_to_source_read(self) -> None:
+        graph = build_bidirected_dbg(
+            ["CAACTGGA", "TAACTGGA"],
+            3,
+            end_window=3,
+            track_molecule_links=True,
+        )
+        damaged_edge = next(
+            edge_id
+            for edge_id in range(graph.edge_count)
+            if graph.strand_support(edge_id).total == 1
+            and graph.end_support(edge_id).left[0] == 1
+        )
+
+        links = graph.molecule_end_links(damaged_edge)
+
+        self.assertIn(
+            (1, "left", 0),
+            {
+                (link.read_index, link.end, link.distance)
+                for link in links
+            },
+        )
+        self.assertEqual(len(graph.molecule_link_offsets), graph.edge_count + 1)
+
+    def test_molecule_links_are_opt_in(self) -> None:
+        graph = build_bidirected_dbg(["AACCTGGAA"], 3, end_window=2)
+
+        with self.assertRaisesRegex(ValueError, "were not collected"):
+            graph.molecule_end_links(0)
+
     def test_records_three_prime_damage_path_as_terminal(self) -> None:
         graph = build_bidirected_dbg(
             ["AACTGGAG"] * 10 + ["AACTGGAA"] * 3,
@@ -147,6 +178,19 @@ class EndEvidenceGraphTests(unittest.TestCase):
                 ["AACTGGA"],
                 3,
                 end_window=1.5,  # type: ignore[arg-type]
+            )
+        with self.assertRaisesRegex(ValueError, "require read-end"):
+            build_bidirected_dbg(
+                ["AACTGGA"],
+                3,
+                track_molecule_links=True,
+            )
+        with self.assertRaisesRegex(TypeError, "must be a boolean"):
+            build_bidirected_dbg(
+                ["AACTGGA"],
+                3,
+                end_window=2,
+                track_molecule_links=1,  # type: ignore[arg-type]
             )
 
     def test_requires_evidence_before_access(self) -> None:

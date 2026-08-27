@@ -34,6 +34,7 @@ class TipSubstitutionEvidence:
     other_terminal_observations: int
     internal_observations: int
     mean_terminal_distance: float | None
+    expected_molecule_count: int | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -52,6 +53,9 @@ class TipEvidence:
     substitution_internal_observations: int
     substitution_terminal_fraction: float
     mean_damage_distance: float | None
+    molecule_links_collected: bool
+    joint_molecule_observations: int | None
+    joint_molecule_fraction: float | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -75,6 +79,8 @@ class _OrientedEdgeEvidence:
     ambiguous_terminal: int
     forward: int
     reverse: int
+    left_molecules: tuple[int, ...] | None
+    right_molecules: tuple[int, ...] | None
 
 
 def _clamp(value: float) -> float:
@@ -94,9 +100,23 @@ def _oriented_path_evidence(
         right = end_support.right
         forward = graph.forward_support[edge_id]
         reverse = graph.reverse_support[edge_id]
+        left_molecules: tuple[int, ...] | None = None
+        right_molecules: tuple[int, ...] | None = None
+        if graph.molecule_links_collected:
+            links = graph.molecule_end_links(edge_id)
+            left_molecules = tuple(
+                link.read_index for link in links if link.end == "left"
+            )
+            right_molecules = tuple(
+                link.read_index for link in links if link.end == "right"
+            )
         if current != graph.edge_sources[edge_id]:
             left, right = right, left
             forward, reverse = reverse, forward
+            left_molecules, right_molecules = (
+                right_molecules,
+                left_molecules,
+            )
         values.append(
             _OrientedEdgeEvidence(
                 left=left,
@@ -105,6 +125,8 @@ def _oriented_path_evidence(
                 ambiguous_terminal=end_support.ambiguous_terminal,
                 forward=forward,
                 reverse=reverse,
+                left_molecules=left_molecules,
+                right_molecules=right_molecules,
             )
         )
         current = _successor(graph, current, edge_id)
@@ -159,6 +181,7 @@ def collect_tip_evidence(
     other_total = 0
     internal_total = 0
     weighted_distance = 0.0
+    expected_molecule_sets: list[set[int]] = []
 
     for change in match.substitutions:
         edge_index = change.position - graph.node_length - 1
@@ -166,16 +189,23 @@ def collect_tip_evidence(
         expected_counts: tuple[int, ...] = ()
         other_terminal = 0
         internal = 0
+        expected_molecules: set[int] | None = (
+            set() if graph.molecule_links_collected else None
+        )
         if 0 <= edge_index < len(tip_edges):
             edge = tip_edges[edge_index]
             internal = edge.internal
             if change.reference == "C" and change.alternative == "T":
                 expected_end = "left"
                 expected_counts = edge.left
+                if edge.left_molecules is not None:
+                    expected_molecules = set(edge.left_molecules)
                 other_terminal = sum(edge.right) + edge.ambiguous_terminal
             elif change.reference == "G" and change.alternative == "A":
                 expected_end = "right"
                 expected_counts = edge.right
+                if edge.right_molecules is not None:
+                    expected_molecules = set(edge.right_molecules)
                 other_terminal = sum(edge.left) + edge.ambiguous_terminal
             else:
                 other_terminal = (
@@ -195,6 +225,8 @@ def collect_tip_evidence(
         other_total += other_terminal
         internal_total += internal
         weighted_distance += distance_sum
+        if expected_molecules is not None:
+            expected_molecule_sets.append(expected_molecules)
         substitutions.append(
             TipSubstitutionEvidence(
                 position=change.position,
@@ -207,10 +239,32 @@ def collect_tip_evidence(
                 mean_terminal_distance=(
                     distance_sum / expected if expected else None
                 ),
+                expected_molecule_count=(
+                    None
+                    if expected_molecules is None
+                    else len(expected_molecules)
+                ),
             )
         )
 
     substitution_total = expected_total + other_total + internal_total
+    joint_molecules: set[int] | None = None
+    joint_fraction: float | None = None
+    if graph.molecule_links_collected:
+        joint_molecules = (
+            set.intersection(*expected_molecule_sets)
+            if expected_molecule_sets
+            else set()
+        )
+        minimum_molecules = min(
+            (len(values) for values in expected_molecule_sets),
+            default=0,
+        )
+        joint_fraction = (
+            len(joint_molecules) / minimum_molecules
+            if minimum_molecules
+            else 0.0
+        )
     evidence = TipEvidence(
         tip_terminal_observations=tip_terminal,
         tip_internal_observations=tip_internal,
@@ -228,6 +282,11 @@ def collect_tip_evidence(
         mean_damage_distance=(
             weighted_distance / expected_total if expected_total else None
         ),
+        molecule_links_collected=graph.molecule_links_collected,
+        joint_molecule_observations=(
+            None if joint_molecules is None else len(joint_molecules)
+        ),
+        joint_molecule_fraction=joint_fraction,
     )
     return evidence, tuple(substitutions)
 
@@ -236,8 +295,12 @@ def classify_tip_match(
     graph: BidirectedDeBruijnGraph,
     match: TipBackboneMatch,
     thresholds: TipClassificationThresholds = TipClassificationThresholds(),
+    *,
+    include_molecule_linkage: bool = True,
 ) -> TipClassification:
     """Score damage, error, and variation explanations without graph changes."""
+    if not isinstance(include_molecule_linkage, bool):
+        raise TypeError("include_molecule_linkage must be a boolean")
     evidence, substitution_evidence = collect_tip_evidence(graph, match)
     change_count = len(match.substitutions)
     compatibility = (
@@ -270,15 +333,20 @@ def classify_tip_match(
     )
     strand_balance = evidence.tip_strand_balance or 0.0
 
-    damage_score = sum(
-        (
-            compatibility,
-            match.ry_identity,
-            evidence.substitution_terminal_fraction,
-            _clamp(proximity),
-            low_coverage,
-        )
-    ) / 5
+    damage_components = [
+        compatibility,
+        match.ry_identity,
+        evidence.substitution_terminal_fraction,
+        _clamp(proximity),
+        low_coverage,
+    ]
+    if (
+        include_molecule_linkage
+        and evidence.joint_molecule_fraction is not None
+        and len(substitution_evidence) > 1
+    ):
+        damage_components.append(evidence.joint_molecule_fraction)
+    damage_score = sum(damage_components) / len(damage_components)
     error_score = sum(
         (
             low_coverage,
@@ -340,6 +408,15 @@ def classify_tip_match(
                 "terminal_substitution_support",
                 "end_proximal_support",
                 "low_local_coverage",
+                *(
+                    ("molecule_linked_substitutions",)
+                    if (
+                        include_molecule_linkage
+                        and len(substitution_evidence) > 1
+                        and evidence.joint_molecule_fraction == 1.0
+                    )
+                    else ()
+                ),
             )
         elif label == "error-like":
             reasons = (
