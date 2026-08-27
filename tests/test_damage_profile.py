@@ -29,11 +29,15 @@ class DamageProfileTests(unittest.TestCase):
         return graph, match
 
     def test_infers_five_prime_candidate_locus_fraction(self) -> None:
-        graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
+        graph, match = self._match(
+            "AAGCCCAAA", "AAGCCTAAA", end_window=6
+        )
 
         profile = infer_damage_profile(graph, [match])
 
         self.assertEqual(profile.matched_paths, 1)
+        self.assertEqual(profile.matched_loci, 1)
+        self.assertEqual(profile.observed_loci, 1)
         self.assertEqual(profile.eligible_loci, 1)
         self.assertEqual(
             sum(value.five_prime_ct_alternative for value in profile.bins),
@@ -43,24 +47,24 @@ class DamageProfileTests(unittest.TestCase):
             sum(value.five_prime_c_reference for value in profile.bins),
             10,
         )
-        self.assertEqual(profile.bins[1].five_prime_ct_fraction, 1 / 11)
-        self.assertEqual(profile.bins[1].damage_fraction, 1 / 11)
-        self.assertEqual(profile.bins[1].alternative_edge_contributors, 1)
-        self.assertEqual(profile.bins[1].reference_edge_contributors, 1)
+        self.assertEqual(profile.bins[5].five_prime_ct_fraction, 1 / 11)
+        self.assertEqual(profile.bins[5].damage_fraction, 1 / 11)
+        self.assertEqual(profile.bins[5].alternative_edge_contributors, 1)
+        self.assertEqual(profile.bins[5].reference_edge_contributors, 1)
         self.assertEqual(
-            profile.bins[1].largest_alternative_edge_contribution, 1
+            profile.bins[5].largest_alternative_edge_contribution, 1
         )
         self.assertEqual(
-            profile.bins[1].largest_reference_edge_contribution, 10
+            profile.bins[5].largest_reference_edge_contribution, 10
         )
-        self.assertEqual(profile.bins[1].equal_locus_contributors, 1)
-        self.assertEqual(profile.bins[1].equal_locus_fraction, 1 / 11)
-        self.assertEqual(profile.bins[1].coverage_capped_weight, 11)
-        self.assertEqual(profile.bins[1].coverage_capped_fraction, 1 / 11)
+        self.assertEqual(profile.bins[5].equal_locus_contributors, 1)
+        self.assertEqual(profile.bins[5].equal_locus_fraction, 1 / 11)
+        self.assertEqual(profile.bins[5].coverage_capped_weight, 11)
+        self.assertEqual(profile.bins[5].coverage_capped_fraction, 1 / 11)
         self.assertEqual(profile.coverage_cap, 20)
         self.assertEqual(profile.loci[0].channel, "five_prime_ct")
-        self.assertEqual(profile.loci[0].alternative[1], 1)
-        self.assertEqual(profile.loci[0].reference[1], 10)
+        self.assertEqual(profile.loci[0].alternative[5], 1)
+        self.assertEqual(profile.loci[0].reference[5], 10)
         self.assertTrue(
             all(value.three_prime_ga_fraction is None for value in profile.bins)
         )
@@ -76,7 +80,9 @@ class DamageProfileTests(unittest.TestCase):
         self.assertEqual(profile.bins[0].damage_fraction, 1 / 11)
 
     def test_counts_duplicate_graph_locus_once(self) -> None:
-        graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
+        graph, match = self._match(
+            "AAGCCCAAA", "AAGCCTAAA", end_window=6
+        )
 
         profile = infer_damage_profile(graph, [match, match])
 
@@ -87,6 +93,18 @@ class DamageProfileTests(unittest.TestCase):
             1,
         )
 
+    def test_excludes_kmer_boundary_without_terminal_changed_base(self) -> None:
+        graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
+
+        profile = infer_damage_profile(graph, [match])
+
+        self.assertEqual(profile.matched_loci, 1)
+        self.assertEqual(profile.observed_loci, 0)
+        self.assertEqual(profile.eligible_loci, 0)
+        self.assertTrue(
+            all(value.damage_fraction is None for value in profile.bins)
+        )
+
     def test_requires_molecule_links(self) -> None:
         graph = build_bidirected_dbg(["AAGCCCAAA"], 5, end_window=3)
 
@@ -94,7 +112,9 @@ class DamageProfileTests(unittest.TestCase):
             infer_damage_profile(graph, [])
 
     def test_rejects_invalid_coverage_cap(self) -> None:
-        graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
+        graph, match = self._match(
+            "AAGCCCAAA", "AAGCCTAAA", end_window=6
+        )
 
         with self.assertRaisesRegex(ValueError, "at least 1"):
             infer_damage_profile(graph, [match], coverage_cap=0)
@@ -115,7 +135,9 @@ class DamageProfileTests(unittest.TestCase):
         self.assertAlmostEqual(capped, 12 / 220)
 
     def test_writes_explicit_profile_schema(self) -> None:
-        graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
+        graph, match = self._match(
+            "AAGCCCAAA", "AAGCCTAAA", end_window=6
+        )
         profile = infer_damage_profile(graph, [match])
 
         with tempfile.TemporaryDirectory() as directory:
@@ -123,12 +145,14 @@ class DamageProfileTests(unittest.TestCase):
             write_damage_profile(profile, path)
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["schema_version"], 3)
+        self.assertEqual(payload["schema_version"], 4)
         self.assertEqual(
             payload["interpretation"],
             "matched_candidate_locus_fraction",
         )
         self.assertEqual(payload["coverage_cap"], 20)
+        self.assertEqual(payload["matched_loci"], 1)
+        self.assertEqual(payload["observed_loci"], 1)
         self.assertEqual(len(payload["loci"]), 1)
         self.assertEqual(len(payload["bins"]), graph.end_window)
 

@@ -35,13 +35,20 @@ class ProfileRecord:
     seed: int
     matched_paths: int
     eligible_loci: int
+    matched_loci: int
     damage_observations: int
     damage_correlation: float | None
-    damage_decreasing: bool | None
+    damage_endpoint_enriched: bool | None
+    damage_monotonic: bool | None
+    damage_violations: int | None
     equal_locus_correlation: float | None
-    equal_locus_decreasing: bool | None
+    equal_locus_endpoint_enriched: bool | None
+    equal_locus_monotonic: bool | None
+    equal_locus_violations: int | None
     coverage_capped_correlation: float | None
-    coverage_capped_decreasing: bool | None
+    coverage_capped_endpoint_enriched: bool | None
+    coverage_capped_monotonic: bool | None
+    coverage_capped_violations: int | None
 
 
 def pearson(left, right):
@@ -73,6 +80,28 @@ def _profile_values(profile, alternative_field, reference_field, fraction_field)
     return values, observations
 
 
+def compare_profile(expected, values):
+    """Compare observed bins with truth and report distinct shape metrics."""
+    observed = [value for value in values if value is not None]
+    expected_observed = [
+        expected[index]
+        for index, value in enumerate(values)
+        if value is not None
+    ]
+    if len(observed) < 2:
+        return pearson(expected_observed, observed), None, None, None
+    violations = sum(
+        left < right
+        for left, right in zip(observed, observed[1:])
+    )
+    return (
+        pearson(expected_observed, observed),
+        observed[0] > observed[-1],
+        violations == 0,
+        violations,
+    )
+
+
 def evaluate(condition, seed, reads, expected):
     graph = build_bidirected_dbg(
         [read.sequence for read in reads],
@@ -94,23 +123,25 @@ def evaluate(condition, seed, reads, expected):
         "damage_fraction",
     )
 
-    def compare(values):
-        observed = [value for value in values if value is not None]
-        expected_observed = [
-            expected[index]
-            for index, value in enumerate(values)
-            if value is not None
-        ]
-        return (
-            pearson(expected_observed, observed),
-            observed[0] > observed[-1] if len(observed) >= 2 else None,
-        )
-
-    correlation, decreasing = compare(combined)
-    equal_locus_correlation, equal_locus_decreasing = compare(
+    correlation, endpoint, monotonic, violations = compare_profile(
+        expected, combined
+    )
+    (
+        equal_locus_correlation,
+        equal_locus_endpoint,
+        equal_locus_monotonic,
+        equal_locus_violations,
+    ) = compare_profile(
+        expected,
         [value.equal_locus_fraction for value in profile.bins]
     )
-    coverage_capped_correlation, coverage_capped_decreasing = compare(
+    (
+        coverage_capped_correlation,
+        coverage_capped_endpoint,
+        coverage_capped_monotonic,
+        coverage_capped_violations,
+    ) = compare_profile(
+        expected,
         [value.coverage_capped_fraction for value in profile.bins]
     )
     return ProfileRecord(
@@ -118,13 +149,20 @@ def evaluate(condition, seed, reads, expected):
         seed=seed,
         matched_paths=profile.matched_paths,
         eligible_loci=profile.eligible_loci,
+        matched_loci=profile.matched_loci,
         damage_observations=observations,
         damage_correlation=correlation,
-        damage_decreasing=decreasing,
+        damage_endpoint_enriched=endpoint,
+        damage_monotonic=monotonic,
+        damage_violations=violations,
         equal_locus_correlation=equal_locus_correlation,
-        equal_locus_decreasing=equal_locus_decreasing,
+        equal_locus_endpoint_enriched=equal_locus_endpoint,
+        equal_locus_monotonic=equal_locus_monotonic,
+        equal_locus_violations=equal_locus_violations,
         coverage_capped_correlation=coverage_capped_correlation,
-        coverage_capped_decreasing=coverage_capped_decreasing,
+        coverage_capped_endpoint_enriched=coverage_capped_endpoint,
+        coverage_capped_monotonic=coverage_capped_monotonic,
+        coverage_capped_violations=coverage_capped_violations,
     )
 
 
@@ -182,11 +220,17 @@ def main() -> None:
                 "condition",
                 "mean_eligible_loci",
                 "mean_damage_correlation",
-                "damage_decreasing_runs",
+                "damage_endpoint_enriched_runs",
+                "damage_monotonic_runs",
+                "mean_damage_violations",
                 "mean_equal_locus_correlation",
-                "equal_locus_decreasing_runs",
+                "equal_locus_endpoint_enriched_runs",
+                "equal_locus_monotonic_runs",
+                "mean_equal_locus_violations",
                 "mean_coverage_capped_correlation",
-                "coverage_capped_decreasing_runs",
+                "coverage_capped_endpoint_enriched_runs",
+                "coverage_capped_monotonic_runs",
+                "mean_coverage_capped_violations",
                 "runs",
             )
         )
@@ -212,14 +256,21 @@ def main() -> None:
                     condition,
                     statistics.mean(r.eligible_loci for r in selected),
                     statistics.mean(correlations) if correlations else "",
-                    sum(r.damage_decreasing is True for r in selected),
+                    sum(r.damage_endpoint_enriched is True for r in selected),
+                    sum(r.damage_monotonic is True for r in selected),
+                    statistics.mean(r.damage_violations for r in selected),
                     (
                         statistics.mean(equal_locus_correlations)
                         if equal_locus_correlations
                         else ""
                     ),
                     sum(
-                        r.equal_locus_decreasing is True for r in selected
+                        r.equal_locus_endpoint_enriched is True
+                        for r in selected
+                    ),
+                    sum(r.equal_locus_monotonic is True for r in selected),
+                    statistics.mean(
+                        r.equal_locus_violations for r in selected
                     ),
                     (
                         statistics.mean(coverage_capped_correlations)
@@ -227,8 +278,15 @@ def main() -> None:
                         else ""
                     ),
                     sum(
-                        r.coverage_capped_decreasing is True
+                        r.coverage_capped_endpoint_enriched is True
                         for r in selected
+                    ),
+                    sum(
+                        r.coverage_capped_monotonic is True
+                        for r in selected
+                    ),
+                    statistics.mean(
+                        r.coverage_capped_violations for r in selected
                     ),
                     len(selected),
                 )

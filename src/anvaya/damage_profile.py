@@ -50,10 +50,16 @@ class DamageProfile:
 
     end_window: int
     matched_paths: int
-    eligible_loci: int
+    matched_loci: int
+    observed_loci: int
     coverage_cap: int
     bins: tuple[DamageProfileBin, ...]
     loci: tuple[DamageProfileLocus, ...]
+
+    @property
+    def eligible_loci(self) -> int:
+        """Backward-compatible name for loci with terminal observations."""
+        return self.observed_loci
 
 
 def _summarize_loci(
@@ -83,7 +89,7 @@ def _summarize_loci(
     )
 
 
-def _edge_links_at(
+def _edge_distances_at(
     graph: BidirectedDeBruijnGraph,
     start: int,
     edge_ids: tuple[int, ...],
@@ -96,10 +102,11 @@ def _edge_links_at(
             side = expected_end
             if current != graph.edge_sources[edge_id]:
                 side = "right" if side == "left" else "left"
+            offset = graph.node_length if expected_end == "left" else 0
             return tuple(
-                link
-                for link in graph.molecule_end_links(edge_id)
-                if link.end == side
+                distance + offset
+                for distance in graph.molecule_end_distances(edge_id, side)
+                if distance + offset < graph.end_window
             )
         current = _successor(graph, current, edge_id)
     return ()
@@ -160,14 +167,14 @@ def infer_damage_profile(
             if locus in seen_loci:
                 continue
             seen_loci.add(locus)
-            alternative_links = _edge_links_at(
+            alternative_distances = _edge_distances_at(
                 graph,
                 match.branch_handle,
                 match.tip_edge_ids,
                 edge_index,
                 expected_end,
             )
-            reference_links = _edge_links_at(
+            reference_distances = _edge_distances_at(
                 graph,
                 match.branch_handle,
                 match.backbone_edge_ids,
@@ -176,10 +183,10 @@ def infer_damage_profile(
             )
             locus_alternative = [0] * graph.end_window
             locus_reference = [0] * graph.end_window
-            for link in alternative_links:
-                locus_alternative[link.distance] += 1
-            for link in reference_links:
-                locus_reference[link.distance] += 1
+            for distance in alternative_distances:
+                locus_alternative[distance] += 1
+            for distance in reference_distances:
+                locus_reference[distance] += 1
             loci.append(
                 DamageProfileLocus(
                     alternative_edge_id=match.tip_edge_ids[edge_index],
@@ -278,7 +285,11 @@ def infer_damage_profile(
     return DamageProfile(
         end_window=graph.end_window,
         matched_paths=len(matches),
-        eligible_loci=len(seen_loci),
+        matched_loci=len(seen_loci),
+        observed_loci=sum(
+            any(locus.alternative) or any(locus.reference)
+            for locus in loci
+        ),
         coverage_cap=coverage_cap,
         bins=tuple(bins),
         loci=tuple(loci),
@@ -290,10 +301,12 @@ def write_damage_profile(profile: DamageProfile, path: str | Path) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "interpretation": "matched_candidate_locus_fraction",
         "end_window": profile.end_window,
         "matched_paths": profile.matched_paths,
+        "matched_loci": profile.matched_loci,
+        "observed_loci": profile.observed_loci,
         "eligible_loci": profile.eligible_loci,
         "coverage_cap": profile.coverage_cap,
         "bins": [asdict(value) for value in profile.bins],

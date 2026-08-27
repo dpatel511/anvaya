@@ -6,6 +6,9 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Exact changed-base cycle validation, separate endpoint-enrichment and
+  monotonicity metrics, and matched-versus-observed locus counts in
+  damage-profile schema version 4.
 - Per-locus damage evidence and parallel equal-locus and coverage-capped
   summaries in damage-profile schema version 3.
 - Per-bin edge-contribution diagnostics in damage-profile schema version 2,

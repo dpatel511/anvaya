@@ -125,6 +125,24 @@ class BidirectedDeBruijnGraph:
             )
         return tuple(links)
 
+    def molecule_end_distances(
+        self,
+        edge_id: int,
+        end_name: str,
+    ) -> Iterator[int]:
+        """Yield retained terminal distances without allocating link objects."""
+        if not self.molecule_links_collected:
+            raise ValueError("molecule links were not collected")
+        if end_name not in {"left", "right"}:
+            raise ValueError("end_name must be 'left' or 'right'")
+        expected_side = 0 if end_name == "left" else 1
+        start = self.molecule_link_offsets[edge_id]
+        end = self.molecule_link_offsets[edge_id + 1]
+        for token in self.molecule_link_tokens[start:end]:
+            read_side, distance = divmod(token, self.end_window)
+            if read_side % 2 == expected_side:
+                yield distance
+
 
 def flip_handle(handle: Handle) -> Handle:
     """Return the opposite orientation of a handle."""
@@ -385,7 +403,7 @@ def _collect_molecule_links(
         "Q",
         [0],
     ) * graph.molecule_link_offsets[-1]
-    cursors = list(graph.molecule_link_offsets[:-1])
+    cursors = graph.molecule_link_offsets[:-1]
     for edge_id, read_index, side, distance in observations():
         token = (
             (read_index * 2 + side) * graph.end_window + distance

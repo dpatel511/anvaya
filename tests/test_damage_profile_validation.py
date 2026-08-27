@@ -25,6 +25,16 @@ class DamageProfileValidationTests(unittest.TestCase):
         self.assertAlmostEqual(MODULE.pearson([3, 2, 1], [2, 4, 6]), -1.0)
         self.assertIsNone(MODULE.pearson([1, 1], [1, 2]))
 
+    def test_distinguishes_endpoint_enrichment_from_monotonicity(self) -> None:
+        correlation, endpoint, monotonic, violations = MODULE.compare_profile(
+            [5, 4, 3], [5, 2, 3]
+        )
+
+        self.assertIsNotNone(correlation)
+        self.assertTrue(endpoint)
+        self.assertFalse(monotonic)
+        self.assertEqual(violations, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

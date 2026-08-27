@@ -758,15 +758,15 @@ Can molecule-linked matched alternatives recover the positional shape of a sampl
 
 ### Results
 
-| Damage profile | Mean eligible loci | Raw correlation | Equal-locus correlation | Capped correlation | Decreasing profiles |
-|---|---:|---:|---:|---:|---:|
-| Low | 46.8 | 0.908 | 0.910 | 0.908 | 20/20 for all |
-| Standard | 351.4 | 0.966 | 0.963 | 0.965 | 20/20 for all |
-| High | 686.0 | 0.974 | 0.971 | 0.974 | 20/20 for all |
+| Damage profile | Mean observed loci | Raw correlation | Equal-locus correlation | Capped correlation | Endpoint enriched | Exactly monotonic |
+|---|---:|---:|---:|---:|---:|---:|
+| Low | 46.8 | 0.908 | 0.910 | 0.908 | 20/20 | 12/20 |
+| Standard | 351.4 | 0.966 | 0.963 | 0.965 | 20/20 | 20/20 |
+| High | 686.0 | 0.974 | 0.971 | 0.974 | 20/20 | 20/20 |
 
-Every inferred profile decreased from the molecule terminus toward the interior. Correlations ranged from 0.769–0.984 for low damage, 0.919–0.993 for standard damage, and 0.960–0.991 for high damage. Canonical bidirected traversal represented the simulated events predominantly in one reverse-complement-equivalent channel, so validation uses the combined C→T/5′ plus G→A/3′ curve while retaining both raw channels in the report.
+Every inferred profile had a higher terminal than interior endpoint. That older endpoint check was incorrectly described as proof of a decreasing curve. Schema version 4 checks every adjacent pair: low-damage profiles averaged 0.4 upward steps and only 12/20 were exactly monotonic; standard and high profiles were monotonic in all runs. Correlations ranged from 0.769–0.984 for low damage, 0.919–0.993 for standard damage, and 0.960–0.991 for high damage. Canonical bidirected traversal represented the simulated events predominantly in one reverse-complement-equivalent channel, so validation uses the combined C→T/5′ plus G→A/3′ curve while retaining both raw channels in the report.
 
-Schema version 3 reran the same 60 graphs with equal-locus and 20-observation-capped locus weighting. Both retained terminal decrease in every run. Equal-locus weighting slightly improved the mean low-damage correlation but slightly reduced the standard and high correlations. Capped weighting remained within 0.001 of the raw mean in every condition. These alternatives are therefore retained as coverage-sensitivity diagnostics rather than replacing the raw estimator.
+Schema version 4 reran the same 60 graphs using exact changed-base cycles and separate endpoint/monotonicity metrics. Correlations were unchanged from schema version 3. Equal-locus weighting slightly improved the mean low-damage correlation but slightly reduced the standard and high correlations. Capped weighting remained within 0.001 of the raw mean in every condition. These alternatives are therefore retained as coverage-sensitivity diagnostics rather than replacing the raw estimator.
 
 ### Interpretation
 
@@ -822,6 +822,22 @@ the same 9,456,876 graph nodes, 9,423,529 edges, 14,615 matched tips, and 4,517
 eligible loci. Its event TSV and contig FASTA were byte-identical to the earlier
 outputs. The new summaries therefore change only profile interpretation, as
 intended; they do not change graph topology or assembly output.
+
+Schema version 4 found that the earlier real-data profile used k-mer-boundary
+distance rather than the exact changed-base cycle. With `k=21` and a five-cycle
+window, all 4,517 structural loci still matched, but only 513 (11.36%) had any
+changed-base observation inside cycles 0–4; 4,004 (88.64%) were boundary-only.
+The corrected C→T/5′ counts were zero in this window. The remaining combined
+profile is therefore the G→A/3′ channel: 0.219, 0.197, 0.179, 0.033, and 0.105.
+Equal-locus values were 0.364, 0.321, 0.267, 0.235, and 0.205; capped values
+were 0.225, 0.204, 0.184, 0.113, and 0.107. This strengthens the terminal
+signal but still does not produce a monotonic empirical curve.
+
+The corrected run preserved all topology and report counts: 9,456,876 nodes,
+9,423,529 edges, 14,615 matched tips, and 740,785 unitigs. It completed in
+385.95 seconds versus 319.72 seconds for the earlier run, while input loading
+and graph construction were also slower on the host; one unpaired wall-time
+comparison is insufficient to infer a performance regression.
 
 ## K-mer size experiment
 
