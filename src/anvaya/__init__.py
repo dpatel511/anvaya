@@ -22,6 +22,14 @@ from anvaya.damage_likelihood import (
     ParameterEstimate,
     fit_candidate_damage_model,
 )
+from anvaya.event_likelihood import (
+    CrossFittedDamageModels,
+    EventLikelihood,
+    NucleotideObservation,
+    compare_event_likelihoods,
+    fit_cross_fitted_damage_models,
+    score_matched_event,
+)
 from anvaya.graph import (
     DeBruijnGraph,
     branching_nodes,
@@ -104,4 +112,10 @@ __all__ = [
     "summarize_graph",
     "write_fasta",
     "write_damage_profile",
+    "CrossFittedDamageModels",
+    "EventLikelihood",
+    "NucleotideObservation",
+    "compare_event_likelihoods",
+    "fit_cross_fitted_damage_models",
+    "score_matched_event",
 ]

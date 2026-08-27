@@ -6,6 +6,13 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Deterministic five-fold candidate-locus damage fitting that excludes each
+  weak-tip locus from the profile used to score it.
+- Report-only damage, Phred sequencing-error, and constant-frequency variation
+  likelihood rankings with an explicit variation-model complexity penalty,
+  evidence scope, insufficiency reasons, and uncalibrated margins.
+- Damage-profile schema version 6 cross-fit provenance plus controlled and
+  public-profile validation experiments 12 and 13.
 - Compact, side-specific Phred quality storage for molecule-linked terminal
   observations, with explicit missing-quality accounting and a report-only
   symmetric sequencing-error log likelihood in event TSV output.

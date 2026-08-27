@@ -915,6 +915,60 @@ The available timings therefore do not establish a quality-storage regression.
 A paired repeated timing comparison is required if performance becomes the
 next decision gate.
 
+## Held-out event-likelihood validation
+
+`12_event_likelihood_validation.py` compares three explanations using the same
+terminal molecule observations and qualities: a fixed positional damage curve,
+the Phred sequencing-error model, and a fitted constant-frequency variation
+model with a one-parameter BIC penalty. Across 20 seeds per condition, all 20
+damage simulations ranked damage, all 20 independent sequencing-error
+simulations ranked sequencing error, and all 20 constant-frequency simulations
+ranked variation.
+
+The adversarial condition generated high-quality errors with exactly the same
+positional distribution as the damage curve. All 20 ranked damage. This is an
+expected identifiability failure: once substitution, position, and quality have
+the same distribution, these observations contain no variable that identifies
+the generating mechanism. The output is consequently a report-only ranking
+with an explicit uncalibrated reason, not a replacement classifier.
+
+`13_cross_fit_profile_validation.py` applied the production fold assignment to
+the existing `SRR32866683` schema-version-5 profile. All five held-out models
+fitted successfully. Each held out 903–904 of 4,517 loci and trained on
+3,613–3,614. Their fitted cycle-0 probabilities ranged from 0.3292 to 0.3396;
+cycle-4 probabilities ranged from 0.1315 to 0.1531, and LR statistics ranged
+from 33.34 to 44.42. The similar curves show that the public candidate profile
+is not controlled by any one fold.
+
+A full schema-version-6 rerun on the same 1,409,072 public reads preserved the
+assembly exactly: `contigs-v4.fasta` and `contigs-v5.fasta` had the same
+43,447,947-byte size and SHA-256 digest. All 45 pre-existing TSV fields matched
+across all 111,399 rows, and the full candidate damage fit was unchanged. The
+new likelihood layer scored 1,478 events (1,209 incomplete branches and 269
+tips): 968 ranked damage, 24 sequencing error, and 486 variation. It explicitly
+left 95,848 matched events insufficient; 92,988 had no eligible terminal
+observations, while 1,834 lacked alternative support and 1,026 lacked reference
+support.
+
+Most rankings remain weak. Of the 1,478 scored events, 1,054 (71.31%) had a
+margin below 1, 424 had a margin of at least 1, 154 at least 2, and 57 at least
+5. None of the damage-ranked events had a margin of at least 5. Substantial
+disagreement with the existing heuristic labels therefore reinforces that the
+new ranking must remain report-only until calibration and systematic-error and
+overdispersion controls are implemented.
+
+The schema-version-6 run completed in 423.07 seconds versus 379.94 seconds for
+the preceding run, an increase of 43.13 seconds (11.35%). Event reporting took
+131.18 seconds versus 66.24 seconds, although graph construction was 23.65
+seconds faster in the later run. The event TSV grew by 50.30% because of the 15
+new likelihood and provenance fields. These unpaired measurements identify
+report generation and output size as optimization targets but are not a stable
+microbenchmark.
+
+Generated tables remain ignored under
+`experiments/validation/generated/event_likelihood_validation/` and
+`experiments/validation/generated/cross_fit_profile_validation/`.
+
 ## K-mer size experiment
 
 ### Question

@@ -15,6 +15,11 @@ from anvaya.bubbles import Bubble, BubblePath
 from anvaya.cleaning import TipCandidate
 from anvaya.classification import format_substitutions
 from anvaya.damage_profile import infer_damage_profile, write_damage_profile
+from anvaya.event_likelihood import (
+    CrossFittedDamageModels,
+    fit_cross_fitted_damage_models,
+    score_matched_event,
+)
 from anvaya.incomplete_branches import (
     IncompleteBranchCandidate,
     match_incomplete_branch_to_backbone,
@@ -68,6 +73,21 @@ _TIP_CLASSIFICATION_FIELDS = (
     "missing_quality_observations",
     "mean_base_quality",
     "sequencing_error_log_likelihood",
+    "likelihood_status",
+    "likelihood_reasons",
+    "likelihood_profile_scope",
+    "likelihood_observations",
+    "likelihood_alternative_observations",
+    "likelihood_reference_observations",
+    "likelihood_missing_quality_observations",
+    "damage_model_log_likelihood",
+    "error_model_log_likelihood",
+    "variation_model_log_likelihood",
+    "variation_model_frequency",
+    "variation_model_complexity_penalty",
+    "variation_model_penalized_log_likelihood",
+    "likelihood_best_explanation",
+    "likelihood_log_margin",
 )
 
 
@@ -236,6 +256,7 @@ def _bubble_rows(
 def _match_columns(
     graph: BidirectedDeBruijnGraph,
     match: TipBackboneMatch | None,
+    likelihood_models: CrossFittedDamageModels | None,
 ) -> tuple[str, str, list[object]]:
     if match is None:
         return (
@@ -248,6 +269,7 @@ def _match_columns(
         )
 
     decision = classify_tip_match(graph, match)
+    likelihood = score_matched_event(graph, match, likelihood_models)
     columns: list[object] = [
         match.tip_sequence,
         "true",
@@ -302,6 +324,49 @@ def _match_columns(
             if decision.evidence.sequencing_error_log_likelihood is None
             else f"{decision.evidence.sequencing_error_log_likelihood:.6f}"
         ),
+        likelihood.status,
+        ";".join(likelihood.reasons),
+        likelihood.profile_scope,
+        likelihood.observations,
+        likelihood.alternative_observations,
+        likelihood.reference_observations,
+        likelihood.missing_quality_observations,
+        (
+            ""
+            if likelihood.damage_log_likelihood is None
+            else f"{likelihood.damage_log_likelihood:.6f}"
+        ),
+        (
+            ""
+            if likelihood.error_log_likelihood is None
+            else f"{likelihood.error_log_likelihood:.6f}"
+        ),
+        (
+            ""
+            if likelihood.variation_log_likelihood is None
+            else f"{likelihood.variation_log_likelihood:.6f}"
+        ),
+        (
+            ""
+            if likelihood.variation_frequency is None
+            else f"{likelihood.variation_frequency:.6f}"
+        ),
+        (
+            ""
+            if likelihood.variation_complexity_penalty is None
+            else f"{likelihood.variation_complexity_penalty:.6f}"
+        ),
+        (
+            ""
+            if likelihood.variation_penalized_log_likelihood is None
+            else f"{likelihood.variation_penalized_log_likelihood:.6f}"
+        ),
+        likelihood.best_explanation or "",
+        (
+            ""
+            if likelihood.log_likelihood_margin is None
+            else f"{likelihood.log_likelihood_margin:.6f}"
+        ),
     ]
     return (
         format_substitutions(match.substitutions),
@@ -321,13 +386,18 @@ def _matched_path_row(
     minimum_support: int,
     sequence: str,
     match: TipBackboneMatch | None,
+    likelihood_models: CrossFittedDamageModels | None,
 ) -> list[object]:
     left, right, internal, ambiguous = _path_evidence(
         graph,
         start,
         edge_ids,
     )
-    substitutions, compatibility, match_columns = _match_columns(graph, match)
+    substitutions, compatibility, match_columns = _match_columns(
+        graph,
+        match,
+        likelihood_models,
+    )
     return [
         event_id,
         event_type,
@@ -353,6 +423,8 @@ def _tip_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     tip: TipCandidate,
+    match: TipBackboneMatch | None,
+    likelihood_models: CrossFittedDamageModels | None,
 ) -> tuple[list[object], TipBackboneMatch | None]:
     observations = sum(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
@@ -360,7 +432,6 @@ def _tip_row(
     minimum_support = min(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
     )
-    match = match_tip_to_backbone(graph, tip)
     return (
         _matched_path_row(
             graph,
@@ -373,6 +444,7 @@ def _tip_row(
             minimum_support,
             spell_edge_path(graph, tip.start, tip.edge_ids),
             match,
+            likelihood_models,
         ),
         match,
     )
@@ -382,6 +454,7 @@ def _incomplete_branch_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     candidate: IncompleteBranchCandidate,
+    likelihood_models: CrossFittedDamageModels | None,
 ) -> tuple[list[object], TipBackboneMatch | None]:
     match = match_incomplete_branch_to_backbone(graph, candidate)
     return (
@@ -396,6 +469,7 @@ def _incomplete_branch_row(
             candidate.minimum_edge_support,
             spell_edge_path(graph, candidate.start, candidate.edge_ids),
             match,
+            likelihood_models,
         ),
         match,
     )
@@ -414,6 +488,14 @@ def write_event_report(
         raise ValueError("event reporting requires read-end evidence")
     if damage_profile_path is not None and not graph.molecule_links_collected:
         raise ValueError("damage profiling requires molecule links")
+
+    tip_matches = [match_tip_to_backbone(graph, tip) for tip in tips]
+    profile_matches = [match for match in tip_matches if match is not None]
+    profile = None
+    likelihood_models = None
+    if damage_profile_path is not None:
+        profile = infer_damage_profile(graph, profile_matches)
+        likelihood_models = fit_cross_fitted_damage_models(profile)
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -443,12 +525,19 @@ def write_event_report(
         )
         path_count = 0
         matched_tip_count = 0
-        profile_matches: list[TipBackboneMatch] = []
-        for index, tip in enumerate(tips, start=1):
-            row, match = _tip_row(graph, f"tip-{index}", tip)
+        for index, (tip, match) in enumerate(
+            zip(tips, tip_matches, strict=True),
+            start=1,
+        ):
+            row, match = _tip_row(
+                graph,
+                f"tip-{index}",
+                tip,
+                match,
+                likelihood_models,
+            )
             writer.writerow(row)
             if match is not None:
-                profile_matches.append(match)
                 matched_tip_count += 1
             path_count += 1
         matched_incomplete_count = 0
@@ -457,6 +546,7 @@ def write_event_report(
                 graph,
                 f"incomplete-branch-{index}",
                 candidate,
+                likelihood_models,
             )
             writer.writerow(row)
             if match is not None:
@@ -468,9 +558,44 @@ def write_event_report(
             path_count += len(rows)
 
     if damage_profile_path is not None:
+        assert profile is not None
+        assert likelihood_models is not None
         write_damage_profile(
-            infer_damage_profile(graph, profile_matches),
+            profile,
             damage_profile_path,
+            cross_fit_summary={
+                "status": likelihood_models.status,
+                "reasons": likelihood_models.reasons,
+                "folds": likelihood_models.folds,
+                "fitted_folds": likelihood_models.fitted_folds,
+                "fold_models": [
+                    {
+                        "fold": fold + 1,
+                        "status": (
+                            "fitted"
+                            if fold in likelihood_models.probabilities_by_fold
+                            else "insufficient_evidence"
+                        ),
+                        "fitted_probabilities": (
+                            likelihood_models.probabilities_by_fold.get(
+                                fold,
+                                (),
+                            )
+                        ),
+                    }
+                    for fold in range(likelihood_models.folds)
+                ],
+                "independent_tip_profile_probabilities": (
+                    likelihood_models.independent_probabilities
+                ),
+                "assignment": (
+                    "sorted unique candidate loci assigned round-robin"
+                ),
+                "scoring_rule": (
+                    "each tip locus uses a model fitted without its fold; "
+                    "incomplete branches use the independent tip profile"
+                ),
+            },
         )
 
     return EventReportSummary(

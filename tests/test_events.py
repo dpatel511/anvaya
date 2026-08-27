@@ -341,7 +341,16 @@ class EventReportCliTests(unittest.TestCase):
                 )
 
             payload = json.loads(profile.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], 6)
             self.assertEqual(payload["eligible_loci"], 1)
+            self.assertEqual(
+                payload["candidate_damage_cross_fit"]["status"],
+                "insufficient_evidence",
+            )
+            self.assertEqual(
+                len(payload["candidate_damage_cross_fit"]["fold_models"]),
+                5,
+            )
             self.assertIn(f"damage_profile_report={profile}", stdout.getvalue())
             self.assertEqual(reported.read_bytes(), baseline.read_bytes())
 

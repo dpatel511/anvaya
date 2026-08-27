@@ -306,12 +306,16 @@ def infer_damage_profile(
     )
 
 
-def write_damage_profile(profile: DamageProfile, path: str | Path) -> None:
+def write_damage_profile(
+    profile: DamageProfile,
+    path: str | Path,
+    cross_fit_summary: dict[str, object] | None = None,
+) -> None:
     """Write a candidate-locus damage profile as JSON."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 5,
+        "schema_version": 6 if cross_fit_summary is not None else 5,
         "interpretation": "matched_candidate_locus_fraction",
         "end_window": profile.end_window,
         "matched_paths": profile.matched_paths,
@@ -323,6 +327,8 @@ def write_damage_profile(profile: DamageProfile, path: str | Path) -> None:
         "loci": [asdict(value) for value in profile.loci],
         "candidate_damage_fit": asdict(profile.candidate_damage_fit),
     }
+    if cross_fit_summary is not None:
+        payload["candidate_damage_cross_fit"] = cross_fit_summary
     output_path.write_text(
         json.dumps(payload, indent=2) + "\n",
         encoding="utf-8",
