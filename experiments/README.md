@@ -718,6 +718,36 @@ On the local 19,643-read FASTQ, classification reported eight bubbles and eight 
 
 Generated classification tables remain ignored under `experiments/validation/generated/unitig_path_classification/`.
 
+## Molecule-linked substitution ablation
+
+### Question
+
+Does requiring multiple damage-compatible substitutions to co-occur on the same source read improve damage-tip classification without increasing error or rare-strain calls?
+
+`08_molecule_linkage_validation.py` reuses the expanded weak-tip generators and classifies every matched candidate twice on the same graph: once with molecule linkage disabled and once enabled. The 20-seed matrix contains 460 paired conditions: clean reads; low, standard, and high 5′, 3′, and bidirectional damage; three uniform error rates; terminal-only errors; deliberately correlated C→T/G→A terminal errors; four ordinary rare-strain coverages; and four molecule-spanning C→T/G→A rare-strain coverages. Graph nodes, edges, and observations are asserted identical between aggregate and linkage-enabled builds.
+
+### Results
+
+| Truth class | Candidates | Multi-substitution | Aggregate damage-like | Linked damage-like | Label changes |
+|---|---:|---:|---:|---:|---:|
+| Damage | 34,762 | 1,155 | 30,960 | 31,018 | 58 |
+| Sequencing error | 1,810 | 0 | 166 | 166 | 0 |
+| Rare strain | 124 | 0 | 1 | 1 | 0 |
+
+All 58 changes were true damage tips moving from ambiguous to damage-like. They occurred in standard and high damage conditions across 18 of 20 seeds; no label moved in the opposite direction. Candidate-level exact McNemar testing gives `p=6.94e-18`. At the independent-seed level, 18 seeds improved and none regressed, giving a two-sided sign-test value of approximately `7.63e-6` among discordant seeds.
+
+For multi-substitution damage tips, recall increased from 1,093/1,155 (94.63%) to 1,151/1,155 (99.65%), a 5.02 percentage-point gain. Overall damage recall increased from 89.06% to 89.23%, so the material effect is concentrated where linkage supplies genuinely new information. Opt-in linkage increased graph-build time by 2.04× and used about 672 KB mean compact-array storage per 20 kb, 20× graph.
+
+### Interpretation and limitation
+
+- Read-level linkage provides a statistically supported sensitivity improvement for multi-substitution simulated damage tips.
+- It caused no observed label regression in this matrix and does not change graph topology or assembly output.
+- It does not identify biochemical cause. Correlated ordinary terminal errors can have the same observed C→T/G→A pattern: 134/169 paired-terminal-error tips were damage-like under both scoring modes.
+- The error and rare-strain generators produced their paired changes as separate single-substitution tips. Consequently, they did not exercise the multi-substitution linkage gate. Linked-versus-unlinked multi-substitution non-damage paths remain a required adversarial fixture before any evidence-based removal rule.
+- The next implementation step is a sample-level positional damage profile, followed by calibrated likelihoods that combine linkage with profile fit, base quality, coverage, and variation evidence.
+
+Generated tables remain ignored under `experiments/validation/generated/molecule_linkage_validation/`.
+
 ## K-mer size experiment
 
 ### Question
