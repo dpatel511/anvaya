@@ -78,18 +78,32 @@ def _oriented_terminal_counts(
     start: int,
     edge_ids: tuple[int, ...],
     edge_index: int,
-) -> tuple[int, int]:
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
     current = start
     for index, edge_id in enumerate(edge_ids):
         evidence = graph.end_support(edge_id)
-        left = sum(evidence.left)
-        right = sum(evidence.right)
+        left = evidence.left
+        right = evidence.right
         if current != graph.edge_sources[edge_id]:
             left, right = right, left
         if index == edge_index:
             return left, right
         current = _successor(graph, current, edge_id)
-    return 0, 0
+    return (), ()
+
+
+def _exact_end_count(
+    graph: BidirectedDeBruijnGraph,
+    counts: tuple[int, ...],
+    expected_end: str,
+) -> int:
+    """Count observations where the appended base is inside the end window."""
+    offset = graph.node_length if expected_end == "left" else 0
+    return sum(
+        count
+        for distance, count in enumerate(counts)
+        if distance + offset < graph.end_window
+    )
 
 
 def _damage_compatible(
@@ -110,9 +124,17 @@ def _damage_compatible(
             tip_edge_ids,
             edge_index,
         )
-        if change.reference == "C" and change.alternative == "T" and left:
+        if (
+            change.reference == "C"
+            and change.alternative == "T"
+            and _exact_end_count(graph, left, "left")
+        ):
             continue
-        if change.reference == "G" and change.alternative == "A" and right:
+        if (
+            change.reference == "G"
+            and change.alternative == "A"
+            and _exact_end_count(graph, right, "right")
+        ):
             continue
         return False
     return True

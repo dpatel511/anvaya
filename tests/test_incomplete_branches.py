@@ -38,8 +38,8 @@ class IncompleteBranchTests(unittest.TestCase):
         self.assertEqual(match.tip_sequence, "AGCCTAA")
         self.assertEqual(match.backbone_sequence, "AGCCCAA")
         self.assertEqual(match.relative_coverage, 0.2)
-        self.assertTrue(match.damage_compatible)
-        self.assertEqual(classify_tip_match(self.graph, match).label, "damage-like")
+        self.assertFalse(match.damage_compatible)
+        self.assertEqual(classify_tip_match(self.graph, match).label, "ambiguous")
 
     def test_is_distinct_from_tip_and_bubble_detection(self) -> None:
         candidate_edges = set(

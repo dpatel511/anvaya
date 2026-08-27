@@ -91,6 +91,10 @@ class EndEvidenceGraphTests(unittest.TestCase):
                 for link in links
             },
         )
+        self.assertEqual(
+            tuple(graph.molecule_end_distances(damaged_edge, "left")),
+            (0,),
+        )
         self.assertEqual(len(graph.molecule_link_offsets), graph.edge_count + 1)
 
     def test_molecule_links_are_opt_in(self) -> None:

@@ -15,11 +15,12 @@ class TipClassificationTests(unittest.TestCase):
         self,
         backbone: str,
         tip_read: str,
+        end_window: int = 3,
     ):
         graph = build_bidirected_dbg(
             [backbone] * 10 + [tip_read],
             5,
-            end_window=3,
+            end_window=end_window,
         )
         tip = find_weak_tip_candidates(graph)[0]
         match = match_tip_to_backbone(graph, tip)
@@ -27,17 +28,19 @@ class TipClassificationTests(unittest.TestCase):
         assert match is not None
         return graph, match, classify_tip_match(graph, match)
 
-    def test_classifies_five_prime_damage_supported_tip(self) -> None:
-        _, _, decision = self._classify("AAGCCCAAA", "AAGCCTAAA")
+    def test_reports_exact_five_prime_damage_cycle(self) -> None:
+        _, _, decision = self._classify(
+            "AAGCCCAAA", "AAGCCTAAA", end_window=11
+        )
 
-        self.assertEqual(decision.label, "damage-like")
+        self.assertEqual(decision.label, "ambiguous")
         self.assertGreater(decision.damage_score, decision.error_score)
         self.assertEqual(decision.evidence.compatible_substitutions, 1)
         self.assertEqual(
             decision.evidence.substitution_terminal_observations,
             1,
         )
-        self.assertEqual(decision.evidence.mean_damage_distance, 1.0)
+        self.assertEqual(decision.evidence.mean_damage_distance, 5.0)
 
     def test_classifies_three_prime_damage_supported_tip(self) -> None:
         _, _, decision = self._classify("ACATACACG", "ACATACACA")
@@ -50,7 +53,7 @@ class TipClassificationTests(unittest.TestCase):
         graph = build_bidirected_dbg(
             ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
             5,
-            end_window=3,
+            end_window=11,
             track_molecule_links=True,
         )
         tip = find_weak_tip_candidates(graph)[0]
@@ -68,7 +71,7 @@ class TipClassificationTests(unittest.TestCase):
         graph = build_bidirected_dbg(
             ["TCTCGTGAAGCC"] * 10 + ["TCTTATGAAGCC"],
             5,
-            end_window=4,
+            end_window=7,
             track_molecule_links=True,
         )
         tip = find_weak_tip_candidates(graph)[0]
@@ -86,12 +89,12 @@ class TipClassificationTests(unittest.TestCase):
         self.assertEqual(len(decision.substitutions), 2)
         self.assertEqual(
             [change.expected_molecule_count for change in decision.substitutions],
-            [1, 1],
+            [0, 1],
         )
-        self.assertEqual(decision.evidence.joint_molecule_observations, 1)
-        self.assertEqual(decision.evidence.joint_molecule_fraction, 1.0)
-        self.assertIn("molecule_linked_substitutions", decision.reasons)
-        self.assertGreater(
+        self.assertEqual(decision.evidence.joint_molecule_observations, 0)
+        self.assertEqual(decision.evidence.joint_molecule_fraction, 0.0)
+        self.assertNotIn("molecule_linked_substitutions", decision.reasons)
+        self.assertLess(
             decision.damage_score,
             aggregate_decision.damage_score,
         )

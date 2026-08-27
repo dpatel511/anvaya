@@ -79,8 +79,8 @@ class _OrientedEdgeEvidence:
     ambiguous_terminal: int
     forward: int
     reverse: int
-    left_molecules: tuple[int, ...] | None
-    right_molecules: tuple[int, ...] | None
+    left_molecules: tuple[tuple[int, int], ...] | None
+    right_molecules: tuple[tuple[int, int], ...] | None
 
 
 def _clamp(value: float) -> float:
@@ -100,15 +100,19 @@ def _oriented_path_evidence(
         right = end_support.right
         forward = graph.forward_support[edge_id]
         reverse = graph.reverse_support[edge_id]
-        left_molecules: tuple[int, ...] | None = None
-        right_molecules: tuple[int, ...] | None = None
+        left_molecules: tuple[tuple[int, int], ...] | None = None
+        right_molecules: tuple[tuple[int, int], ...] | None = None
         if graph.molecule_links_collected:
             links = graph.molecule_end_links(edge_id)
             left_molecules = tuple(
-                link.read_index for link in links if link.end == "left"
+                (link.read_index, link.distance)
+                for link in links
+                if link.end == "left"
             )
             right_molecules = tuple(
-                link.read_index for link in links if link.end == "right"
+                (link.read_index, link.distance)
+                for link in links
+                if link.end == "right"
             )
         if current != graph.edge_sources[edge_id]:
             left, right = right, left
@@ -155,6 +159,21 @@ def _path_summary(
     )
 
 
+def _exact_end_counts(
+    graph: BidirectedDeBruijnGraph,
+    counts: tuple[int, ...],
+    expected_end: str,
+) -> tuple[int, ...]:
+    """Move k-mer-boundary evidence to the appended nucleotide's cycle."""
+    offset = graph.node_length if expected_end == "left" else 0
+    exact = [0] * graph.end_window
+    for distance, count in enumerate(counts):
+        base_distance = distance + offset
+        if base_distance < graph.end_window:
+            exact[base_distance] += count
+    return tuple(exact)
+
+
 def collect_tip_evidence(
     graph: BidirectedDeBruijnGraph,
     match: TipBackboneMatch,
@@ -197,15 +216,23 @@ def collect_tip_evidence(
             internal = edge.internal
             if change.reference == "C" and change.alternative == "T":
                 expected_end = "left"
-                expected_counts = edge.left
+                expected_counts = _exact_end_counts(graph, edge.left, "left")
                 if edge.left_molecules is not None:
-                    expected_molecules = set(edge.left_molecules)
+                    expected_molecules = {
+                        read_index
+                        for read_index, distance in edge.left_molecules
+                        if distance + graph.node_length < graph.end_window
+                    }
                 other_terminal = sum(edge.right) + edge.ambiguous_terminal
             elif change.reference == "G" and change.alternative == "A":
                 expected_end = "right"
-                expected_counts = edge.right
+                expected_counts = _exact_end_counts(graph, edge.right, "right")
                 if edge.right_molecules is not None:
-                    expected_molecules = set(edge.right_molecules)
+                    expected_molecules = {
+                        read_index
+                        for read_index, distance in edge.right_molecules
+                        if distance < graph.end_window
+                    }
                 other_terminal = sum(edge.left) + edge.ambiguous_terminal
             else:
                 other_terminal = (

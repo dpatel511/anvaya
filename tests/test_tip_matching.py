@@ -27,7 +27,13 @@ class TipBackboneMatchingTests(unittest.TestCase):
         self.assertEqual(match.ry_identity, 1.0)
 
     def test_reports_terminal_damage_compatible_substitution(self) -> None:
-        match = match_tip_to_backbone(self.graph, self.tip)
+        graph = build_bidirected_dbg(
+            ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
+            5,
+            end_window=7,
+        )
+        tip = find_weak_tip_candidates(graph)[0]
+        match = match_tip_to_backbone(graph, tip)
 
         self.assertIsNotNone(match)
         assert match is not None
@@ -38,6 +44,13 @@ class TipBackboneMatchingTests(unittest.TestCase):
             (5, "C", "T"),
         )
         self.assertTrue(match.damage_compatible)
+
+    def test_rejects_changed_base_outside_terminal_window(self) -> None:
+        match = match_tip_to_backbone(self.graph, self.tip)
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertFalse(match.damage_compatible)
 
     def test_does_not_modify_graph(self) -> None:
         degrees = bytes(self.graph.out_degrees)
@@ -85,11 +98,11 @@ class TipBackboneMatchingTests(unittest.TestCase):
         )
         self.assertTrue(match.damage_compatible)
 
-    def test_accepts_multiple_oriented_damage_substitutions(self) -> None:
+    def test_requires_terminal_support_for_every_damage_substitution(self) -> None:
         graph = build_bidirected_dbg(
             ["TCTCGTGAAGCC"] * 10 + ["TCTTATGAAGCC"],
             5,
-            end_window=4,
+            end_window=7,
         )
         tip = find_weak_tip_candidates(graph)[0]
 
@@ -104,7 +117,7 @@ class TipBackboneMatchingTests(unittest.TestCase):
             ],
             [(5, "C", "T"), (6, "G", "A")],
         )
-        self.assertTrue(match.damage_compatible)
+        self.assertFalse(match.damage_compatible)
 
 
 if __name__ == "__main__":
