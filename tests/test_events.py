@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -129,6 +130,24 @@ class EventReportTests(unittest.TestCase):
                     Path(directory) / "events.tsv",
                 )
 
+    def test_profile_failure_does_not_write_event_report(self) -> None:
+        graph = build_bidirected_dbg(["AACTGGA"], 3, end_window=2)
+
+        with tempfile.TemporaryDirectory() as directory:
+            events = Path(directory) / "events.tsv"
+            profile = Path(directory) / "profile.json"
+            with self.assertRaisesRegex(ValueError, "requires molecule links"):
+                write_event_report(
+                    graph,
+                    [],
+                    [],
+                    events,
+                    damage_profile_path=profile,
+                )
+
+            self.assertFalse(events.exists())
+            self.assertFalse(profile.exists())
+
 
 class EventReportCliTests(unittest.TestCase):
     def test_cli_reports_incomplete_branch_without_changing_assembly(
@@ -228,6 +247,64 @@ class EventReportCliTests(unittest.TestCase):
                         "assemble", "-i", str(reads), "--k", "3",
                         "--orientation-aware",
                         "--event-report", str(root / "events.tsv"),
+                        "-o", str(root / "unitigs.fasta"),
+                    ]
+                )
+
+    def test_cli_writes_damage_profile_without_changing_assembly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads = root / "reads.fasta"
+            baseline = root / "baseline.fasta"
+            reported = root / "reported.fasta"
+            events = root / "events.tsv"
+            profile = root / "damage-profile.json"
+            records = ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"]
+            reads.write_text(
+                "".join(
+                    f">read_{index}\n{read}\n"
+                    for index, read in enumerate(records)
+                ),
+                encoding="utf-8",
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                main(
+                    [
+                        "assemble", "-i", str(reads), "--k", "5",
+                        "--orientation-aware", "--end-window", "3",
+                        "-o", str(baseline),
+                    ]
+                )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+                main(
+                    [
+                        "assemble", "-i", str(reads), "--k", "5",
+                        "--orientation-aware", "--end-window", "3",
+                        "--event-report", str(events),
+                        "--damage-profile-report", str(profile),
+                        "-o", str(reported),
+                    ]
+                )
+
+            payload = json.loads(profile.read_text(encoding="utf-8"))
+            self.assertEqual(payload["eligible_loci"], 1)
+            self.assertIn(f"damage_profile_report={profile}", stdout.getvalue())
+            self.assertEqual(reported.read_bytes(), baseline.read_bytes())
+
+    def test_damage_profile_requires_event_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads = root / "reads.fasta"
+            reads.write_text(">read\nAACTGGA\n", encoding="utf-8")
+
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                main(
+                    [
+                        "assemble", "-i", str(reads), "--k", "3",
+                        "--orientation-aware", "--end-window", "3",
+                        "--damage-profile-report", str(root / "profile.json"),
                         "-o", str(root / "unitigs.fasta"),
                     ]
                 )

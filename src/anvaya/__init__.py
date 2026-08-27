@@ -10,6 +10,12 @@ from anvaya.bidirected import (
     summarize_bidirected_graph,
 )
 from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
+from anvaya.damage_profile import (
+    DamageProfile,
+    DamageProfileBin,
+    infer_damage_profile,
+    write_damage_profile,
+)
 from anvaya.graph import (
     DeBruijnGraph,
     branching_nodes,
@@ -47,6 +53,8 @@ from anvaya.unitigs import extract_unitigs
 __all__ = [
     "BidirectedDeBruijnGraph",
     "DeBruijnGraph",
+    "DamageProfile",
+    "DamageProfileBin",
     "GraphSummary",
     "IncompleteBranchCandidate",
     "MoleculeEndLink",
@@ -68,6 +76,7 @@ __all__ = [
     "extract_unitigs",
     "find_incomplete_branch_candidates",
     "in_degree",
+    "infer_damage_profile",
     "kmers",
     "load_reads",
     "match_branch_to_backbone",
@@ -84,4 +93,5 @@ __all__ = [
     "summarize_bidirected_graph",
     "summarize_graph",
     "write_fasta",
+    "write_damage_profile",
 ]
