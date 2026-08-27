@@ -13,6 +13,7 @@ from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
 from anvaya.damage_profile import (
     DamageProfile,
     DamageProfileBin,
+    DamageProfileLocus,
     infer_damage_profile,
     write_damage_profile,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "DeBruijnGraph",
     "DamageProfile",
     "DamageProfileBin",
+    "DamageProfileLocus",
     "GraphSummary",
     "IncompleteBranchCandidate",
     "MoleculeEndLink",

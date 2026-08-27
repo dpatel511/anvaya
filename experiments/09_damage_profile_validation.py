@@ -38,6 +38,10 @@ class ProfileRecord:
     damage_observations: int
     damage_correlation: float | None
     damage_decreasing: bool | None
+    equal_locus_correlation: float | None
+    equal_locus_decreasing: bool | None
+    coverage_capped_correlation: float | None
+    coverage_capped_decreasing: bool | None
 
 
 def pearson(left, right):
@@ -103,6 +107,12 @@ def evaluate(condition, seed, reads, expected):
         )
 
     correlation, decreasing = compare(combined)
+    equal_locus_correlation, equal_locus_decreasing = compare(
+        [value.equal_locus_fraction for value in profile.bins]
+    )
+    coverage_capped_correlation, coverage_capped_decreasing = compare(
+        [value.coverage_capped_fraction for value in profile.bins]
+    )
     return ProfileRecord(
         condition=condition,
         seed=seed,
@@ -111,6 +121,10 @@ def evaluate(condition, seed, reads, expected):
         damage_observations=observations,
         damage_correlation=correlation,
         damage_decreasing=decreasing,
+        equal_locus_correlation=equal_locus_correlation,
+        equal_locus_decreasing=equal_locus_decreasing,
+        coverage_capped_correlation=coverage_capped_correlation,
+        coverage_capped_decreasing=coverage_capped_decreasing,
     )
 
 
@@ -169,6 +183,10 @@ def main() -> None:
                 "mean_eligible_loci",
                 "mean_damage_correlation",
                 "damage_decreasing_runs",
+                "mean_equal_locus_correlation",
+                "equal_locus_decreasing_runs",
+                "mean_coverage_capped_correlation",
+                "coverage_capped_decreasing_runs",
                 "runs",
             )
         )
@@ -179,12 +197,39 @@ def main() -> None:
                 for r in selected
                 if r.damage_correlation is not None
             ]
+            equal_locus_correlations = [
+                r.equal_locus_correlation
+                for r in selected
+                if r.equal_locus_correlation is not None
+            ]
+            coverage_capped_correlations = [
+                r.coverage_capped_correlation
+                for r in selected
+                if r.coverage_capped_correlation is not None
+            ]
             writer.writerow(
                 (
                     condition,
                     statistics.mean(r.eligible_loci for r in selected),
                     statistics.mean(correlations) if correlations else "",
                     sum(r.damage_decreasing is True for r in selected),
+                    (
+                        statistics.mean(equal_locus_correlations)
+                        if equal_locus_correlations
+                        else ""
+                    ),
+                    sum(
+                        r.equal_locus_decreasing is True for r in selected
+                    ),
+                    (
+                        statistics.mean(coverage_capped_correlations)
+                        if coverage_capped_correlations
+                        else ""
+                    ),
+                    sum(
+                        r.coverage_capped_decreasing is True
+                        for r in selected
+                    ),
                     len(selected),
                 )
             )

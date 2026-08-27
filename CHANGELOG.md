@@ -6,6 +6,8 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Per-locus damage evidence and parallel equal-locus and coverage-capped
+  summaries in damage-profile schema version 3.
 - Per-bin edge-contribution diagnostics in damage-profile schema version 2,
   including contributor counts and the largest single-edge contribution.
 - Initial Stage 0 research, design, benchmark, and literature documentation.

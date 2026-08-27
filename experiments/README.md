@@ -758,13 +758,15 @@ Can molecule-linked matched alternatives recover the positional shape of a sampl
 
 ### Results
 
-| Damage profile | Mean eligible loci | Mean Pearson correlation | Decreasing profiles |
-|---|---:|---:|---:|
-| Low | 46.8 | 0.908 | 20/20 |
-| Standard | 351.4 | 0.966 | 20/20 |
-| High | 686.0 | 0.974 | 20/20 |
+| Damage profile | Mean eligible loci | Raw correlation | Equal-locus correlation | Capped correlation | Decreasing profiles |
+|---|---:|---:|---:|---:|---:|
+| Low | 46.8 | 0.908 | 0.910 | 0.908 | 20/20 for all |
+| Standard | 351.4 | 0.966 | 0.963 | 0.965 | 20/20 for all |
+| High | 686.0 | 0.974 | 0.971 | 0.974 | 20/20 for all |
 
 Every inferred profile decreased from the molecule terminus toward the interior. Correlations ranged from 0.769–0.984 for low damage, 0.919–0.993 for standard damage, and 0.960–0.991 for high damage. Canonical bidirected traversal represented the simulated events predominantly in one reverse-complement-equivalent channel, so validation uses the combined C→T/5′ plus G→A/3′ curve while retaining both raw channels in the report.
+
+Schema version 3 reran the same 60 graphs with equal-locus and 20-observation-capped locus weighting. Both retained terminal decrease in every run. Equal-locus weighting slightly improved the mean low-damage correlation but slightly reduced the standard and high correlations. Capped weighting remained within 0.001 of the raw mean in every condition. These alternatives are therefore retained as coverage-sensitivity diagnostics rather than replacing the raw estimator.
 
 ### Interpretation
 
@@ -796,6 +798,30 @@ candidate-locus diagnostic, not yet as a calibrated library-wide damage
 estimate. Robust inference will require per-locus normalization or hierarchical
 weighting, uncertainty intervals, and validation on additional real libraries
 with independently estimated damage.
+
+Schema version 3 retained the 4,517 per-locus count vectors and compared the
+three summaries on the same sample:
+
+| Distance | Raw | Equal locus | Coverage capped at 20 |
+|---:|---:|---:|---:|
+| 0 | 0.190 | 0.291 | 0.201 |
+| 1 | 0.114 | 0.244 | 0.153 |
+| 2 | 0.119 | 0.231 | 0.146 |
+| 3 | 0.030 | 0.200 | 0.104 |
+| 4 | 0.104 | 0.217 | 0.115 |
+
+The capped summary reduced the distance-3 versus distance-4 discontinuity from
+0.075 to 0.011 while retaining terminal enrichment. Equal-locus weighting also
+reduced the discontinuity but flattened the terminal contrast more strongly.
+Neither alternative produced a strictly decreasing empirical curve, so the
+next stage remains a fitted overdispersed decay model with uncertainty rather
+than choosing a raw summary as the final biological estimate.
+
+An independent public-data rerun completed in 319.72 seconds and reproduced
+the same 9,456,876 graph nodes, 9,423,529 edges, 14,615 matched tips, and 4,517
+eligible loci. Its event TSV and contig FASTA were byte-identical to the earlier
+outputs. The new summaries therefore change only profile interpretation, as
+intended; they do not change graph topology or assembly output.
 
 ## K-mer size experiment
 

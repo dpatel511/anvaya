@@ -27,6 +27,21 @@ class DamageProfileBin:
     reference_edge_contributors: int
     largest_alternative_edge_contribution: int
     largest_reference_edge_contribution: int
+    equal_locus_contributors: int
+    equal_locus_fraction: float | None
+    coverage_capped_weight: int
+    coverage_capped_fraction: float | None
+
+
+@dataclass(slots=True, frozen=True)
+class DamageProfileLocus:
+    """Distance-binned observations for one matched graph locus."""
+
+    alternative_edge_id: int
+    reference_edge_id: int
+    channel: str
+    alternative: tuple[int, ...]
+    reference: tuple[int, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,7 +51,36 @@ class DamageProfile:
     end_window: int
     matched_paths: int
     eligible_loci: int
+    coverage_cap: int
     bins: tuple[DamageProfileBin, ...]
+    loci: tuple[DamageProfileLocus, ...]
+
+
+def _summarize_loci(
+    loci: Sequence[DamageProfileLocus],
+    distance: int,
+    coverage_cap: int,
+) -> tuple[int, float | None, int, float | None]:
+    fractions = []
+    capped_numerator = 0.0
+    capped_weight = 0
+    for locus in loci:
+        alternative = locus.alternative[distance]
+        reference = locus.reference[distance]
+        total = alternative + reference
+        if not total:
+            continue
+        fraction = alternative / total
+        fractions.append(fraction)
+        weight = min(total, coverage_cap)
+        capped_numerator += fraction * weight
+        capped_weight += weight
+    return (
+        len(fractions),
+        sum(fractions) / len(fractions) if fractions else None,
+        capped_weight,
+        capped_numerator / capped_weight if capped_weight else None,
+    )
 
 
 def _edge_links_at(
@@ -64,10 +108,15 @@ def _edge_links_at(
 def infer_damage_profile(
     graph: BidirectedDeBruijnGraph,
     matches: Sequence[TipBackboneMatch],
+    coverage_cap: int = 20,
 ) -> DamageProfile:
     """Infer per-distance fractions at unique matched substitution loci."""
     if not graph.molecule_links_collected:
         raise ValueError("damage profiling requires molecule links")
+    if not isinstance(coverage_cap, int) or isinstance(coverage_cap, bool):
+        raise TypeError("coverage_cap must be an integer")
+    if coverage_cap < 1:
+        raise ValueError("coverage_cap must be at least 1")
 
     five_alternative = [0] * graph.end_window
     five_reference = [0] * graph.end_window
@@ -80,6 +129,7 @@ def infer_damage_profile(
     reference_contributors = [set() for _ in range(graph.end_window)]
     largest_alternative = [0] * graph.end_window
     largest_reference = [0] * graph.end_window
+    loci: list[DamageProfileLocus] = []
 
     for match in matches:
         for change in match.substitutions:
@@ -91,10 +141,12 @@ def infer_damage_profile(
                 continue
             if change.reference == "C" and change.alternative == "T":
                 expected_end = "left"
+                channel = "five_prime_ct"
                 alternative_counts = five_alternative
                 reference_counts = five_reference
             elif change.reference == "G" and change.alternative == "A":
                 expected_end = "right"
+                channel = "three_prime_ga"
                 alternative_counts = three_alternative
                 reference_counts = three_reference
             else:
@@ -108,6 +160,35 @@ def infer_damage_profile(
             if locus in seen_loci:
                 continue
             seen_loci.add(locus)
+            alternative_links = _edge_links_at(
+                graph,
+                match.branch_handle,
+                match.tip_edge_ids,
+                edge_index,
+                expected_end,
+            )
+            reference_links = _edge_links_at(
+                graph,
+                match.branch_handle,
+                match.backbone_edge_ids,
+                edge_index,
+                expected_end,
+            )
+            locus_alternative = [0] * graph.end_window
+            locus_reference = [0] * graph.end_window
+            for link in alternative_links:
+                locus_alternative[link.distance] += 1
+            for link in reference_links:
+                locus_reference[link.distance] += 1
+            loci.append(
+                DamageProfileLocus(
+                    alternative_edge_id=match.tip_edge_ids[edge_index],
+                    reference_edge_id=match.backbone_edge_ids[edge_index],
+                    channel=channel,
+                    alternative=tuple(locus_alternative),
+                    reference=tuple(locus_reference),
+                )
+            )
             alternative_key = (
                 match.tip_edge_ids[edge_index],
                 change.reference,
@@ -115,19 +196,9 @@ def infer_damage_profile(
             )
             if alternative_key not in seen_alternatives:
                 seen_alternatives.add(alternative_key)
-                links = _edge_links_at(
-                    graph,
-                    match.branch_handle,
-                    match.tip_edge_ids,
-                    edge_index,
-                    expected_end,
-                )
-                per_distance = [0] * graph.end_window
-                for link in links:
-                    alternative_counts[link.distance] += 1
-                    per_distance[link.distance] += 1
-                for distance, count in enumerate(per_distance):
+                for distance, count in enumerate(locus_alternative):
                     if count:
+                        alternative_counts[distance] += count
                         alternative_contributors[distance].add(alternative_key)
                         largest_alternative[distance] = max(
                             largest_alternative[distance], count
@@ -139,19 +210,9 @@ def infer_damage_profile(
             )
             if reference_key not in seen_references:
                 seen_references.add(reference_key)
-                links = _edge_links_at(
-                    graph,
-                    match.branch_handle,
-                    match.backbone_edge_ids,
-                    edge_index,
-                    expected_end,
-                )
-                per_distance = [0] * graph.end_window
-                for link in links:
-                    reference_counts[link.distance] += 1
-                    per_distance[link.distance] += 1
-                for distance, count in enumerate(per_distance):
+                for distance, count in enumerate(locus_reference):
                     if count:
+                        reference_counts[distance] += count
                         reference_contributors[distance].add(reference_key)
                         largest_reference[distance] = max(
                             largest_reference[distance], count
@@ -166,6 +227,12 @@ def infer_damage_profile(
         )
         combined_reference = five_reference[distance] + three_reference[distance]
         combined_total = combined_alternative + combined_reference
+        (
+            equal_locus_contributors,
+            equal_locus_fraction,
+            capped_weight,
+            coverage_capped_fraction,
+        ) = _summarize_loci(loci, distance, coverage_cap)
         bins.append(
             DamageProfileBin(
                 distance=distance,
@@ -202,13 +269,19 @@ def infer_damage_profile(
                 largest_reference_edge_contribution=(
                     largest_reference[distance]
                 ),
+                equal_locus_contributors=equal_locus_contributors,
+                equal_locus_fraction=equal_locus_fraction,
+                coverage_capped_weight=capped_weight,
+                coverage_capped_fraction=coverage_capped_fraction,
             )
         )
     return DamageProfile(
         end_window=graph.end_window,
         matched_paths=len(matches),
         eligible_loci=len(seen_loci),
+        coverage_cap=coverage_cap,
         bins=tuple(bins),
+        loci=tuple(loci),
     )
 
 
@@ -217,12 +290,14 @@ def write_damage_profile(profile: DamageProfile, path: str | Path) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "interpretation": "matched_candidate_locus_fraction",
         "end_window": profile.end_window,
         "matched_paths": profile.matched_paths,
         "eligible_loci": profile.eligible_loci,
+        "coverage_cap": profile.coverage_cap,
         "bins": [asdict(value) for value in profile.bins],
+        "loci": [asdict(value) for value in profile.loci],
     }
     output_path.write_text(
         json.dumps(payload, indent=2) + "\n",

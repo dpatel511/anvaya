@@ -5,7 +5,12 @@ from pathlib import Path
 
 from anvaya.bidirected import build_bidirected_dbg
 from anvaya.cleaning import find_weak_tip_candidates
-from anvaya.damage_profile import infer_damage_profile, write_damage_profile
+from anvaya.damage_profile import (
+    DamageProfileLocus,
+    _summarize_loci,
+    infer_damage_profile,
+    write_damage_profile,
+)
 from anvaya.tip_matching import match_tip_to_backbone
 
 
@@ -48,6 +53,14 @@ class DamageProfileTests(unittest.TestCase):
         self.assertEqual(
             profile.bins[1].largest_reference_edge_contribution, 10
         )
+        self.assertEqual(profile.bins[1].equal_locus_contributors, 1)
+        self.assertEqual(profile.bins[1].equal_locus_fraction, 1 / 11)
+        self.assertEqual(profile.bins[1].coverage_capped_weight, 11)
+        self.assertEqual(profile.bins[1].coverage_capped_fraction, 1 / 11)
+        self.assertEqual(profile.coverage_cap, 20)
+        self.assertEqual(profile.loci[0].channel, "five_prime_ct")
+        self.assertEqual(profile.loci[0].alternative[1], 1)
+        self.assertEqual(profile.loci[0].reference[1], 10)
         self.assertTrue(
             all(value.three_prime_ga_fraction is None for value in profile.bins)
         )
@@ -80,6 +93,27 @@ class DamageProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires molecule links"):
             infer_damage_profile(graph, [])
 
+    def test_rejects_invalid_coverage_cap(self) -> None:
+        graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
+
+        with self.assertRaisesRegex(ValueError, "at least 1"):
+            infer_damage_profile(graph, [match], coverage_cap=0)
+        with self.assertRaisesRegex(TypeError, "must be an integer"):
+            infer_damage_profile(graph, [match], coverage_cap=1.5)  # type: ignore[arg-type]
+
+    def test_caps_influence_of_deep_locus(self) -> None:
+        loci = (
+            DamageProfileLocus(1, 2, "five_prime_ct", (1,), (99,)),
+            DamageProfileLocus(3, 4, "five_prime_ct", (1,), (1,)),
+        )
+
+        contributors, equal, weight, capped = _summarize_loci(loci, 0, 20)
+
+        self.assertEqual(contributors, 2)
+        self.assertEqual(equal, 0.255)
+        self.assertEqual(weight, 22)
+        self.assertAlmostEqual(capped, 12 / 220)
+
     def test_writes_explicit_profile_schema(self) -> None:
         graph, match = self._match("AAGCCCAAA", "AAGCCTAAA")
         profile = infer_damage_profile(graph, [match])
@@ -89,11 +123,13 @@ class DamageProfileTests(unittest.TestCase):
             write_damage_profile(profile, path)
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["schema_version"], 3)
         self.assertEqual(
             payload["interpretation"],
             "matched_candidate_locus_fraction",
         )
+        self.assertEqual(payload["coverage_cap"], 20)
+        self.assertEqual(len(payload["loci"]), 1)
         self.assertEqual(len(payload["bins"]), graph.end_window)
 
 
