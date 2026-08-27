@@ -2,7 +2,7 @@
 
 ## CarpeDeam
 
-Kraft et al. (2025), *CarpeDeam: a de novo metagenome assembler for heavily damaged ancient datasets*. The closest assembler comparator. It uses sample-specific damage information in a greedy, PenguiN-derived overlap workflow rather than a de Bruijn graph. It can improve recovery but has an accuracy-sensitivity and misassembly trade-off.
+Kraft et al. (2025), *CarpeDeam: a de novo metagenome assembler for heavily damaged ancient datasets*. The closest assembler comparator. It uses sample-specific damage information in a greedy, PenguiN-derived overlap workflow rather than a de Bruijn graph. Its nucleotide likelihood marginalizes over the latent post-damage base and then applies a symmetric sequencing-error emission with fixed error rate 0.001. Anvaya adopts that latent-base structure but substitutes each observation's Phred probability and scores held-out graph loci. CarpeDeam can improve recovery but has an accuracy-sensitivity and misassembly trade-off.
 
 DOI: <https://doi.org/10.1186/s13059-025-03839-5>
 
@@ -23,6 +23,12 @@ DOI: <https://doi.org/10.1093/bioinformatics/btt193>
 Skoglund et al. (2014), *Separating endogenous ancient DNA from modern day contamination in a Siberian Neandertal*. PMDtools compares postmortem-damage and null explanations while accounting for base quality and biological polymorphism. This motivates Anvaya's eventual three-way damage/error/variation likelihood. The current implementation adds only the auditable sequencing-error term; it does not yet produce a PMD score or posterior.
 
 DOI: <https://doi.org/10.1073/pnas.1318934111>
+
+## ngsBriggs
+
+Zhao et al. (2025), *Revisiting the Briggs Ancient DNA Damage Model: A Fast Maximum Likelihood Method to Estimate Post-Mortem Damage*. ngsBriggs combines sample-level damage estimation with posterior ancient-versus-modern read classification. It reinforces the need to separate profile fitting from downstream scoring and to expose uncertainty. Anvaya currently cross-fits candidate loci but does not yet claim whole-library parameters or posterior probabilities.
+
+DOI: <https://doi.org/10.1111/1755-0998.14029>
 
 ## Current aDNA assembly workflow
 

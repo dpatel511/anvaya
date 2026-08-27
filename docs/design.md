@@ -114,6 +114,20 @@ Schema version 5 adds a report-only candidate-conditioned likelihood model. Each
 
 All 60 low/standard/high damage simulations fitted successfully. Mean correlations between the fitted and generating curve shapes were 0.9994, 0.9988, and 0.9994, while mean likelihood-ratio statistics were 26.40, 178.73, and 431.39. Clean controls had no observed loci, and ordinary terminal-error controls averaged 2.3 loci, so all 40 remained insufficient rather than producing fitted evidence. Deliberately correlated terminal C→T/G→A errors did fit in all 20 runs and had a mean statistic of 5.62 (range 0.00–12.97), narrowly overlapping the low-damage range of 12.78–44.52. A universal decision threshold is therefore not justified, and the fit is not yet used by the classifier.
 
+## Held-out event likelihoods
+
+Damage-profile schema version 6 adds deterministic five-fold cross-fitting. Unique weak-tip loci are sorted by their alternative edge, reference edge, and damage channel, then assigned round-robin to folds. Each locus is scored with the geometric damage curve fitted on the other four folds. Incomplete branches are absent from profile training and use the full tip-derived profile, which is independent of those branch events. If a training fold fails the existing evidence gates, affected events remain explicitly insufficient.
+
+For each exact C→T/5′ or G→A/3′ locus, the scorer uses the same terminal alternative and backbone molecules under three explanations. Following the latent-base emission used by CarpeDeam, a damage probability `p` and Phred error `e` give `P(alt) = p(1-e) + (1-p)e/3`; the corresponding reference probability reverses those terms. The sequencing-error model fixes `p=0`. The variation model replaces the distance-dependent curve with one fitted constant alternative frequency bounded at 0.5 and subtracts `0.5 log(n)` from its log likelihood, the one-parameter BIC penalty. All models therefore see the same observations and qualities.
+
+The output records raw log likelihoods, the penalized variation score, fitted variation frequency, best-ranked explanation, score margin, observation counts, model scope, and insufficiency reasons. It is not a posterior: priors, correlated errors, locus overdispersion in predictive scoring, internal-read quality evidence, and a calibrated abstention margin remain unresolved. Existing heuristic labels and graph topology are intentionally unchanged.
+
+In the 80-run controlled matrix, all 20 damage-generated events ranked damage, all 20 independent Phred-error events ranked sequencing error, and all 20 constant-frequency events ranked variation. All 20 high-quality errors deliberately generated with the same positional curve as damage ranked damage. This negative control demonstrates identifiability rather than an implementation defect: position, substitution type, and base quality alone cannot tell a damage process from a systematic error engineered to have the same distribution.
+
+Five-fold fitting of the public `SRR32866683` candidate loci succeeded in every fold. Each model trained on 3,613–3,614 of 4,517 loci and held out 903–904. Mean fitted probabilities over cycles 0–4 were 0.3367, 0.2691, 0.2167, 0.1761, and 0.1444; fold LR statistics ranged from 33.34 to 44.42. The close fold curves support stable held-out scoring on this sample, while remaining candidate-conditioned rather than whole-library calibrated.
+
+The full schema-version-6 public rerun preserved the assembly byte-for-byte and preserved all 45 earlier event fields across 111,399 rows. It scored 1,478 events: 968 ranked damage, 24 sequencing error, and 486 variation; 95,848 remained explicitly insufficient. Of the scored events, 71.31% had a margin below 1, and none of the damage-ranked events reached a margin of 5. These results validate non-regression, provenance, and conservative abstention, but not a classification boundary. Reporting time increased from 66.24 to 131.18 seconds and the TSV grew by 50.30%, making batched scoring and a more compact optional report the main performance follow-ups.
+
 The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors.
 
 ## Incomplete-branch matching
@@ -142,8 +156,8 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Combine the retained quality evidence with held-out damage, sequencing-error, and variation likelihoods; fit the sample damage profile without the event being scored.
-2. Expand the candidate-conditioned damage model with whole-library opportunities and fully profiled or bootstrap uncertainty.
+1. Calibrate abstention and model margins on held-out graph simulations, including systematic error, low-abundance strains, and profile misspecification.
+2. Expand the candidate-conditioned damage model with whole-library opportunities and fully profiled or bootstrap predictive uncertainty.
 3. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 4. Implement optional conservative simplification only for high-confidence error-like paths.
 5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
