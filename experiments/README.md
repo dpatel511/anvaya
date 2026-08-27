@@ -839,6 +839,43 @@ The corrected run preserved all topology and report counts: 9,456,876 nodes,
 and graph construction were also slower on the host; one unpaired wall-time
 comparison is insufficient to infer a performance regression.
 
+## Candidate damage-likelihood validation
+
+Damage-profile schema version 5 fits the per-locus counts with a beta-binomial
+geometric mean curve, `background + amplitude * decay**distance`, and compares
+it with a constant-background beta-binomial null. A fit requires at least 10
+observed loci, three observed distances, three alternative observations, and
+20 total observations. Parameters receive bounded conditional
+likelihood-support intervals. The model remains candidate-conditioned and
+report-only.
+
+The expanded `09_damage_profile_validation.py` matrix produced:
+
+| Damage profile | Fitted runs | Mean fitted-shape correlation | Mean LR statistic | LR range |
+|---|---:|---:|---:|---:|
+| Low | 20/20 | 0.9994 | 26.40 | 12.78–44.52 |
+| Standard | 20/20 | 0.9988 | 178.73 | 147.54–203.14 |
+| High | 20/20 | 0.9994 | 431.39 | 371.89–512.16 |
+
+`10_candidate_damage_likelihood_validation.py` adds non-damage controls. All
+20 clean runs had zero observed loci, and all 20 ordinary terminal-error runs
+remained insufficient with a mean of 2.3 loci. Correlated C→T/G→A terminal
+errors were deliberately adversarial: all 20 fitted, with a mean LR statistic
+of 5.62 and range 0.00–12.97. The maximum slightly exceeded the minimum
+low-damage statistic, so these results do not justify a fixed classification
+threshold.
+
+Fitting the previously validated `SRR32866683` schema-version-4 locus counts
+produced an LR statistic of 47.99, decay 0.807, and fitted probabilities 0.336,
+0.271, 0.219, 0.176, and 0.142. The background optimum was at the lower bound,
+with conditional support extending to 0.020. The fit took about 14 seconds for
+4,517 matched and 513 observed loci. Its smooth curve is evidence for
+candidate-locus positional structure, not proof of damage or a whole-library
+damage estimate.
+
+Generated control tables remain ignored under
+`experiments/validation/generated/candidate_damage_likelihood_validation/`.
+
 ## K-mer size experiment
 
 ### Question

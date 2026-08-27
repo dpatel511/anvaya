@@ -6,6 +6,11 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Candidate-conditioned beta-binomial geometric damage fitting, a
+  constant-background null, likelihood-ratio evidence, bounded conditional
+  support intervals, and explicit sufficiency gates in profile schema version 5.
+- Clean, ordinary terminal-error, and correlated terminal-error likelihood
+  controls in experiment 10.
 - Exact changed-base cycle validation, separate endpoint-enrichment and
   monotonicity metrics, and matched-versus-observed locus counts in
   damage-profile schema version 4.

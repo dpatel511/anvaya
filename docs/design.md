@@ -106,6 +106,10 @@ Schema version 4 maps edge-boundary observations to the exact appended nucleotid
 
 Across 20 random references for each low, standard, and high bidirectional damage profile, mean Pearson correlation with the known simulated profile was 0.908, 0.966, and 0.974 respectively. Every run had a higher terminal than interior endpoint, but exact monotonic decay occurred in 12/20 low-damage runs and all standard/high runs. Low-damage profiles averaged 0.4 upward steps and 46.8 observed loci; standard and high profiles had no upward steps and averaged 351.4 and 686.0 loci. These results validate recovery of profile shape from matched candidates when signal is sufficient, not absolute whole-library damage frequency. Unmatched genomic opportunities, base quality, locus dependence, and sampling uncertainty are not yet included.
 
+Schema version 5 adds a report-only candidate-conditioned likelihood model. Each nonempty locus-distance count is modeled with a beta-binomial distribution whose mean follows `background + amplitude * decay**distance`; a constant-background beta-binomial model is fitted as the null. The report includes both log likelihoods, their likelihood ratio, bounded conditional likelihood-support intervals, and explicit insufficiency reasons. Fits require at least 10 observed loci, three distances, three alternative observations, and 20 total observations. These are prototype evidence gates rather than calibrated biological thresholds.
+
+All 60 low/standard/high damage simulations fitted successfully. Mean correlations between the fitted and generating curve shapes were 0.9994, 0.9988, and 0.9994, while mean likelihood-ratio statistics were 26.40, 178.73, and 431.39. Clean controls had no observed loci, and ordinary terminal-error controls averaged 2.3 loci, so all 40 remained insufficient rather than producing fitted evidence. Deliberately correlated terminal C→T/G→A errors did fit in all 20 runs and had a mean statistic of 5.62 (range 0.00–12.97), narrowly overlapping the low-damage range of 12.78–44.52. A universal decision threshold is therefore not justified, and the fit is not yet used by the classifier.
+
 The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors.
 
 ## Incomplete-branch matching
@@ -134,8 +138,8 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Expand the candidate-locus profile with whole-library opportunities and uncertainty estimates.
-2. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods using profile fit.
+1. Expand the candidate-conditioned likelihood model with whole-library opportunities and fully profiled or bootstrap uncertainty.
+2. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods using held-out profile fit.
 3. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 4. Implement optional conservative simplification only for high-confidence error-like paths.
 5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.

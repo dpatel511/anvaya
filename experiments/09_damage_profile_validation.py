@@ -49,6 +49,12 @@ class ProfileRecord:
     coverage_capped_endpoint_enriched: bool | None
     coverage_capped_monotonic: bool | None
     coverage_capped_violations: int | None
+    fit_status: str
+    fitted_correlation: float | None
+    fitted_amplitude: float | None
+    fitted_decay: float | None
+    fitted_background: float | None
+    likelihood_ratio_statistic: float | None
 
 
 def pearson(left, right):
@@ -163,6 +169,29 @@ def evaluate(condition, seed, reads, expected):
         coverage_capped_endpoint_enriched=coverage_capped_endpoint,
         coverage_capped_monotonic=coverage_capped_monotonic,
         coverage_capped_violations=coverage_capped_violations,
+        fit_status=profile.candidate_damage_fit.status,
+        fitted_correlation=pearson(
+            expected,
+            profile.candidate_damage_fit.fitted_probabilities,
+        ),
+        fitted_amplitude=(
+            profile.candidate_damage_fit.amplitude.value
+            if profile.candidate_damage_fit.amplitude is not None
+            else None
+        ),
+        fitted_decay=(
+            profile.candidate_damage_fit.decay.value
+            if profile.candidate_damage_fit.decay is not None
+            else None
+        ),
+        fitted_background=(
+            profile.candidate_damage_fit.background.value
+            if profile.candidate_damage_fit.background is not None
+            else None
+        ),
+        likelihood_ratio_statistic=(
+            profile.candidate_damage_fit.likelihood_ratio_statistic
+        ),
     )
 
 
@@ -231,6 +260,12 @@ def main() -> None:
                 "coverage_capped_endpoint_enriched_runs",
                 "coverage_capped_monotonic_runs",
                 "mean_coverage_capped_violations",
+                "fitted_runs",
+                "mean_fitted_correlation",
+                "mean_fitted_amplitude",
+                "mean_fitted_decay",
+                "mean_fitted_background",
+                "mean_likelihood_ratio_statistic",
                 "runs",
             )
         )
@@ -251,6 +286,7 @@ def main() -> None:
                 for r in selected
                 if r.coverage_capped_correlation is not None
             ]
+            fitted = [r for r in selected if r.fit_status == "fitted"]
             writer.writerow(
                 (
                     condition,
@@ -288,6 +324,27 @@ def main() -> None:
                     statistics.mean(
                         r.coverage_capped_violations for r in selected
                     ),
+                    len(fitted),
+                    statistics.mean(
+                        r.fitted_correlation for r in fitted
+                        if r.fitted_correlation is not None
+                    ) if fitted else "",
+                    statistics.mean(
+                        r.fitted_amplitude for r in fitted
+                        if r.fitted_amplitude is not None
+                    ) if fitted else "",
+                    statistics.mean(
+                        r.fitted_decay for r in fitted
+                        if r.fitted_decay is not None
+                    ) if fitted else "",
+                    statistics.mean(
+                        r.fitted_background for r in fitted
+                        if r.fitted_background is not None
+                    ) if fitted else "",
+                    statistics.mean(
+                        r.likelihood_ratio_statistic for r in fitted
+                        if r.likelihood_ratio_statistic is not None
+                    ) if fitted else "",
                     len(selected),
                 )
             )

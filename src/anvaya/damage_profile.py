@@ -6,6 +6,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from anvaya.bidirected import BidirectedDeBruijnGraph, _successor
+from anvaya.damage_likelihood import (
+    CandidateDamageFit,
+    fit_candidate_damage_model,
+)
 from anvaya.tip_matching import TipBackboneMatch
 
 
@@ -55,6 +59,7 @@ class DamageProfile:
     coverage_cap: int
     bins: tuple[DamageProfileBin, ...]
     loci: tuple[DamageProfileLocus, ...]
+    candidate_damage_fit: CandidateDamageFit
 
     @property
     def eligible_loci(self) -> int:
@@ -282,6 +287,7 @@ def infer_damage_profile(
                 coverage_capped_fraction=coverage_capped_fraction,
             )
         )
+    locus_values = tuple(loci)
     return DamageProfile(
         end_window=graph.end_window,
         matched_paths=len(matches),
@@ -292,7 +298,11 @@ def infer_damage_profile(
         ),
         coverage_cap=coverage_cap,
         bins=tuple(bins),
-        loci=tuple(loci),
+        loci=locus_values,
+        candidate_damage_fit=fit_candidate_damage_model(
+            tuple((locus.alternative, locus.reference) for locus in locus_values),
+            graph.end_window,
+        ),
     )
 
 
@@ -301,7 +311,7 @@ def write_damage_profile(profile: DamageProfile, path: str | Path) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 4,
+        "schema_version": 5,
         "interpretation": "matched_candidate_locus_fraction",
         "end_window": profile.end_window,
         "matched_paths": profile.matched_paths,
@@ -311,6 +321,7 @@ def write_damage_profile(profile: DamageProfile, path: str | Path) -> None:
         "coverage_cap": profile.coverage_cap,
         "bins": [asdict(value) for value in profile.bins],
         "loci": [asdict(value) for value in profile.loci],
+        "candidate_damage_fit": asdict(profile.candidate_damage_fit),
     }
     output_path.write_text(
         json.dumps(payload, indent=2) + "\n",
