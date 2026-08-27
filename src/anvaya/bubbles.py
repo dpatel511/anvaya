@@ -29,7 +29,7 @@ class Bubble:
     paths: tuple[BubblePath, ...]
 
 
-def _linear_branch(
+def trace_linear_branch(
     graph: BidirectedDeBruijnGraph,
     start: int,
     first_edge: int,
@@ -75,7 +75,7 @@ def find_simple_bubbles(
             continue
 
         branches = [
-            _linear_branch(graph, start, edge_id, max_edges)
+            trace_linear_branch(graph, start, edge_id, max_edges)
             for edge_id in sorted(_outgoing_edges(graph, start))
         ]
         if any(branch is None for branch in branches):

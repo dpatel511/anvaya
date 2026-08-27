@@ -10,6 +10,7 @@ from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.cli import main
 from anvaya.events import write_event_report
+from anvaya.incomplete_branches import find_incomplete_branch_candidates
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -83,6 +84,35 @@ class EventReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["mean_damage_distance"], "1.000000")
         self.assertEqual(bytes(graph.out_degrees), before)
 
+    def test_reports_classified_incomplete_branch(self) -> None:
+        graph = build_bidirected_dbg(
+            ["AAGCCCAAA"] * 10 + ["AAGCCTAAA", "AAGCCTAAC"],
+            5,
+            end_window=3,
+        )
+        before = bytes(graph.out_degrees)
+        candidates = find_incomplete_branch_candidates(graph)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "events.tsv"
+            summary = write_event_report(
+                graph,
+                [],
+                [],
+                output,
+                incomplete_branches=candidates,
+            )
+            rows = _read_rows(output)
+
+        self.assertEqual(summary.incomplete_branches, 1)
+        self.assertEqual(summary.matched_incomplete_branches, 1)
+        self.assertEqual(summary.paths, 1)
+        self.assertEqual(rows[0]["event_type"], "incomplete_branch")
+        self.assertEqual(rows[0]["backbone_matched"], "true")
+        self.assertEqual(rows[0]["substitutions"], "5:C>T")
+        self.assertEqual(rows[0]["tip_classification"], "damage-like")
+        self.assertEqual(bytes(graph.out_degrees), before)
+
     def test_requires_read_end_evidence(self) -> None:
         graph = build_bidirected_dbg(["AACTGGA"], 3)
 
@@ -97,6 +127,50 @@ class EventReportTests(unittest.TestCase):
 
 
 class EventReportCliTests(unittest.TestCase):
+    def test_cli_reports_incomplete_branch_without_changing_assembly(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads = root / "reads.fasta"
+            baseline = root / "baseline.fasta"
+            reported = root / "reported.fasta"
+            report = root / "events.tsv"
+            records = ["AAGCCCAAA"] * 10 + ["AAGCCTAAA", "AAGCCTAAC"]
+            reads.write_text(
+                "".join(
+                    f">read_{index}\n{read}\n"
+                    for index, read in enumerate(records)
+                ),
+                encoding="utf-8",
+            )
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                main(
+                    [
+                        "assemble", "-i", str(reads), "--k", "5",
+                        "--orientation-aware", "--end-window", "3",
+                        "-o", str(baseline),
+                    ]
+                )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+                main(
+                    [
+                        "assemble", "-i", str(reads), "--k", "5",
+                        "--orientation-aware", "--end-window", "3",
+                        "--event-report", str(report),
+                        "-o", str(reported),
+                    ]
+                )
+
+            self.assertIn("reported_incomplete_branches=1", stdout.getvalue())
+            self.assertIn(
+                "reported_incomplete_branch_matches=1",
+                stdout.getvalue(),
+            )
+            self.assertEqual(reported.read_bytes(), baseline.read_bytes())
+
     def test_cli_writes_report_without_changing_assembly(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

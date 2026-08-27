@@ -14,8 +14,12 @@ from anvaya.bidirected import (
 from anvaya.bubbles import Bubble, BubblePath
 from anvaya.cleaning import TipCandidate
 from anvaya.classification import format_substitutions
-from anvaya.tip_matching import match_tip_to_backbone
+from anvaya.incomplete_branches import (
+    IncompleteBranchCandidate,
+    match_incomplete_branch_to_backbone,
+)
 from anvaya.tip_classification import classify_tip_match
+from anvaya.tip_matching import TipBackboneMatch, match_tip_to_backbone
 
 
 @dataclass(slots=True, frozen=True)
@@ -24,6 +28,8 @@ class EventReportSummary:
 
     tips: int = 0
     matched_tips: int = 0
+    incomplete_branches: int = 0
+    matched_incomplete_branches: int = 0
     bubbles: int = 0
     paths: int = 0
 
@@ -219,16 +225,104 @@ def _bubble_rows(
     return rows
 
 
+def _match_columns(
+    graph: BidirectedDeBruijnGraph,
+    match: TipBackboneMatch | None,
+) -> tuple[str, str, list[object]]:
+    if match is None:
+        return (
+            "",
+            "unknown",
+            [""]
+            + ["false"]
+            + [""] * (len(_TIP_MATCH_FIELDS) - 2)
+            + [""] * len(_TIP_CLASSIFICATION_FIELDS),
+        )
+
+    decision = classify_tip_match(graph, match)
+    columns: list[object] = [
+        match.tip_sequence,
+        "true",
+        match.backbone_sequence,
+        len(match.backbone_edge_ids),
+        match.backbone_observations,
+        match.backbone_minimum_edge_support,
+        f"{match.relative_coverage:.6f}",
+        f"{match.sequence_identity:.6f}",
+        f"{match.ry_identity:.6f}",
+        decision.label,
+        ";".join(decision.reasons),
+        f"{decision.damage_score:.6f}",
+        f"{decision.error_score:.6f}",
+        f"{decision.variation_score:.6f}",
+        f"{decision.evidence.tip_terminal_fraction:.6f}",
+        (
+            ""
+            if decision.evidence.tip_strand_balance is None
+            else f"{decision.evidence.tip_strand_balance:.6f}"
+        ),
+        f"{decision.evidence.terminal_enrichment:.6f}",
+        decision.evidence.substitution_terminal_observations,
+        decision.evidence.substitution_other_terminal_observations,
+        decision.evidence.substitution_internal_observations,
+        f"{decision.evidence.substitution_terminal_fraction:.6f}",
+        (
+            ""
+            if decision.evidence.mean_damage_distance is None
+            else f"{decision.evidence.mean_damage_distance:.6f}"
+        ),
+    ]
+    return (
+        format_substitutions(match.substitutions),
+        str(match.damage_compatible).lower(),
+        columns,
+    )
+
+
+def _matched_path_row(
+    graph: BidirectedDeBruijnGraph,
+    event_id: str,
+    event_type: str,
+    start: int,
+    end: int,
+    edge_ids: tuple[int, ...],
+    observations: int,
+    minimum_support: int,
+    sequence: str,
+    match: TipBackboneMatch | None,
+) -> list[object]:
+    left, right, internal, ambiguous = _path_evidence(
+        graph,
+        start,
+        edge_ids,
+    )
+    substitutions, compatibility, match_columns = _match_columns(graph, match)
+    return [
+        event_id,
+        event_type,
+        0,
+        "false",
+        start,
+        end,
+        len(edge_ids),
+        observations,
+        minimum_support,
+        left,
+        right,
+        internal,
+        ambiguous,
+        sequence,
+        substitutions,
+        compatibility,
+        *match_columns,
+    ]
+
+
 def _tip_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     tip: TipCandidate,
 ) -> tuple[list[object], bool]:
-    left, right, internal, ambiguous = _path_evidence(
-        graph,
-        tip.start,
-        tip.edge_ids,
-    )
     observations = sum(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
     )
@@ -236,86 +330,44 @@ def _tip_row(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
     )
     match = match_tip_to_backbone(graph, tip)
-    decision = None if match is None else classify_tip_match(graph, match)
-    substitutions = "" if match is None else format_substitutions(match.substitutions)
-    compatibility = (
-        "unknown" if match is None else str(match.damage_compatible).lower()
+    return (
+        _matched_path_row(
+            graph,
+            event_id,
+            "tip",
+            tip.start,
+            tip.end,
+            tip.edge_ids,
+            observations,
+            minimum_support,
+            spell_edge_path(graph, tip.start, tip.edge_ids),
+            match,
+        ),
+        match is not None,
     )
-    row = [
-        event_id,
-        "tip",
-        0,
-        "false",
-        tip.start,
-        tip.end,
-        len(tip.edge_ids),
-        observations,
-        minimum_support,
-        left,
-        right,
-        internal,
-        ambiguous,
-        spell_edge_path(graph, tip.start, tip.edge_ids),
-        substitutions,
-        compatibility,
-        "" if match is None else match.tip_sequence,
-        str(match is not None).lower(),
-        "" if match is None else match.backbone_sequence,
-        "" if match is None else len(match.backbone_edge_ids),
-        "" if match is None else match.backbone_observations,
-        "" if match is None else match.backbone_minimum_edge_support,
-        "" if match is None else f"{match.relative_coverage:.6f}",
-        "" if match is None else f"{match.sequence_identity:.6f}",
-        "" if match is None else f"{match.ry_identity:.6f}",
-        "" if decision is None else decision.label,
-        "" if decision is None else ";".join(decision.reasons),
-        "" if decision is None else f"{decision.damage_score:.6f}",
-        "" if decision is None else f"{decision.error_score:.6f}",
-        "" if decision is None else f"{decision.variation_score:.6f}",
-        (
-            ""
-            if decision is None
-            else f"{decision.evidence.tip_terminal_fraction:.6f}"
+
+
+def _incomplete_branch_row(
+    graph: BidirectedDeBruijnGraph,
+    event_id: str,
+    candidate: IncompleteBranchCandidate,
+) -> tuple[list[object], bool]:
+    match = match_incomplete_branch_to_backbone(graph, candidate)
+    return (
+        _matched_path_row(
+            graph,
+            event_id,
+            "incomplete_branch",
+            candidate.start,
+            candidate.end,
+            candidate.edge_ids,
+            candidate.observations,
+            candidate.minimum_edge_support,
+            spell_edge_path(graph, candidate.start, candidate.edge_ids),
+            match,
         ),
-        (
-            ""
-            if decision is None
-            or decision.evidence.tip_strand_balance is None
-            else f"{decision.evidence.tip_strand_balance:.6f}"
-        ),
-        (
-            ""
-            if decision is None
-            else f"{decision.evidence.terminal_enrichment:.6f}"
-        ),
-        (
-            ""
-            if decision is None
-            else decision.evidence.substitution_terminal_observations
-        ),
-        (
-            ""
-            if decision is None
-            else decision.evidence.substitution_other_terminal_observations
-        ),
-        (
-            ""
-            if decision is None
-            else decision.evidence.substitution_internal_observations
-        ),
-        (
-            ""
-            if decision is None
-            else f"{decision.evidence.substitution_terminal_fraction:.6f}"
-        ),
-        (
-            ""
-            if decision is None
-            or decision.evidence.mean_damage_distance is None
-            else f"{decision.evidence.mean_damage_distance:.6f}"
-        ),
-    ]
-    return row, match is not None
+        match is not None,
+    )
 
 
 def write_event_report(
@@ -323,8 +375,9 @@ def write_event_report(
     tips: Sequence[TipCandidate],
     bubbles: Sequence[Bubble],
     path: str | Path,
+    incomplete_branches: Sequence[IncompleteBranchCandidate] = (),
 ) -> EventReportSummary:
-    """Write non-destructive tip and bubble-path evidence as TSV."""
+    """Write non-destructive tip, branch, and bubble-path evidence as TSV."""
     if graph.end_window == 0:
         raise ValueError("event reporting requires read-end evidence")
 
@@ -361,6 +414,16 @@ def write_event_report(
             writer.writerow(row)
             matched_tip_count += matched
             path_count += 1
+        matched_incomplete_count = 0
+        for index, candidate in enumerate(incomplete_branches, start=1):
+            row, matched = _incomplete_branch_row(
+                graph,
+                f"incomplete-branch-{index}",
+                candidate,
+            )
+            writer.writerow(row)
+            matched_incomplete_count += matched
+            path_count += 1
         for index, bubble in enumerate(bubbles, start=1):
             rows = _bubble_rows(graph, f"bubble-{index}", bubble)
             writer.writerows(rows)
@@ -369,6 +432,8 @@ def write_event_report(
     return EventReportSummary(
         tips=len(tips),
         matched_tips=matched_tip_count,
+        incomplete_branches=len(incomplete_branches),
+        matched_incomplete_branches=matched_incomplete_count,
         bubbles=len(bubbles),
         paths=path_count,
     )
