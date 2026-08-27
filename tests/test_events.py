@@ -20,6 +20,51 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
 
 
 class EventReportTests(unittest.TestCase):
+    def test_cli_propagates_fastq_quality_to_event_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads = root / "reads.fastq"
+            records = []
+            for index, sequence in enumerate(
+                ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"]
+            ):
+                quality = "I" * 9 if index < 10 else "+" * 9
+                records.append(f"@read-{index}\n{sequence}\n+\n{quality}\n")
+            reads.write_text("".join(records), encoding="utf-8")
+            report = root / "events.tsv"
+
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                main(
+                    [
+                        "assemble",
+                        "-i",
+                        str(reads),
+                        "--k",
+                        "5",
+                        "--orientation-aware",
+                        "--end-window",
+                        "11",
+                        "--event-report",
+                        str(report),
+                        "-o",
+                        str(root / "contigs.fasta"),
+                    ]
+                )
+
+            row = next(
+                row
+                for row in _read_rows(report)
+                if row["backbone_matched"] == "true"
+            )
+            self.assertEqual(row["quality_observations"], "1")
+            self.assertEqual(row["missing_quality_observations"], "0")
+            self.assertEqual(row["mean_base_quality"], "10.000000")
+            self.assertAlmostEqual(
+                float(row["sequencing_error_log_likelihood"]),
+                -3.401197,
+                places=6,
+            )
+
     def test_reports_bubble_sequences_support_and_substitution(self) -> None:
         graph = build_bidirected_dbg(
             ["GCTTGTTCCGGA"] * 10 + ["GCTTATTCCGGA"] * 3,
@@ -90,6 +135,10 @@ class EventReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["molecule_links_collected"], "true")
         self.assertEqual(rows[0]["joint_molecule_observations"], "1")
         self.assertEqual(rows[0]["joint_molecule_fraction"], "1.000000")
+        self.assertEqual(rows[0]["quality_observations"], "0")
+        self.assertEqual(rows[0]["missing_quality_observations"], "1")
+        self.assertEqual(rows[0]["mean_base_quality"], "")
+        self.assertEqual(rows[0]["sequencing_error_log_likelihood"], "")
         self.assertEqual(bytes(graph.out_degrees), before)
 
     def test_reports_classified_incomplete_branch(self) -> None:

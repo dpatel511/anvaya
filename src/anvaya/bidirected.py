@@ -47,6 +47,7 @@ class MoleculeEndLink:
     read_index: int
     end: str
     distance: int
+    base_quality: int | None = None
 
 
 @dataclass(slots=True)
@@ -68,6 +69,7 @@ class BidirectedDeBruijnGraph:
     molecule_links_collected: bool = False
     molecule_link_offsets: array = field(default_factory=lambda: array("Q"))
     molecule_link_tokens: array = field(default_factory=lambda: array("Q"))
+    molecule_link_qualities: bytearray = field(default_factory=bytearray)
     out_edges: array = field(default_factory=lambda: array("i"))
     out_degrees: bytearray = field(default_factory=bytearray)
     active_edge_count: int = 0
@@ -113,14 +115,17 @@ class BidirectedDeBruijnGraph:
         start = self.molecule_link_offsets[edge_id]
         end = self.molecule_link_offsets[edge_id + 1]
         links: list[MoleculeEndLink] = []
-        for token in self.molecule_link_tokens[start:end]:
+        for index in range(start, end):
+            token = self.molecule_link_tokens[index]
             read_side, distance = divmod(token, self.end_window)
             read_index, side = divmod(read_side, 2)
+            quality = self.molecule_link_qualities[index]
             links.append(
                 MoleculeEndLink(
                     read_index=read_index,
                     end="left" if side == 0 else "right",
                     distance=distance,
+                    base_quality=None if quality == 255 else quality,
                 )
             )
         return tuple(links)
@@ -243,6 +248,7 @@ def build_bidirected_dbg(
     min_count: int = 1,
     end_window: int = 0,
     track_molecule_links: bool = False,
+    read_qualities: Sequence[Sequence[int] | None] | None = None,
 ) -> BidirectedDeBruijnGraph:
     """Build a compact canonical graph with strand-specific edge support."""
     if not reads:
@@ -263,6 +269,21 @@ def build_bidirected_dbg(
         raise TypeError("track_molecule_links must be a boolean")
     if track_molecule_links and end_window == 0:
         raise ValueError("molecule links require read-end evidence")
+    if read_qualities is not None and len(read_qualities) != len(reads):
+        raise ValueError("read qualities must align one-to-one with reads")
+    if read_qualities is not None:
+        for read, qualities in zip(reads, read_qualities, strict=True):
+            if qualities is not None and len(qualities) != len(read):
+                raise ValueError("read quality lengths must match read lengths")
+            if qualities is not None and any(
+                not isinstance(quality, int) or isinstance(quality, bool)
+                for quality in qualities
+            ):
+                raise TypeError("read qualities must be integers")
+            if qualities is not None and any(
+                quality < 0 or quality > 254 for quality in qualities
+            ):
+                raise ValueError("read qualities must be between 0 and 254")
 
     observed: dict[int, int] = {}
     terminal: dict[int, list[int]] = {}
@@ -341,7 +362,13 @@ def build_bidirected_dbg(
             graph.terminal_observations += terminal_support
 
     if track_molecule_links:
-        _collect_molecule_links(graph, reads, k, edge_ids_by_code)
+        _collect_molecule_links(
+            graph,
+            reads,
+            k,
+            edge_ids_by_code,
+            read_qualities,
+        )
 
     handle_count = graph.node_count * 2
     graph.out_degrees = bytearray(handle_count)
@@ -365,12 +392,16 @@ def _collect_molecule_links(
     reads: Sequence[str],
     k: int,
     edge_ids_by_code: dict[int, int],
+    read_qualities: Sequence[Sequence[int] | None] | None,
 ) -> None:
     """Store retained terminal observations in compact edge-indexed arrays."""
     counts = array("Q", [0]) * graph.edge_count
 
     def observations():
         for read_index, read in enumerate(reads):
+            qualities = (
+                None if read_qualities is None else read_qualities[read_index]
+            )
             last_start = len(read) - k
             for start, canonical, orientation in _positioned_encoded_kmers(
                 read,
@@ -386,12 +417,24 @@ def _collect_molecule_links(
                         right_distance,
                         left_distance,
                     )
+                left_base_index = start if orientation == 1 else start + k - 1
+                right_base_index = start + k - 1 if orientation == 1 else start
                 if left_distance < graph.end_window:
-                    yield edge_id, read_index, 0, left_distance
+                    quality = (
+                        None
+                        if qualities is None
+                        else qualities[left_base_index]
+                    )
+                    yield edge_id, read_index, 0, left_distance, quality
                 if right_distance < graph.end_window:
-                    yield edge_id, read_index, 1, right_distance
+                    quality = (
+                        None
+                        if qualities is None
+                        else qualities[right_base_index]
+                    )
+                    yield edge_id, read_index, 1, right_distance, quality
 
-    for edge_id, _, _, _ in observations():
+    for edge_id, _, _, _, _ in observations():
         counts[edge_id] += 1
 
     graph.molecule_link_offsets.append(0)
@@ -403,12 +446,19 @@ def _collect_molecule_links(
         "Q",
         [0],
     ) * graph.molecule_link_offsets[-1]
+    graph.molecule_link_qualities = bytearray(
+        [255]
+    ) * graph.molecule_link_offsets[-1]
     cursors = graph.molecule_link_offsets[:-1]
-    for edge_id, read_index, side, distance in observations():
+    for edge_id, read_index, side, distance, quality in observations():
         token = (
             (read_index * 2 + side) * graph.end_window + distance
         )
-        graph.molecule_link_tokens[cursors[edge_id]] = token
+        index = cursors[edge_id]
+        graph.molecule_link_tokens[index] = token
+        graph.molecule_link_qualities[index] = (
+            255 if quality is None else quality
+        )
         cursors[edge_id] += 1
     graph.molecule_links_collected = True
 

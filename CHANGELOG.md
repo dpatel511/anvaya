@@ -6,6 +6,11 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Compact, side-specific Phred quality storage for molecule-linked terminal
+  observations, with explicit missing-quality accounting and a report-only
+  symmetric sequencing-error log likelihood in event TSV output.
+- A 20-condition quality-evidence validation matrix covering Phred 8, 20, and
+  35 support plus FASTA-style missing qualities across one to five molecules.
 - Candidate-conditioned beta-binomial geometric damage fitting, a
   constant-background null, likelihood-ratio evidence, bounded conditional
   support intervals, and explicit sufficiency gates in profile schema version 5.

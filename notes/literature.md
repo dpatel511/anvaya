@@ -12,6 +12,18 @@ Borry et al. (2021), *PyDamage: automated ancient damage identification and esti
 
 DOI: <https://doi.org/10.7717/peerj.11845>
 
+## mapDamage 2.0
+
+Jónsson et al. (2013), *mapDamage2.0: fast approximate Bayesian estimates of ancient DNA damage parameters*. The model estimates sample-level, position-dependent damage parameters and can downscale base qualities at likely damaged sites. Anvaya borrows the separation between the original sequencing quality and the damage process, but cannot directly reuse its reference-alignment likelihood in a de novo graph.
+
+DOI: <https://doi.org/10.1093/bioinformatics/btt193>
+
+## PMDtools
+
+Skoglund et al. (2014), *Separating endogenous ancient DNA from modern day contamination in a Siberian Neandertal*. PMDtools compares postmortem-damage and null explanations while accounting for base quality and biological polymorphism. This motivates Anvaya's eventual three-way damage/error/variation likelihood. The current implementation adds only the auditable sequencing-error term; it does not yet produce a PMD score or posterior.
+
+DOI: <https://doi.org/10.1073/pnas.1318934111>
+
 ## Current aDNA assembly workflow
 
 Fellows Yates et al. (2026), *De novo assembly and authentication of ancient DNA metagenomes with nf-core/mag*. Describes current assembly, authentication, and post-assembly correction. It does not introduce damage-aware DBG decisions.

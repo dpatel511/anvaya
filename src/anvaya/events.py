@@ -64,6 +64,10 @@ _TIP_CLASSIFICATION_FIELDS = (
     "molecule_links_collected",
     "joint_molecule_observations",
     "joint_molecule_fraction",
+    "quality_observations",
+    "missing_quality_observations",
+    "mean_base_quality",
+    "sequencing_error_log_likelihood",
 )
 
 
@@ -285,6 +289,18 @@ def _match_columns(
             ""
             if decision.evidence.joint_molecule_fraction is None
             else f"{decision.evidence.joint_molecule_fraction:.6f}"
+        ),
+        decision.evidence.quality_observations,
+        decision.evidence.missing_quality_observations,
+        (
+            ""
+            if decision.evidence.mean_base_quality is None
+            else f"{decision.evidence.mean_base_quality:.6f}"
+        ),
+        (
+            ""
+            if decision.evidence.sequencing_error_log_likelihood is None
+            else f"{decision.evidence.sequencing_error_log_likelihood:.6f}"
         ),
     ]
     return (

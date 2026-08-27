@@ -223,6 +223,7 @@ def _run_assemble(
             min_count,
             end_window=end_window,
             track_molecule_links=event_report is not None,
+            read_qualities=[read.qualities for read in reads],
         )
         node_count = graph.node_count
         edge_count = graph.edge_count
