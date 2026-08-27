@@ -6,6 +6,8 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Per-bin edge-contribution diagnostics in damage-profile schema version 2,
+  including contributor counts and the largest single-edge contribution.
 - Initial Stage 0 research, design, benchmark, and literature documentation.
 - Validated overlapping k-mer extraction.
 - Basic directed de Bruijn graph construction and edge multiplicity.
@@ -62,6 +64,10 @@ All notable project changes will be documented in this file.
 - Non-destructive bounded incomplete-branch detection with standard-tip and simple-bubble deduplication.
 - Equal-length incomplete-branch backbone matching, evidence classification, event-report fields, and CLI summaries.
 - A 20-seed incomplete-branch matrix covering clean, damage, sequencing-error, and rare-strain controls.
+- Compact source-read linkage for retained terminal edge observations and multi-substitution damage evidence.
+- Optional candidate-locus damage-profile JSON reporting through `--damage-profile-report`.
+- Strand-symmetric terminal damage fractions with separate auditable C→T/5′ and G→A/3′ channels.
+- A 20-seed profile-shape validation across low, standard, and high simulated damage.
 
 ### Changed
 

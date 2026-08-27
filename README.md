@@ -91,10 +91,11 @@ Read-end evidence and event sequences can be reported before cleaning:
 anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
   --orientation-aware --end-window 5 \
   --clean-tips --detect-bubbles --event-report events.tsv \
+  --damage-profile-report damage-profile.json \
   -o contigs.fasta
 ```
 
-Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, source-read linkage across substitutions, three heuristic scores, and an auditable classification. Linkage strengthens only multi-substitution evidence; it cannot by itself distinguish damage from correlated sequencing errors. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
+Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, source-read linkage across substitutions, three heuristic scores, and an auditable classification. The optional JSON damage profile compares damage-compatible alternative and backbone observations by terminal distance at unique matched weak-tip loci; incomplete branches remain excluded pending separate profile validation. Its primary strand-symmetric curve is invariant to bidirected path orientation. Linkage strengthens only multi-substitution evidence; neither linkage nor the empirical profile alone establishes biochemical causality. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
 
 Compacted-graph bubble paths can be scored for threshold validation:
 

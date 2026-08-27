@@ -137,6 +137,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="write pre-cleaning tip and bubble evidence as TSV",
     )
     assemble_parser.add_argument(
+        "--damage-profile-report",
+        type=Path,
+        help=(
+            "write a candidate-locus terminal damage profile as JSON "
+            "(requires --event-report)"
+        ),
+    )
+    assemble_parser.add_argument(
         "--unitig-bubble-report",
         type=Path,
         help="score compacted-graph bubble paths and write them as TSV",
@@ -174,6 +182,7 @@ def _run_assemble(
     detect_bubbles: bool,
     end_window: int,
     event_report: Path | None,
+    damage_profile_report: Path | None,
     unitig_bubble_report: Path | None,
 ) -> int:
     started = time.perf_counter()
@@ -185,6 +194,8 @@ def _run_assemble(
         raise ValueError("--end-window requires --orientation-aware")
     if event_report is not None and end_window == 0:
         raise ValueError("--event-report requires a positive --end-window")
+    if damage_profile_report is not None and event_report is None:
+        raise ValueError("--damage-profile-report requires --event-report")
     if unitig_bubble_report is not None and not orientation_aware:
         raise ValueError(
             "--unitig-bubble-report requires --orientation-aware"
@@ -237,6 +248,7 @@ def _run_assemble(
             bubble_candidates,
             event_report,
             incomplete_branches=incomplete_branch_candidates,
+            damage_profile_path=damage_profile_report,
         )
         _progress(
             f"Reported {event_summary.tips} tips "
@@ -334,6 +346,7 @@ def _run_assemble(
     print(f"reported_bubbles={event_summary.bubbles}")
     print(f"reported_paths={event_summary.paths}")
     print(f"event_report={event_report or ''}")
+    print(f"damage_profile_report={damage_profile_report or ''}")
     print(f"unitig_bubbles_detected={unitig_bubble_summary.bubbles}")
     print(f"unitig_bubble_paths={unitig_bubble_summary.paths}")
     print(f"unitig_error_like={unitig_bubble_summary.error_like}")
@@ -372,6 +385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.detect_bubbles,
                 arguments.end_window,
                 arguments.event_report,
+                arguments.damage_profile_report,
                 arguments.unitig_bubble_report,
             )
     except (OSError, ValueError) as error:

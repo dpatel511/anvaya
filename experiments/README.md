@@ -748,6 +748,55 @@ For multi-substitution damage tips, recall increased from 1,093/1,155 (94.63%) t
 
 Generated tables remain ignored under `experiments/validation/generated/molecule_linkage_validation/`.
 
+## Candidate-locus damage-profile validation
+
+### Question
+
+Can molecule-linked matched alternatives recover the positional shape of a sample's terminal damage without a reference genome or supplied profile?
+
+`09_damage_profile_validation.py` simulates bidirectional low, standard, and high damage on 20 independent 20,000 bp references. For every graph it matches weak tips, infers the profile using only graph and source-read evidence, and then compares the inferred strand-symmetric candidate-locus fractions with the known simulator profile. Absolute fractions are not expected to equal the generating probabilities because only graph-discordant matched loci enter the denominator.
+
+### Results
+
+| Damage profile | Mean eligible loci | Mean Pearson correlation | Decreasing profiles |
+|---|---:|---:|---:|
+| Low | 46.8 | 0.908 | 20/20 |
+| Standard | 351.4 | 0.966 | 20/20 |
+| High | 686.0 | 0.974 | 20/20 |
+
+Every inferred profile decreased from the molecule terminus toward the interior. Correlations ranged from 0.769–0.984 for low damage, 0.919–0.993 for standard damage, and 0.960–0.991 for high damage. Canonical bidirected traversal represented the simulated events predominantly in one reverse-complement-equivalent channel, so validation uses the combined C→T/5′ plus G→A/3′ curve while retaining both raw channels in the report.
+
+### Interpretation
+
+- Matched source-read evidence reliably recovers the positional decay shape when enough eligible loci exist.
+- Low-damage samples are noisier because they contribute far fewer graph-discordant loci.
+- The output is an empirical candidate-locus profile, not a calibrated whole-library probability: unmatched reference opportunities and uncertainty intervals remain future work.
+- The profile is non-destructive and is not yet used to alter classification scores or graph topology.
+
+Generated tables remain ignored under `experiments/validation/generated/damage_profile_validation/`.
+
+### Real-data diagnostic
+
+The first paired-end run on 1,409,072 reads from `SRR32866683` produced
+14,615 matched weak tips and 4,517 eligible C→T/G→A loci. The combined
+candidate-locus fractions at distances 0–4 were 0.190, 0.114, 0.119, 0.030,
+and 0.104. This shows terminal enrichment but not a smooth decay curve.
+
+Damage-profile schema version 2 was used to investigate the unusually large
+distance-3 reference denominator. Distances 1–4 had 243, 246, 242, and 245
+contributing reference edge/channel pairs respectively, while their reference
+observation counts were 856, 757, 2,894, and 757. The distance-3 excess is
+therefore not repeated counting of many more graph loci. It is coverage
+concentration among a comparable number of reference edges: the largest edge
+contributed 782 observations (27.0% of the bin), compared with maximum shares
+of 24.1%, 14.0%, and 11.1% at distances 1, 2, and 4.
+
+This single sample supports treating the output as an observation-weighted
+candidate-locus diagnostic, not yet as a calibrated library-wide damage
+estimate. Robust inference will require per-locus normalization or hierarchical
+weighting, uncertainty intervals, and validation on additional real libraries
+with independently estimated damage.
+
 ## K-mer size experiment
 
 ### Question

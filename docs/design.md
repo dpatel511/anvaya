@@ -36,7 +36,7 @@ The experimental graph stores each canonical `(k-1)`-mer once and uses oriented 
 
 This representation prevents the two DNA strands from producing duplicate assemblies. With a positive end window, each physical edge now stores compact distance-binned support from both canonical ends, internal support, and ambiguous palindromic terminal support. Reverse observations swap their end distances into canonical orientation.
 
-Base quality, molecule identity, paired-fragment links, and an inferred library-level damage model are not yet stored.
+Base quality and paired-fragment links are not yet stored. Source-read identity is retained for terminal observations when event reporting is enabled, and a candidate-locus damage profile can now be inferred from matched alternatives. This profile is not yet a whole-library calibrated damage model.
 
 The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
 
@@ -98,6 +98,12 @@ In a 20-seed, 460-condition paired ablation, molecule linkage increased overall 
 
 This validates read-level co-occurrence, not biochemical causality. The expanded controls contained 166/1,810 error tips and 1/124 rare tips called damage-like under both scoring modes. In particular, 134/169 deliberately correlated terminal-error tips were already damage-like. Those errors and the molecule-spanning rare SNP pair were represented as separate single-substitution tips, so they did not exercise the multi-substitution linkage gate. A controlled graph fixture or broader path matcher that produces linked and unlinked multi-substitution non-damage alternatives is still required before linkage can justify graph simplification.
 
+## Candidate-locus damage profile
+
+The optional `--damage-profile-report` output aggregates molecule-linked evidence across unique matched weak-tip substitution loci. Incomplete branches are excluded until profile-shape recovery is validated for that detector. Alternative and reference edge evidence are deduplicated independently so a shared backbone edge cannot be weighted once per competing alternative. For each terminal distance the report records C→T/5′ and G→A/3′ alternative observations, matched backbone observations, and their fractions. Because a bidirected path can be represented in either reverse-complement orientation, the primary `damage_fraction` combines both equivalent channels; separate raw channels remain in the JSON for auditing. Schema version 2 also reports the number of contributing edge/channel pairs and the largest single-edge contribution in every bin, allowing coverage concentration to be distinguished from duplicate-locus weighting. Bins without observations are reported as `null` rather than zero.
+
+Across 20 random references for each low, standard, and high bidirectional damage profile, the inferred strand-symmetric curve decreased with terminal distance in all 60 runs. Mean Pearson correlation with the known simulated profile was 0.908, 0.966, and 0.974 respectively. Low-damage runs contained a mean of 46.8 eligible loci and had the widest correlation range (0.769–0.984); standard and high runs averaged 351.4 and 686.0 loci. These results validate recovery of profile shape from matched candidates, not absolute whole-library damage frequency. Unmatched genomic opportunities, base quality, and sampling uncertainty are not yet included.
+
 The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors.
 
 ## Incomplete-branch matching
@@ -126,8 +132,8 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Infer a sample-level damage profile from molecule-linked substitution/end evidence.
-2. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods.
+1. Expand the candidate-locus profile with whole-library opportunities and uncertainty estimates.
+2. Replace heuristic scores with calibrated damage, sequencing-error, and variation likelihoods using profile fit.
 3. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 4. Implement optional conservative simplification only for high-confidence error-like paths.
 5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.

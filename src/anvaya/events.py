@@ -14,6 +14,7 @@ from anvaya.bidirected import (
 from anvaya.bubbles import Bubble, BubblePath
 from anvaya.cleaning import TipCandidate
 from anvaya.classification import format_substitutions
+from anvaya.damage_profile import infer_damage_profile, write_damage_profile
 from anvaya.incomplete_branches import (
     IncompleteBranchCandidate,
     match_incomplete_branch_to_backbone,
@@ -336,7 +337,7 @@ def _tip_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     tip: TipCandidate,
-) -> tuple[list[object], bool]:
+) -> tuple[list[object], TipBackboneMatch | None]:
     observations = sum(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
     )
@@ -357,7 +358,7 @@ def _tip_row(
             spell_edge_path(graph, tip.start, tip.edge_ids),
             match,
         ),
-        match is not None,
+        match,
     )
 
 
@@ -365,7 +366,7 @@ def _incomplete_branch_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     candidate: IncompleteBranchCandidate,
-) -> tuple[list[object], bool]:
+) -> tuple[list[object], TipBackboneMatch | None]:
     match = match_incomplete_branch_to_backbone(graph, candidate)
     return (
         _matched_path_row(
@@ -380,7 +381,7 @@ def _incomplete_branch_row(
             spell_edge_path(graph, candidate.start, candidate.edge_ids),
             match,
         ),
-        match is not None,
+        match,
     )
 
 
@@ -390,10 +391,13 @@ def write_event_report(
     bubbles: Sequence[Bubble],
     path: str | Path,
     incomplete_branches: Sequence[IncompleteBranchCandidate] = (),
+    damage_profile_path: str | Path | None = None,
 ) -> EventReportSummary:
     """Write non-destructive tip, branch, and bubble-path evidence as TSV."""
     if graph.end_window == 0:
         raise ValueError("event reporting requires read-end evidence")
+    if damage_profile_path is not None and not graph.molecule_links_collected:
+        raise ValueError("damage profiling requires molecule links")
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -423,25 +427,35 @@ def write_event_report(
         )
         path_count = 0
         matched_tip_count = 0
+        profile_matches: list[TipBackboneMatch] = []
         for index, tip in enumerate(tips, start=1):
-            row, matched = _tip_row(graph, f"tip-{index}", tip)
+            row, match = _tip_row(graph, f"tip-{index}", tip)
             writer.writerow(row)
-            matched_tip_count += matched
+            if match is not None:
+                profile_matches.append(match)
+                matched_tip_count += 1
             path_count += 1
         matched_incomplete_count = 0
         for index, candidate in enumerate(incomplete_branches, start=1):
-            row, matched = _incomplete_branch_row(
+            row, match = _incomplete_branch_row(
                 graph,
                 f"incomplete-branch-{index}",
                 candidate,
             )
             writer.writerow(row)
-            matched_incomplete_count += matched
+            if match is not None:
+                matched_incomplete_count += 1
             path_count += 1
         for index, bubble in enumerate(bubbles, start=1):
             rows = _bubble_rows(graph, f"bubble-{index}", bubble)
             writer.writerows(rows)
             path_count += len(rows)
+
+    if damage_profile_path is not None:
+        write_damage_profile(
+            infer_damage_profile(graph, profile_matches),
+            damage_profile_path,
+        )
 
     return EventReportSummary(
         tips=len(tips),
