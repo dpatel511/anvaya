@@ -14,6 +14,7 @@ from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.events import EventReportSummary, write_event_report
+from anvaya.event_calibration import calibrate_event_report
 from anvaya.graph import build_dbg
 from anvaya.incomplete_branches import find_incomplete_branch_candidates
 from anvaya.metrics import summarize_graph
@@ -58,6 +59,16 @@ def _end_window(value: str) -> int:
     if window < 0:
         raise argparse.ArgumentTypeError("end window must not be negative")
     return window
+
+
+def _probability(value: str) -> float:
+    try:
+        probability = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("probability must be numeric") from error
+    if not 0.0 < probability < 1.0:
+        raise argparse.ArgumentTypeError("probability must be between zero and one")
+    return probability
 
 
 def _progress(message: str) -> None:
@@ -155,6 +166,38 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         help="output unitig FASTA file",
+    )
+
+    calibration_parser = subparsers.add_parser(
+        "calibrate-events",
+        help="append report-only conformal confidence to an event TSV",
+    )
+    calibration_parser.add_argument("--input", "-i", required=True, type=Path)
+    calibration_parser.add_argument("--model", required=True, type=Path)
+    calibration_parser.add_argument("--output", "-o", required=True, type=Path)
+    calibration_parser.add_argument(
+        "--alpha",
+        type=_probability,
+        default=0.01,
+        help="class rejection level before BH correction (default: 0.01)",
+    )
+    calibration_parser.add_argument(
+        "--min-observations",
+        type=_minimum_count,
+        default=5,
+        help="minimum molecules required for a decision (default: 5)",
+    )
+    calibration_parser.add_argument(
+        "--min-alternative-observations",
+        type=_minimum_count,
+        default=2,
+        help="minimum alternative molecules required for a decision (default: 2)",
+    )
+    calibration_parser.add_argument(
+        "--min-reference-observations",
+        type=_minimum_count,
+        default=5,
+        help="minimum reference molecules required for a decision (default: 5)",
     )
     return parser
 
@@ -389,6 +432,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.damage_profile_report,
                 arguments.unitig_bubble_report,
             )
+        if arguments.command == "calibrate-events":
+            summary = calibrate_event_report(
+                arguments.input,
+                arguments.model,
+                arguments.output,
+                alpha=arguments.alpha,
+                minimum_observations=arguments.min_observations,
+                minimum_alternative_observations=(
+                    arguments.min_alternative_observations
+                ),
+                minimum_reference_observations=(
+                    arguments.min_reference_observations
+                ),
+            )
+            print(f"rows={summary.rows}")
+            print(f"scored={summary.scored}")
+            print(f"eligible_error={summary.eligible_error}")
+            print(f"protect_damage={summary.protect_damage}")
+            print(f"protect_variation={summary.protect_variation}")
+            print(f"insufficient={summary.insufficient}")
+            print(f"output={arguments.output}")
+            return 0
     except (OSError, ValueError) as error:
         parser.error(str(error))
 

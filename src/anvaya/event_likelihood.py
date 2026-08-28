@@ -23,6 +23,7 @@ class NucleotideObservation:
     distance: int
     quality: int
     damage_probability: float | None = None
+    damage_probability_ensemble: tuple[float, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -37,6 +38,9 @@ class EventLikelihood:
     reference_observations: int
     missing_quality_observations: int
     damage_log_likelihood: float | None
+    damage_log_likelihood_min: float | None
+    damage_log_likelihood_max: float | None
+    damage_log_likelihood_spread: float | None
     error_log_likelihood: float | None
     variation_log_likelihood: float | None
     variation_frequency: float | None
@@ -44,6 +48,9 @@ class EventLikelihood:
     variation_penalized_log_likelihood: float | None
     best_explanation: str | None
     log_likelihood_margin: float | None
+    damage_error_log_contrast: float | None
+    damage_variation_log_contrast: float | None
+    error_variation_log_contrast: float | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -188,6 +195,29 @@ def _log_likelihood(
     )
 
 
+def _ensemble_damage_log_likelihoods(
+    observations: Sequence[NucleotideObservation],
+) -> tuple[float, ...]:
+    """Score aligned cross-fit curves without treating folds as molecules."""
+    ensemble_size = min(
+        (len(observation.damage_probability_ensemble) for observation in observations),
+        default=0,
+    )
+    return tuple(
+        sum(
+            log(
+                _emission_probability(
+                    observation.alternative,
+                    observation.damage_probability_ensemble[index],
+                    observation.quality,
+                )
+            )
+            for observation in observations
+        )
+        for index in range(ensemble_size)
+    )
+
+
 def _maximize_variation_frequency(
     observations: Sequence[NucleotideObservation],
 ) -> tuple[float, float]:
@@ -269,6 +299,9 @@ def compare_event_likelihoods(
             reference_observations=references,
             missing_quality_observations=missing_quality_observations,
             damage_log_likelihood=None,
+            damage_log_likelihood_min=None,
+            damage_log_likelihood_max=None,
+            damage_log_likelihood_spread=None,
             error_log_likelihood=None,
             variation_log_likelihood=None,
             variation_frequency=None,
@@ -276,6 +309,9 @@ def compare_event_likelihoods(
             variation_penalized_log_likelihood=None,
             best_explanation=None,
             log_likelihood_margin=None,
+            damage_error_log_contrast=None,
+            damage_variation_log_contrast=None,
+            error_variation_log_contrast=None,
         )
 
     damage = _log_likelihood(
@@ -283,6 +319,10 @@ def compare_event_likelihoods(
         damage_probabilities,
         use_observation_damage=has_embedded_damage,
     )
+    ensemble_damage = _ensemble_damage_log_likelihoods(observations)
+    damage_candidates = (damage, *ensemble_damage)
+    damage_min = min(damage_candidates)
+    damage_max = max(damage_candidates)
     error = _log_likelihood(
         observations,
         (0.0,) * (max(observation.distance for observation in observations) + 1),
@@ -305,6 +345,9 @@ def compare_event_likelihoods(
         reference_observations=references,
         missing_quality_observations=0,
         damage_log_likelihood=damage,
+        damage_log_likelihood_min=damage_min,
+        damage_log_likelihood_max=damage_max,
+        damage_log_likelihood_spread=damage_max - damage_min,
         error_log_likelihood=error,
         variation_log_likelihood=variation,
         variation_frequency=variation_frequency,
@@ -312,6 +355,9 @@ def compare_event_likelihoods(
         variation_penalized_log_likelihood=variation_penalized,
         best_explanation=ranked[0][0],
         log_likelihood_margin=ranked[0][1] - ranked[1][1],
+        damage_error_log_contrast=damage - error,
+        damage_variation_log_contrast=damage - variation_penalized,
+        error_variation_log_contrast=error - variation_penalized,
     )
 
 
@@ -324,6 +370,7 @@ def _edge_observations_at(
     *,
     alternative: bool,
     damage_probabilities: Sequence[float],
+    damage_probability_ensemble: Sequence[Sequence[float]] = (),
 ) -> tuple[list[NucleotideObservation], int]:
     current = start
     for index, edge_id in enumerate(edge_ids):
@@ -347,6 +394,11 @@ def _edge_observations_at(
                             distance=distance,
                             quality=link.base_quality,
                             damage_probability=damage_probabilities[distance],
+                            damage_probability_ensemble=tuple(
+                                probabilities[distance]
+                                for probabilities in damage_probability_ensemble
+                                if distance < len(probabilities)
+                            ),
                         )
                     )
             return observations, missing
@@ -370,6 +422,10 @@ def score_matched_event(
     observations: list[NucleotideObservation] = []
     missing = 0
     scopes = []
+    ensemble = tuple(
+        models.probabilities_by_fold[fold]
+        for fold in sorted(models.probabilities_by_fold)
+    )
     for change in match.substitutions:
         edge_index = change.position - graph.node_length - 1
         if not (
@@ -406,6 +462,7 @@ def score_matched_event(
             expected_end,
             alternative=True,
             damage_probabilities=probabilities,
+            damage_probability_ensemble=ensemble,
         )
         reference, reference_missing = _edge_observations_at(
             graph,
@@ -415,6 +472,7 @@ def score_matched_event(
             expected_end,
             alternative=False,
             damage_probabilities=probabilities,
+            damage_probability_ensemble=ensemble,
         )
         observations.extend(alternative)
         observations.extend(reference)

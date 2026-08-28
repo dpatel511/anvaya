@@ -969,6 +969,76 @@ Generated tables remain ignored under
 `experiments/validation/generated/event_likelihood_validation/` and
 `experiments/validation/generated/cross_fit_profile_validation/`.
 
+## Event-confidence calibration validation
+
+`14_event_confidence_validation.py` fits a class-conditional conformal model on
+5,000 independently seeded samples: 1,000 each for the fitted damage curve,
+damage-profile misspecification, independent Phred errors, systematic errors
+with the same positional curve as damage, and constant-frequency variation.
+The calibration corpus is separate from 500 test samples. Nonconformity uses
+the competing likelihood gap divided by the square root of molecule count;
+damage-score envelopes propagate cross-fit profile instability.
+
+At `alpha=0.01`, all 100 fitted-damage tests were protected as damage. Of 100
+misspecified-damage tests, 99 were protected as damage and one as variation.
+All 100 independent-error tests became `eligible_error`. All 100 systematic
+damage-shaped errors were protected as damage because their observable
+distribution remains indistinguishable from damage. All 100 variation tests
+were protected, with 94 labelled variation protection and six conservatively
+labelled damage protection. No damage, misspecified-damage, systematic-error,
+or variation test became cleaning-eligible.
+
+The resulting model was applied offline to the existing `SRR32866683` v5
+event report. Of 111,399 rows, 1,478 had likelihood scores. The final gates
+protected 340 as damage and 93 as variation, marked no event eligible for
+cleaning, and left 110,966 rows insufficient. Before enforcing separate
+molecule minima, eleven events passed the likelihood and multiple-testing
+gates; all eleven had exactly one alternative molecule. The default minimum of
+two alternative and five reference molecules correctly removed these
+singletons from eligibility.
+
+This experiment validates safe abstention for the included simulation family,
+not a universal production calibration. Models must be retrained and held out
+by sample for the relevant library preparation, damage range, community,
+coverage, and error process. Generated files remain ignored under
+`experiments/validation/generated/event_confidence_validation/`.
+
+## Graph-derived event-confidence stress test
+
+`15_graph_event_calibration_validation.py` moves calibration from generated
+observation lists to actual orientation-aware graphs. It reuses exact mutated
+k-mer truth for damage and sequencing errors and creates separated C→T/G→A
+rare-strain SNPs that are deliberately compatible with the damage channels.
+Matched tips, incomplete branches, and individual simple-bubble paths are
+scored with a damage profile inferred from a separate high-damage graph for
+the same simulated sample. Calibration and validation seed ranges do not
+overlap.
+
+The initial resolution-valid run used three 20 kb/20× calibration references
+and two unseen validation references at exploratory `alpha=0.1`. Calibration
+contained 2,762 scored damage, 24 error, and 12 variation events. The
+calibrator now refuses to run when a class has too few examples to attain the
+requested empirical p-value resolution; this prevents coarse calibration from
+masquerading as conservative evidence.
+
+Validation produced 2,805 damage-truth graph events, of which 1,909 were
+scoreable; 150 error-truth events, of which 26 were scoreable; and 39
+variation-truth events, of which six were scoreable. No event became
+`eligible_error`. Thirteen damage events were protected as damage and eight as
+variation; all error and variation events remained insufficient. Only two
+independent-error events reached scoring and both had one alternative and one
+reference molecule. The remaining scored errors were correlated terminal
+errors with insufficient reference support. Weakening those gates would also
+weaken the public-data singleton protection, so the correct next step is to
+improve evidence recovery rather than tune the threshold.
+
+The test also confirms a topology gap: damage primarily appears in tips and
+incomplete branches, while most rare-strain controls appear as bubbles. The
+experiment can score a bubble path through the generic branch matcher, but
+production event reporting does not yet provide calibrated bubble likelihoods.
+Generated outputs remain ignored under
+`experiments/validation/generated/graph_event_calibration_validation/`.
+
 ## K-mer size experiment
 
 ### Question

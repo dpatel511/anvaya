@@ -6,6 +6,18 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Report-only class-conditional conformal calibration for event likelihoods,
+  with held-out sample provenance, BH-corrected damage and variation tests,
+  cross-fit damage instability, and explicit `protect_damage`,
+  `protect_variation`, `eligible_error`, or `insufficient` decisions.
+- A separate `anvaya calibrate-events` command and experiment 14 covering
+  independent errors, systematic damage-shaped errors, variation, and damage
+  profile misspecification.
+- A graph-derived adversarial calibration experiment using exact damage/error
+  k-mer truth, damage-compatible rare-strain variants, and matched tip,
+  incomplete-branch, and bubble-path observations.
+- Independent minimum alternative and reference molecule gates that prevent
+  high total coverage from making singleton alternatives cleaning-eligible.
 - Deterministic five-fold candidate-locus damage fitting that excludes each
   weak-tip locus from the profile used to score it.
 - Report-only damage, Phred sequencing-error, and constant-frequency variation

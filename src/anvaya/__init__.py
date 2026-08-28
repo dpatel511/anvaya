@@ -30,6 +30,19 @@ from anvaya.event_likelihood import (
     fit_cross_fitted_damage_models,
     score_matched_event,
 )
+from anvaya.event_calibration import (
+    CalibrationExample,
+    ConformalCalibrationModel,
+    EventCalibrationScores,
+    EventCalibrationSummary,
+    EventConfidence,
+    calibrate_event_report,
+    calibrate_score_batch,
+    fit_conformal_calibration,
+    load_calibration_model,
+    scores_from_likelihood,
+    write_calibration_model,
+)
 from anvaya.graph import (
     DeBruijnGraph,
     branching_nodes,
@@ -118,4 +131,15 @@ __all__ = [
     "compare_event_likelihoods",
     "fit_cross_fitted_damage_models",
     "score_matched_event",
+    "CalibrationExample",
+    "ConformalCalibrationModel",
+    "EventCalibrationScores",
+    "EventCalibrationSummary",
+    "EventConfidence",
+    "calibrate_event_report",
+    "calibrate_score_batch",
+    "fit_conformal_calibration",
+    "load_calibration_model",
+    "scores_from_likelihood",
+    "write_calibration_model",
 ]

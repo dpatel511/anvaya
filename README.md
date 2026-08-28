@@ -35,6 +35,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - report-only Phred-derived sequencing-error log likelihoods with explicit missing-quality counts;
 - deterministic five-fold held-out damage profiles for matched weak-tip loci;
 - report-only damage/error/variation likelihood rankings with explicit model scope and margins;
+- optional report-only conformal confidence calibration with multiple-testing correction and conservative protection decisions;
 - sequence-level TSV reports for weak tips and bubble paths;
 - damage-compatible C→T/G→A annotation for simple bubble alternatives;
 - non-destructive weak-tip matching to equal-length local backbone paths with DNA identity, RY identity, relative coverage, substitutions, and damage compatibility;
@@ -102,6 +103,18 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
 Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, source-read linkage across substitutions, retained base-quality summaries, a Phred-derived sequencing-error log likelihood, three heuristic scores, and an auditable classification. The error likelihood assumes equiprobable wrong nucleotides, `P(observed alternative | sequencing error) = 10^(-Q/10) / 3`, and is omitted rather than imputed when qualities are unavailable. When a damage-profile report is requested, matched damage-compatible events also receive report-only damage, sequencing-error, and biological-variation likelihoods. Weak-tip loci use deterministic five-fold damage profiles fitted without the fold containing the event; incomplete branches use the tip-derived profile and are therefore independent of its training loci. The variation explanation fits one constant local alternative frequency up to 0.5 and receives a one-parameter BIC penalty. Rankings and margins are diagnostic—not posterior probabilities, classifier inputs, or removal decisions.
 
 The optional JSON damage profile compares damage-compatible alternative and backbone observations by the exact changed-base cycle at unique matched weak-tip loci; incomplete branches remain excluded from fitting pending separate profile validation. Schema version 6 retains the schema-5 candidate-conditioned beta-binomial geometric fit and records cross-fit status, fold count, assignment, and scoring scope. The fitted amplitude is not a calibrated whole-library damage rate. Linkage strengthens only multi-substitution evidence; neither linkage nor the fitted profile alone establishes biochemical causality. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
+
+Likelihood reports can be calibrated separately using a model trained on independently simulated or validated samples:
+
+```bash
+anvaya calibrate-events \
+  --input events.tsv \
+  --model event-calibration.json \
+  --alpha 0.01 \
+  --output events-calibrated.tsv
+```
+
+The calibrator uses class-conditional conformal p-values, propagates the spread across cross-fit damage curves, and applies Benjamini–Hochberg correction before rejecting the damage and variation explanations. `eligible_error` requires both protective explanations to be rejected, at least two alternative molecules, at least five reference molecules, and stable damage evidence. Damage-like, variation-like, systematic-error-like, and unresolved events are protected or left insufficient. A calibration model is intentionally not bundled: its samples must match the intended library protocol, damage range, coverage, and error processes. The command only appends report fields and never edits the graph or contigs.
 
 Compacted-graph bubble paths can be scored for threshold validation:
 

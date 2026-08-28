@@ -8,7 +8,7 @@ DOI: <https://doi.org/10.1186/s13059-025-03839-5>
 
 ## PyDamage
 
-Borry et al. (2021), *PyDamage: automated ancient damage identification and estimation for contigs in ancient DNA de novo assembly*. PyDamage estimates damage after reads have been aligned to assembled contigs. It authenticates contigs but does not use damage evidence during graph construction or simplification.
+Borry et al. (2021), *PyDamage: automated ancient damage identification and estimation for contigs in ancient DNA de novo assembly*. PyDamage estimates damage after reads have been aligned to assembled contigs. It combines a damage-versus-null likelihood-ratio test, multiple-testing correction, and a simulated-data accuracy model driven by damage, coverage, and contig length. Anvaya borrows the separation between evidence testing and reliability calibration, but calibrates local graph events and remains non-destructive.
 
 DOI: <https://doi.org/10.7717/peerj.11845>
 
@@ -20,13 +20,13 @@ DOI: <https://doi.org/10.1093/bioinformatics/btt193>
 
 ## PMDtools
 
-Skoglund et al. (2014), *Separating endogenous ancient DNA from modern day contamination in a Siberian Neandertal*. PMDtools compares postmortem-damage and null explanations while accounting for base quality and biological polymorphism. This motivates Anvaya's eventual three-way damage/error/variation likelihood. The current implementation adds only the auditable sequencing-error term; it does not yet produce a PMD score or posterior.
+Skoglund et al. (2014), *Separating endogenous ancient DNA from modern day contamination in a Siberian Neandertal*. PMDtools compares postmortem-damage and null explanations while accounting for base quality and biological polymorphism. This motivates Anvaya's three-way damage/error/variation likelihood. Unlike PMDtools' reference-aligned per-read score, Anvaya uses graph-linked molecule observations and class-conditional conformal calibration.
 
 DOI: <https://doi.org/10.1073/pnas.1318934111>
 
 ## ngsBriggs
 
-Zhao et al. (2025), *Revisiting the Briggs Ancient DNA Damage Model: A Fast Maximum Likelihood Method to Estimate Post-Mortem Damage*. ngsBriggs combines sample-level damage estimation with posterior ancient-versus-modern read classification. It reinforces the need to separate profile fitting from downstream scoring and to expose uncertainty. Anvaya currently cross-fits candidate loci but does not yet claim whole-library parameters or posterior probabilities.
+Zhao et al. (2025), *Revisiting the Briggs Ancient DNA Damage Model: A Fast Maximum Likelihood Method to Estimate Post-Mortem Damage*. ngsBriggs combines sample-level damage estimation with posterior ancient-versus-modern read classification and fragment-length evidence. It reinforces the need to separate profile fitting from downstream scoring and to expose uncertainty. Anvaya now propagates cross-fit curve instability and calibrates decisions empirically, but still does not claim whole-library parameters or posterior probabilities.
 
 DOI: <https://doi.org/10.1111/1755-0998.14029>
 
