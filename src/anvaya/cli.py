@@ -299,6 +299,9 @@ def _run_assemble(
             event_report,
             incomplete_branches=incomplete_branch_candidates,
             damage_profile_path=damage_profile_report,
+            reads=sequences,
+            read_qualities=[read.qualities for read in reads],
+            read_molecule_ids=molecule_ids,
         )
         _progress(
             f"Reported {event_summary.tips} tips "

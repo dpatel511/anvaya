@@ -10,7 +10,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import median
 
-from anvaya.bidirected import build_bidirected_dbg, spell_edge_path
+from anvaya.bidirected import (
+    build_bidirected_dbg,
+    collect_target_edge_links,
+    spell_edge_path,
+)
 from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.damage_profile import infer_damage_profile
@@ -366,9 +370,8 @@ def _evaluate_condition(phase, seed, condition, models):
             if match is None:
                 continue
             matched_truth_events += 1
-            likelihood = score_matched_event(graph, match, models)
             context = extract_event_graph_context(graph, match, event_type)
-            events.append((event_type, index, truth, context, likelihood))
+            events.append((event_type, index, truth, context, match))
     bubble_path_index = 0
     for bubble in bubbles:
         reference_index = max(
@@ -403,15 +406,47 @@ def _evaluate_condition(phase, seed, condition, models):
             if match is None:
                 continue
             matched_truth_events += 1
-            likelihood = score_matched_event(graph, match, models)
             context = extract_event_graph_context(
                 graph,
                 match,
                 "bubble_path",
             )
             events.append(
-                ("bubble_path", bubble_path_index, truth, context, likelihood)
+                ("bubble_path", bubble_path_index, truth, context, match)
             )
+    target_edges: set[int] = set()
+    for *_, match in events:
+        for change in match.substitutions:
+            if (change.reference, change.alternative) in {
+                ("C", "T"),
+                ("G", "A"),
+            }:
+                continue
+            edge_index = change.position - graph.node_length - 1
+            if (
+                0 <= edge_index < len(match.tip_edge_ids)
+                and edge_index < len(match.backbone_edge_ids)
+            ):
+                target_edges.add(match.tip_edge_ids[edge_index])
+                target_edges.add(match.backbone_edge_ids[edge_index])
+    sequences = [read.sequence for read in condition.reads]
+    qualities = [(condition.quality,) * len(sequence) for sequence in sequences]
+    edge_links = collect_target_edge_links(
+        graph,
+        sequences,
+        tuple(target_edges),
+        qualities,
+    )
+    events = [
+        (
+            event_type,
+            index,
+            truth,
+            context,
+            score_matched_event(graph, match, models, edge_links),
+        )
+        for event_type, index, truth, context, match in events
+    ]
     run = GraphRunRecord(
         phase,
         seed,

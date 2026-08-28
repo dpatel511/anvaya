@@ -9,6 +9,7 @@ from anvaya.bidirected import (
     BidirectedDeBruijnGraph,
     _edge_support_total,
     _successor,
+    collect_target_edge_links,
     spell_edge_path,
 )
 from anvaya.bubbles import Bubble, BubblePath
@@ -203,7 +204,9 @@ def _bubble_rows(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     bubble: Bubble,
+    matches: Sequence[TipBackboneMatch | None],
     likelihood_models: CrossFittedDamageModels | None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
 ) -> list[list[object]]:
     sequences = [
         spell_edge_path(graph, bubble.start, path.edge_ids)
@@ -224,12 +227,7 @@ def _bubble_rows(
         zip(bubble.paths, sequences, strict=True)
     ):
         if index != reference_index:
-            match = match_competing_paths(
-                graph,
-                bubble.start,
-                path.edge_ids,
-                bubble.paths[reference_index].edge_ids,
-            )
+            match = matches[index]
             if match is not None:
                 rows.append(
                     _matched_path_row(
@@ -244,6 +242,7 @@ def _bubble_rows(
                         sequence,
                         match,
                         likelihood_models,
+                        edge_links,
                         path_index=index,
                     )
                 )
@@ -297,6 +296,7 @@ def _match_columns(
     graph: BidirectedDeBruijnGraph,
     match: TipBackboneMatch | None,
     likelihood_models: CrossFittedDamageModels | None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
 ) -> tuple[str, str, list[object]]:
     if match is None:
         return (
@@ -309,7 +309,7 @@ def _match_columns(
         )
 
     decision = classify_tip_match(graph, match)
-    likelihood = score_matched_event(graph, match, likelihood_models)
+    likelihood = score_matched_event(graph, match, likelihood_models, edge_links)
     columns: list[object] = [
         match.tip_sequence,
         "true",
@@ -473,6 +473,7 @@ def _matched_path_row(
     sequence: str,
     match: TipBackboneMatch | None,
     likelihood_models: CrossFittedDamageModels | None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
     *,
     path_index: int = 0,
 ) -> list[object]:
@@ -485,6 +486,7 @@ def _matched_path_row(
         graph,
         match,
         likelihood_models,
+        edge_links,
     )
     return [
         event_id,
@@ -513,6 +515,7 @@ def _tip_row(
     tip: TipCandidate,
     match: TipBackboneMatch | None,
     likelihood_models: CrossFittedDamageModels | None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
 ) -> tuple[list[object], TipBackboneMatch | None]:
     observations = sum(
         _edge_support_total(graph, edge_id) for edge_id in tip.edge_ids
@@ -533,6 +536,7 @@ def _tip_row(
             spell_edge_path(graph, tip.start, tip.edge_ids),
             match,
             likelihood_models,
+            edge_links,
         ),
         match,
     )
@@ -542,9 +546,10 @@ def _incomplete_branch_row(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     candidate: IncompleteBranchCandidate,
+    match: TipBackboneMatch | None,
     likelihood_models: CrossFittedDamageModels | None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
 ) -> tuple[list[object], TipBackboneMatch | None]:
-    match = match_incomplete_branch_to_backbone(graph, candidate)
     return (
         _matched_path_row(
             graph,
@@ -558,6 +563,7 @@ def _incomplete_branch_row(
             spell_edge_path(graph, candidate.start, candidate.edge_ids),
             match,
             likelihood_models,
+            edge_links,
         ),
         match,
     )
@@ -570,6 +576,10 @@ def write_event_report(
     path: str | Path,
     incomplete_branches: Sequence[IncompleteBranchCandidate] = (),
     damage_profile_path: str | Path | None = None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
+    reads: Sequence[str] | None = None,
+    read_qualities: Sequence[Sequence[int] | None] | None = None,
+    read_molecule_ids: Sequence[int] | None = None,
 ) -> EventReportSummary:
     """Write non-destructive tip, branch, and bubble-path evidence as TSV."""
     if graph.end_window == 0:
@@ -578,7 +588,70 @@ def write_event_report(
         raise ValueError("damage profiling requires molecule links")
 
     tip_matches = [match_tip_to_backbone(graph, tip) for tip in tips]
+    incomplete_matches = [
+        match_incomplete_branch_to_backbone(graph, candidate)
+        for candidate in incomplete_branches
+    ]
+    bubble_matches: list[tuple[TipBackboneMatch | None, ...]] = []
+    for bubble in bubbles:
+        reference_index = max(
+            range(len(bubble.paths)),
+            key=lambda index: (
+                bubble.paths[index].minimum_edge_support,
+                bubble.paths[index].observations,
+                -index,
+            ),
+        )
+        reference = bubble.paths[reference_index].edge_ids
+        bubble_matches.append(
+            tuple(
+                None
+                if index == reference_index
+                else match_competing_paths(
+                    graph,
+                    bubble.start,
+                    bubble_path.edge_ids,
+                    reference,
+                )
+                for index, bubble_path in enumerate(bubble.paths)
+            )
+        )
     profile_matches = [match for match in tip_matches if match is not None]
+    if reads is not None and edge_links is None:
+        evidence_matches = list(profile_matches)
+        evidence_matches.extend(
+            match
+            for match in incomplete_matches
+            if match is not None
+        )
+        for matches in bubble_matches:
+            evidence_matches.extend(
+                match
+                for match in matches
+                if match is not None
+            )
+        target_edges: set[int] = set()
+        for match in evidence_matches:
+            for change in match.substitutions:
+                if (change.reference, change.alternative) in {
+                    ("C", "T"),
+                    ("G", "A"),
+                }:
+                    continue
+                edge_index = change.position - graph.node_length - 1
+                if (
+                    0 <= edge_index < len(match.tip_edge_ids)
+                    and edge_index < len(match.backbone_edge_ids)
+                ):
+                    target_edges.add(match.tip_edge_ids[edge_index])
+                    target_edges.add(match.backbone_edge_ids[edge_index])
+        edge_links = collect_target_edge_links(
+            graph,
+            reads,
+            tuple(target_edges),
+            read_qualities,
+            read_molecule_ids,
+        )
     profile = None
     likelihood_models = None
     if damage_profile_path is not None:
@@ -623,29 +696,40 @@ def write_event_report(
                 tip,
                 match,
                 likelihood_models,
+                edge_links,
             )
             writer.writerow(row)
             if match is not None:
                 matched_tip_count += 1
             path_count += 1
         matched_incomplete_count = 0
-        for index, candidate in enumerate(incomplete_branches, start=1):
+        for index, (candidate, match) in enumerate(
+            zip(incomplete_branches, incomplete_matches, strict=True),
+            start=1,
+        ):
             row, match = _incomplete_branch_row(
                 graph,
                 f"incomplete-branch-{index}",
                 candidate,
+                match,
                 likelihood_models,
+                edge_links,
             )
             writer.writerow(row)
             if match is not None:
                 matched_incomplete_count += 1
             path_count += 1
-        for index, bubble in enumerate(bubbles, start=1):
+        for index, (bubble, matches) in enumerate(
+            zip(bubbles, bubble_matches, strict=True),
+            start=1,
+        ):
             rows = _bubble_rows(
                 graph,
                 f"bubble-{index}",
                 bubble,
+                matches,
                 likelihood_models,
+                edge_links,
             )
             writer.writerows(rows)
             path_count += len(rows)

@@ -1,6 +1,7 @@
 import unittest
 
-from anvaya.bidirected import build_bidirected_dbg
+from anvaya.bidirected import build_bidirected_dbg, collect_target_edge_links
+from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.damage_likelihood import fit_candidate_damage_model
 from anvaya.damage_profile import DamageProfile, DamageProfileLocus
@@ -11,7 +12,7 @@ from anvaya.event_likelihood import (
     fit_cross_fitted_damage_models,
     score_matched_event,
 )
-from anvaya.tip_matching import match_tip_to_backbone
+from anvaya.tip_matching import match_competing_paths, match_tip_to_backbone
 
 
 def _observations(
@@ -222,6 +223,58 @@ class EventLikelihoodTests(unittest.TestCase):
             result.profile_scope,
             "held_out_candidate_fold_1_of_5",
         )
+
+    def test_whole_read_links_score_internal_ordinary_substitution(self) -> None:
+        backbone = "GCTTGTTCCGGA"
+        alternative = "GCTGGTTCCGGA"
+        reads = [backbone] * 30 + [alternative] * 3
+        qualities = [(35,) * len(backbone)] * len(reads)
+        graph = build_bidirected_dbg(
+            reads,
+            4,
+            end_window=1,
+            track_molecule_links=True,
+            read_qualities=qualities,
+        )
+        bubble = find_simple_bubbles(graph)[0]
+        reference_index = max(
+            range(len(bubble.paths)),
+            key=lambda index: bubble.paths[index].minimum_edge_support,
+        )
+        alternative_index = 1 - reference_index
+        match = match_competing_paths(
+            graph,
+            bubble.start,
+            bubble.paths[alternative_index].edge_ids,
+            bubble.paths[reference_index].edge_ids,
+        )
+        self.assertIsNotNone(match)
+        assert match is not None
+        target_edges = match.tip_edge_ids + match.backbone_edge_ids
+        edge_links = collect_target_edge_links(
+            graph,
+            reads,
+            target_edges,
+            qualities,
+        )
+        models = CrossFittedDamageModels(
+            status="fitted",
+            reasons=(),
+            folds=5,
+            fitted_folds=5,
+            locus_folds={},
+            probabilities_by_fold={0: (0.1,)},
+            independent_probabilities=(0.1,),
+        )
+
+        without_rescan = score_matched_event(graph, match, models)
+        with_rescan = score_matched_event(graph, match, models, edge_links)
+
+        self.assertEqual(without_rescan.status, "insufficient_evidence")
+        self.assertEqual(with_rescan.status, "scored")
+        self.assertEqual(with_rescan.alternative_observations, 3)
+        self.assertEqual(with_rescan.reference_observations, 30)
+        self.assertNotEqual(with_rescan.best_explanation, "damage")
 
 
 if __name__ == "__main__":
