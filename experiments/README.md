@@ -1091,6 +1091,40 @@ in the initial conditioned v8 run to 158.15 seconds in v9; total runtime fell
 from 585.55 to 464.59 seconds. These public results establish deterministic
 non-regression and plausible candidate behavior, not biological ground truth.
 
+The graph-context phase adds a reusable, report-only extractor for event type,
+path length, substitutions, alternative/reference path observations, minimum
+edge support, local relative coverage, sequence identity, damage compatibility,
+branch degree, terminal fraction and enrichment, strand balance, damage
+distance, joint-fragment support, and base quality. Experiment 15 now writes
+these fields in `validation_events.tsv`, median values by truth and topology in
+`feature_summary.tsv`, and pairwise probability-of-superiority measurements in
+`feature_separation.tsv`.
+
+The condition matrix was expanded from nine to 16 graphs per seed. It now uses
+three independent error rates, independent terminal errors, systematic paired
+terminal errors, three damage strengths, and ordinary plus damage-compatible
+rare strains at 1×, 2×, 5×, and 10×. Rare mixtures are held at 20× total depth;
+the earlier generator added rare coverage on top of 20× major coverage and
+therefore confounded coverage comparisons.
+
+Across three calibration and two unseen validation references, scored error
+examples increased from 54/47 to 152/103 and variation examples from 12/6 to
+26/17 for calibration/validation. Damage remained 2,762/1,909. Validation
+rankings were 1,680 damage and 229 variation for damage truth; 19 error, 65
+variation, 12 damage, and seven ambiguous for error truth; and 13 ambiguous,
+three damage, one variation, and zero error for variation truth. No event became
+cleaning-eligible.
+
+Path length, alternative/reference observations, terminal fraction, terminal
+enrichment, and local relative coverage strongly separated variation from the
+current damage and error fixtures. Median variation path length was 21 edges
+and median terminal fraction 0.33, versus one edge/1.0 for damage and two
+edges/1.0 for error. Damage and error overlapped substantially, especially for
+terminal error processes, so graph context is not yet a safe deletion model.
+The evidence funnel detected and matched 96 validation variation events but
+scored only 17, making exact evidence recovery beyond the five-base terminal
+window the next implementation target.
+
 Generated outputs remain ignored under
 `experiments/validation/generated/graph_event_calibration_validation/`.
 
