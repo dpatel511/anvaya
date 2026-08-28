@@ -27,6 +27,43 @@ def _observations(
 
 
 class EventLikelihoodTests(unittest.TestCase):
+    def test_reports_distinct_molecules_across_repeated_base_evidence(self) -> None:
+        observations = [
+            NucleotideObservation(True, 0, 30, molecule_id=1),
+            NucleotideObservation(True, 1, 30, molecule_id=1),
+            NucleotideObservation(False, 0, 30, molecule_id=2),
+            NucleotideObservation(False, 1, 30, molecule_id=2),
+        ]
+
+        result = compare_event_likelihoods(observations, (0.2, 0.1))
+
+        self.assertEqual(result.observations, 2)
+        self.assertEqual(result.alternative_observations, 1)
+        self.assertEqual(result.reference_observations, 1)
+
+    def test_excludes_molecule_with_conflicting_allele_evidence(self) -> None:
+        observations = [
+            NucleotideObservation(True, 0, 30, molecule_id=1),
+            NucleotideObservation(False, 1, 30, molecule_id=1),
+            NucleotideObservation(True, 0, 30, molecule_id=2),
+            NucleotideObservation(False, 0, 30, molecule_id=3),
+        ]
+
+        result = compare_event_likelihoods(observations, (0.2, 0.1))
+
+        self.assertEqual(result.observations, 2)
+        self.assertEqual(result.alternative_observations, 1)
+        self.assertEqual(result.reference_observations, 1)
+
+    def test_ordinary_substitution_cannot_rank_as_damage_on_tie(self) -> None:
+        result = compare_event_likelihoods(
+            _observations(2, 8, 0),
+            (0.0, 0.0),
+            damage_explanation_applicable=False,
+        )
+
+        self.assertNotEqual(result.best_explanation, "damage")
+
     def test_damage_curve_beats_penalized_fitted_variation(self) -> None:
         result = compare_event_likelihoods(
             _observations(4, 16, 0),

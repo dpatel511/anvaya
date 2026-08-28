@@ -1,7 +1,9 @@
 """Candidate-conditioned terminal-damage likelihood fitting."""
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from math import exp, lgamma, log
 
 
@@ -45,6 +47,15 @@ _EPSILON = 1e-9
 _LOG_LIKELIHOOD_95_DROP = 1.920729410347062
 
 
+@lru_cache(maxsize=4096)
+def _log_binomial_coefficient(successes: int, trials: int) -> float:
+    return (
+        lgamma(trials + 1)
+        - lgamma(successes + 1)
+        - lgamma(trials - successes + 1)
+    )
+
+
 def _beta_binomial_log_probability(
     successes: int,
     trials: int,
@@ -55,9 +66,7 @@ def _beta_binomial_log_probability(
     alpha = probability * concentration
     beta = (1.0 - probability) * concentration
     return (
-        lgamma(trials + 1)
-        - lgamma(successes + 1)
-        - lgamma(trials - successes + 1)
+        _log_binomial_coefficient(successes, trials)
         + lgamma(successes + alpha)
         + lgamma(trials - successes + beta)
         - lgamma(trials + concentration)
@@ -208,10 +217,19 @@ def fit_candidate_damage_model(
             **common,
         )
 
+    record_counts = Counter(records)
     pooled = total_alternative / (total_alternative + total_reference)
     by_distance = {
-        distance: sum(k for d, k, _ in records if d == distance)
-        / sum(n for d, _, n in records if d == distance)
+        distance: sum(
+            count * successes
+            for (record_distance, successes, _), count in record_counts.items()
+            if record_distance == distance
+        )
+        / sum(
+            count * trials
+            for (record_distance, _, trials), count in record_counts.items()
+            if record_distance == distance
+        )
         for distance in distances
     }
     terminal = by_distance[min(distances)]
@@ -227,13 +245,14 @@ def fit_candidate_damage_model(
         amplitude = (1 - background) * fraction
         concentration = exp(log_concentration)
         return sum(
-            _beta_binomial_log_probability(
+            count
+            * _beta_binomial_log_probability(
                 successes,
                 trials,
                 background + amplitude * decay**distance,
                 concentration,
             )
-            for distance, successes, trials in records
+            for (distance, successes, trials), count in record_counts.items()
         )
 
     alternative_bounds = (
@@ -261,10 +280,11 @@ def fit_candidate_damage_model(
         probability, null_log_concentration = values
         null_concentration = exp(null_log_concentration)
         return sum(
-            _beta_binomial_log_probability(
+            count
+            * _beta_binomial_log_probability(
                 successes, trials, probability, null_concentration
             )
-            for _, successes, trials in records
+            for (_, successes, trials), count in record_counts.items()
         )
 
     null_bounds = ((_EPSILON, 0.999), (log(1.0), log(100000.0)))

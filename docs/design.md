@@ -140,7 +140,13 @@ Applying the model offline to the public schema-version-6 report scored the same
 
 The first graph-derived adversarial matrix then separated calibration and validation references and reused exact introduced-event k-mer truth. Three calibration seeds supplied 2,762 scored damage events, 24 sequencing-error events, and 12 damage-compatible rare-strain events, sufficient for an exploratory `alpha=0.1` conformal resolution. Across two unseen references, 1,909 damage, 26 error, and six variation truth events were scoreable. No event became `eligible_error`; 21 damage events were protected and the rest remained insufficient. Only two independent-error events reached likelihood scoring, both singleton alternatives. The remaining scored errors were deliberately systematic terminal errors and lacked the five reference molecules required for a decision. This result is safe but has zero useful error sensitivity: replicated graph molecule evidence and broader bubble scoring are now the limiting factors, not the calibration threshold.
 
-The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. The current graph-derived result is therefore a safety milestone, not evidence that cleaning is ready: production bubble likelihoods and replicated ordinary-error evidence must be validated first.
+Direct bubble-path comparison, ordinary-substitution scoring, and physical-fragment identities improve evidence recovery without changing graph topology. In the repeated three-seed/two-seed matrix, calibration retained 2,762 scored damage and 12 variation events while sequencing-error examples increased from 24 to 54. On unseen references, damage and variation remained unchanged at 1,909 and six scoreable events, while sequencing errors increased from 26 to 47. The evidence funnel recorded 4,812 retained damage-truth edges → 2,837 detected events → 2,805 matched events → 1,909 scored events; the corresponding error funnel was 2,065 → 153 → 150 → 47, and the rare-strain funnel was 798 → 39 → 39 → six. The added errors still had too little replicated support for cleaning and generally ranked as variation. This exposes event ascertainment as the next statistical problem: after conditioning on a graph branch being detectable, a raw per-base error probability understates the expected alternative fraction.
+
+On `SRR32866683`, the expanded scorer preserved all 111,399 report rows and increased scoreable events from 1,478 to 25,415: 5,692 tips, 19,716 incomplete branches, and seven bubble alternatives. It directly matched 3,552 of 3,706 non-reference bubble paths, although only seven contained both alternative and reference evidence inside the five-base terminal window. The final rankings were 24,453 variation, 852 damage, and 110 sequencing error. These are diagnostic rankings, not cleaning decisions; 14,537 scored rows had only one or two alternative fragments.
+
+The v5, v6, and optimized v7 public contigs and damage profiles were byte-identical. Expanding likelihood coverage initially increased event reporting from 131.18 to 244.46 seconds. Exact aggregation of repeated beta-binomial locus-count patterns and repeated allele-quality observations reduced it to 135.13 seconds without changing scores. Total runtime fell from 567.21 to 446.85 seconds, leaving the expanded report only 3.0% slower than the earlier 1,478-event report.
+
+The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. The current graph-derived result is therefore a safety milestone, not evidence that cleaning is ready: event-conditioned error likelihoods and sufficiently replicated ordinary-error evidence must be validated first.
 
 ## Incomplete-branch matching
 
@@ -168,12 +174,13 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Extend exact molecule likelihoods to bounded bubble alternatives and quantify why ordinary graph errors rarely retain both alternative and reference terminal support.
-2. Expand the graph-derived calibration corpus with low-abundance strains, library protocols, coverage regimes, and repeated non-systematic error fixtures.
-3. Expand the candidate-conditioned damage model with whole-library opportunities and bootstrap or profiled predictive uncertainty.
-4. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
-5. Implement optional conservative simplification only for repeatedly supported `eligible_error` paths.
-6. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
-7. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
+1. Implement and validate an event-ascertainment-conditioned error model so a branch is evaluated given that it survived graph construction and detection.
+2. Expand exact fragment evidence beyond the terminal window where scientifically justified, and quantify the support loss for bubble alternatives.
+3. Expand the graph-derived calibration corpus with low-abundance strains, library protocols, coverage regimes, and repeated non-systematic error fixtures.
+4. Expand the candidate-conditioned damage model with whole-library opportunities and bootstrap or profiled predictive uncertainty.
+5. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
+6. Implement optional conservative simplification only for repeatedly supported `eligible_error` paths.
+7. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
+8. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.

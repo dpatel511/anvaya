@@ -9,7 +9,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from anvaya.bidirected import build_bidirected_dbg
+from anvaya.bidirected import build_bidirected_dbg, spell_edge_path
 from anvaya.bubbles import find_simple_bubbles
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.damage_profile import infer_damage_profile
@@ -27,7 +27,7 @@ from anvaya.incomplete_branches import (
     find_incomplete_branch_candidates,
     match_incomplete_branch_to_backbone,
 )
-from anvaya.tip_matching import match_branch_to_backbone, match_tip_to_backbone
+from anvaya.tip_matching import match_competing_paths, match_tip_to_backbone
 
 
 def _load_experiment(filename: str, name: str):
@@ -82,7 +82,19 @@ class GraphRunRecord:
     tips: int
     incomplete_branches: int
     bubbles: int
+    retained_truth_edges: int
     truth_events: int
+    matched_truth_events: int
+    scored_truth_events: int
+
+
+@dataclass(slots=True, frozen=True)
+class GraphFunnelRecord:
+    phase: str
+    truth: str
+    retained_truth_edges: int
+    detected_truth_events: int
+    matched_truth_events: int
     scored_truth_events: int
 
 
@@ -109,6 +121,13 @@ def _damage_compatible_rare_reference(reference: str, snps: int = 12) -> str:
         alternative = "T" if changed[position] == "C" else "A"
         changed = previous.introduce_snp(changed, position, alternative)
     return changed
+
+
+def _sequence_kmer_codes(sequence: str) -> set[int]:
+    return {
+        previous.canonical_code(sequence[start : start + previous.K])
+        for start in range(len(sequence) - previous.K + 1)
+    }
 
 
 def _conditions(seed: int, reference_length: int, total_coverage: int):
@@ -163,6 +182,7 @@ def _conditions(seed: int, reference_length: int, total_coverage: int):
     )
 
     related = _damage_compatible_rare_reference(reference)
+    rare_truth_codes = _sequence_kmer_codes(related) - _sequence_kmer_codes(reference)
     for rare_coverage in (1, 2, 5):
         major_reads = previous.simulate_fragments(
             reference,
@@ -184,6 +204,7 @@ def _conditions(seed: int, reference_length: int, total_coverage: int):
                 f"rare_{rare_coverage}x",
                 major_reads + rare_reads,
                 35,
+                rare_truth_codes,
                 major_reference=reference,
                 rare_reference=related,
             )
@@ -217,14 +238,14 @@ def _models_for_seed(conditions: list[Condition]):
     return fit_cross_fitted_damage_models(profile)
 
 
-def _truth_label(condition: Condition, edge_ids, match, retained_truth):
+def _truth_label(condition: Condition, edge_ids, sequence, retained_truth):
     if condition.truth == "variation":
         assert condition.major_reference is not None
         assert condition.rare_reference is not None
         return (
             "variation"
             if previous.strain_label(
-                match.tip_sequence,
+                sequence,
                 condition.major_reference,
                 condition.rare_reference,
             )
@@ -246,8 +267,20 @@ def _evaluate_condition(phase, seed, condition, models):
     branches = find_incomplete_branch_candidates(graph)
     bubbles = find_simple_bubbles(graph)
     events = []
+    detected_truth_events = 0
+    matched_truth_events = 0
     for event_type, candidates in (("tip", tips), ("incomplete_branch", branches)):
         for index, candidate in enumerate(candidates, start=1):
+            sequence = spell_edge_path(graph, candidate.start, candidate.edge_ids)
+            truth = _truth_label(
+                condition,
+                candidate.edge_ids,
+                sequence,
+                retained_truth,
+            )
+            if truth is None:
+                continue
+            detected_truth_events += 1
             match = (
                 match_tip_to_backbone(graph, candidate)
                 if event_type == "tip"
@@ -255,23 +288,43 @@ def _evaluate_condition(phase, seed, condition, models):
             )
             if match is None:
                 continue
-            truth = _truth_label(
-                condition, candidate.edge_ids, match, retained_truth
-            )
-            if truth is None:
-                continue
+            matched_truth_events += 1
             likelihood = score_matched_event(graph, match, models)
             events.append((event_type, index, truth, likelihood))
     bubble_path_index = 0
     for bubble in bubbles:
-        for path in bubble.paths:
+        reference_index = max(
+            range(len(bubble.paths)),
+            key=lambda index: (
+                bubble.paths[index].minimum_edge_support,
+                bubble.paths[index].observations,
+                -index,
+            ),
+        )
+        reference_path = bubble.paths[reference_index]
+        for path_index, path in enumerate(bubble.paths):
             bubble_path_index += 1
-            match = match_branch_to_backbone(graph, bubble.start, path.edge_ids)
-            if match is None:
+            if path_index == reference_index:
                 continue
-            truth = _truth_label(condition, path.edge_ids, match, retained_truth)
+            sequence = spell_edge_path(graph, bubble.start, path.edge_ids)
+            truth = _truth_label(
+                condition,
+                path.edge_ids,
+                sequence,
+                retained_truth,
+            )
             if truth is None:
                 continue
+            detected_truth_events += 1
+            match = match_competing_paths(
+                graph,
+                bubble.start,
+                path.edge_ids,
+                reference_path.edge_ids,
+            )
+            if match is None:
+                continue
+            matched_truth_events += 1
             likelihood = score_matched_event(graph, match, models)
             events.append(("bubble_path", bubble_path_index, truth, likelihood))
     run = GraphRunRecord(
@@ -282,7 +335,9 @@ def _evaluate_condition(phase, seed, condition, models):
         len(tips),
         len(branches),
         len(bubbles),
-        len(events),
+        len(retained_truth),
+        detected_truth_events,
+        matched_truth_events,
         sum(likelihood.status == "scored" for *_, likelihood in events),
     )
     return run, events
@@ -400,6 +455,29 @@ def main() -> None:
         records,
         tuple(GraphEventRecord.__dataclass_fields__),
     )
+    funnel_records = []
+    for phase in ("calibration", "validation"):
+        for truth in ("damage", "sequencing_error", "variation"):
+            selected = [
+                run
+                for run in runs
+                if run.phase == phase and run.truth == truth
+            ]
+            funnel_records.append(
+                GraphFunnelRecord(
+                    phase,
+                    truth,
+                    sum(run.retained_truth_edges for run in selected),
+                    sum(run.truth_events for run in selected),
+                    sum(run.matched_truth_events for run in selected),
+                    sum(run.scored_truth_events for run in selected),
+                )
+            )
+    _write(
+        arguments.output_dir / "evidence_funnel.tsv",
+        funnel_records,
+        tuple(GraphFunnelRecord.__dataclass_fields__),
+    )
     with (arguments.output_dir / "summary.tsv").open(
         "w", encoding="utf-8", newline=""
     ) as handle:
@@ -410,6 +488,15 @@ def main() -> None:
             writer.writerow((*key, count))
     print(f"calibration_counts={dict(counts)}")
     print(f"validation_events={len(records)}")
+    for record in funnel_records:
+        print(
+            "evidence_funnel="
+            f"{record.phase}:{record.truth}:"
+            f"{record.retained_truth_edges}:"
+            f"{record.detected_truth_events}:"
+            f"{record.matched_truth_events}:"
+            f"{record.scored_truth_events}"
+        )
     print(f"output={arguments.output_dir}")
 
 

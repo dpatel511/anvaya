@@ -15,6 +15,24 @@ from anvaya.sequences import reverse_complement
 
 
 class EndEvidenceGraphTests(unittest.TestCase):
+    def test_preserves_read_and_physical_molecule_identity(self) -> None:
+        graph = build_bidirected_dbg(
+            ["AACTGGA", "AACTGGA"],
+            3,
+            end_window=3,
+            track_molecule_links=True,
+            read_molecule_ids=[7, 7],
+        )
+        edge_id = next(
+            edge_id
+            for edge_id in range(graph.edge_count)
+            if len(graph.molecule_end_links(edge_id)) == 2
+        )
+        links = graph.molecule_end_links(edge_id)
+
+        self.assertEqual({link.read_index for link in links}, {0, 1})
+        self.assertEqual({link.molecule_id for link in links}, {7})
+
     def test_counts_terminal_and_internal_observations(self) -> None:
         graph = build_bidirected_dbg(["AACCTGGAA"], 3, end_window=2)
 

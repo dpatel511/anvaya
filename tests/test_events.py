@@ -95,6 +95,49 @@ class EventReportTests(unittest.TestCase):
         )
         self.assertEqual(alternative["damage_compatible"], "true")
 
+    def test_scores_ordinary_substitution_bubble_against_dominant_path(
+        self,
+    ) -> None:
+        reads = ["GCTTGTTCCGGA"] * 10 + ["GCTGGTTCCGGA"] * 3
+        graph = build_bidirected_dbg(
+            reads,
+            4,
+            end_window=10,
+            track_molecule_links=True,
+            read_qualities=[(35,) * len(read) for read in reads],
+        )
+        bubbles = find_simple_bubbles(graph)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "events.tsv"
+            write_event_report(
+                graph,
+                [],
+                bubbles,
+                output,
+                damage_profile_path=root / "profile.json",
+            )
+            rows = _read_rows(output)
+
+        alternative = next(
+            row for row in rows if row["reference_path"] == "false"
+        )
+        self.assertEqual(alternative["backbone_matched"], "true")
+        self.assertEqual(alternative["likelihood_status"], "scored")
+        self.assertEqual(
+            alternative["likelihood_profile_scope"],
+            "ordinary_substitution_no_damage_channel",
+        )
+        self.assertGreater(
+            int(alternative["likelihood_alternative_observations"]),
+            0,
+        )
+        self.assertGreater(
+            int(alternative["likelihood_reference_observations"]),
+            0,
+        )
+
     def test_reports_weak_tip_before_graph_cleaning(self) -> None:
         graph = build_bidirected_dbg(
             ["AAGCCCAAA"] * 10 + ["AAGCCTAAA"],
