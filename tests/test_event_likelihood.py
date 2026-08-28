@@ -58,6 +58,29 @@ class EventLikelihoodTests(unittest.TestCase):
         self.assertEqual(result.best_explanation, "variation")
         self.assertAlmostEqual(result.variation_frequency or 0.0, 0.2, places=3)
 
+    def test_cross_fit_ensemble_exposes_damage_score_instability(self) -> None:
+        observations = [
+            NucleotideObservation(
+                observation.alternative,
+                observation.distance,
+                observation.quality,
+                damage_probability=0.2,
+                damage_probability_ensemble=(0.05, 0.35),
+            )
+            for observation in _observations(4, 16, 0)
+        ]
+        result = compare_event_likelihoods(observations, ())
+
+        self.assertEqual(result.status, "scored")
+        self.assertIsNotNone(result.damage_log_likelihood_min)
+        self.assertIsNotNone(result.damage_log_likelihood_max)
+        self.assertGreater(result.damage_log_likelihood_spread or 0.0, 0.0)
+        self.assertAlmostEqual(
+            result.damage_error_log_contrast or 0.0,
+            (result.damage_log_likelihood or 0.0)
+            - (result.error_log_likelihood or 0.0),
+        )
+
     def test_missing_quality_keeps_event_unscored(self) -> None:
         result = compare_event_likelihoods(
             _observations(2, 10, 0),

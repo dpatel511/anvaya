@@ -81,6 +81,9 @@ _TIP_CLASSIFICATION_FIELDS = (
     "likelihood_reference_observations",
     "likelihood_missing_quality_observations",
     "damage_model_log_likelihood",
+    "damage_model_log_likelihood_min",
+    "damage_model_log_likelihood_max",
+    "damage_model_log_likelihood_spread",
     "error_model_log_likelihood",
     "variation_model_log_likelihood",
     "variation_model_frequency",
@@ -88,6 +91,9 @@ _TIP_CLASSIFICATION_FIELDS = (
     "variation_model_penalized_log_likelihood",
     "likelihood_best_explanation",
     "likelihood_log_margin",
+    "damage_error_log_contrast",
+    "damage_variation_log_contrast",
+    "error_variation_log_contrast",
 )
 
 
@@ -338,6 +344,21 @@ def _match_columns(
         ),
         (
             ""
+            if likelihood.damage_log_likelihood_min is None
+            else f"{likelihood.damage_log_likelihood_min:.6f}"
+        ),
+        (
+            ""
+            if likelihood.damage_log_likelihood_max is None
+            else f"{likelihood.damage_log_likelihood_max:.6f}"
+        ),
+        (
+            ""
+            if likelihood.damage_log_likelihood_spread is None
+            else f"{likelihood.damage_log_likelihood_spread:.6f}"
+        ),
+        (
+            ""
             if likelihood.error_log_likelihood is None
             else f"{likelihood.error_log_likelihood:.6f}"
         ),
@@ -366,6 +387,21 @@ def _match_columns(
             ""
             if likelihood.log_likelihood_margin is None
             else f"{likelihood.log_likelihood_margin:.6f}"
+        ),
+        (
+            ""
+            if likelihood.damage_error_log_contrast is None
+            else f"{likelihood.damage_error_log_contrast:.6f}"
+        ),
+        (
+            ""
+            if likelihood.damage_variation_log_contrast is None
+            else f"{likelihood.damage_variation_log_contrast:.6f}"
+        ),
+        (
+            ""
+            if likelihood.error_variation_log_contrast is None
+            else f"{likelihood.error_variation_log_contrast:.6f}"
         ),
     ]
     return (

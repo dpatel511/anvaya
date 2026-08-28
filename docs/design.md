@@ -128,7 +128,19 @@ Five-fold fitting of the public `SRR32866683` candidate loci succeeded in every 
 
 The full schema-version-6 public rerun preserved the assembly byte-for-byte and preserved all 45 earlier event fields across 111,399 rows. It scored 1,478 events: 968 ranked damage, 24 sequencing error, and 486 variation; 95,848 remained explicitly insufficient. Of the scored events, 71.31% had a margin below 1, and none of the damage-ranked events reached a margin of 5. These results validate non-regression, provenance, and conservative abstention, but not a classification boundary. Reporting time increased from 66.24 to 131.18 seconds and the TSV grew by 50.30%, making batched scoring and a more compact optional report the main performance follow-ups.
 
-The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors.
+## Calibrated event confidence
+
+Calibration is a separate report-processing stage rather than part of graph construction. A schema-version-1 calibration model stores class-conditional nonconformity distributions learned from independently identified samples. For a proposed class, nonconformity is the strongest competing log score minus that class's score, divided by the square root of the molecule count. Damage uses the lower cross-fit likelihood when asking whether damage is supported and the upper likelihood when asking whether damage can be rejected. This envelope is deliberately conservative and exposes profile instability instead of treating one fitted curve as exact.
+
+Each report event receives conformal p-values for damage, sequencing error, and variation. Damage and variation p-values are additionally corrected across the report with the Benjamini–Hochberg procedure. An event becomes `eligible_error` only when sequencing error remains conforming while both damage and variation are rejected, cross-fit damage instability is below its gate, and independent molecule minima are met. The defaults require five total observations, two alternative observations, and five reference observations. Plausible damage is `protect_damage`, plausible variation is `protect_variation`, and missing, unstable, or unresolved evidence is `insufficient`. These are still report-only decisions.
+
+Experiment 14 calibrated on 5,000 independently seeded samples spanning fitted damage, a misspecified damage curve, independent Phred errors, damage-shaped systematic errors, and constant-frequency variation. On 100 new samples per condition, all fitted-damage and 99 misspecified-damage cases were protected as damage; the remaining misspecified case was protected as variation. All independent-error cases were eligible, all systematic damage-shaped errors were protected as damage, and all variation cases were protected, although six received the more conservative damage protection label. No protected condition became cleaning-eligible.
+
+Applying the model offline to the public schema-version-6 report scored the same 1,478 events but made none cleaning-eligible after the molecule gates. It protected 340 as damage and 93 as variation; 1,045 scored events and all unscored rows remained insufficient. Before the alternative-molecule gate, eleven rows passed the likelihood tests, but every one was supported by exactly one alternative molecule. This confirms why total coverage cannot substitute for replicated alternative evidence.
+
+The first graph-derived adversarial matrix then separated calibration and validation references and reused exact introduced-event k-mer truth. Three calibration seeds supplied 2,762 scored damage events, 24 sequencing-error events, and 12 damage-compatible rare-strain events, sufficient for an exploratory `alpha=0.1` conformal resolution. Across two unseen references, 1,909 damage, 26 error, and six variation truth events were scoreable. No event became `eligible_error`; 21 damage events were protected and the rest remained insufficient. Only two independent-error events reached likelihood scoring, both singleton alternatives. The remaining scored errors were deliberately systematic terminal errors and lacked the five reference molecules required for a decision. This result is safe but has zero useful error sensitivity: replicated graph molecule evidence and broader bubble scoring are now the limiting factors, not the calibration threshold.
+
+The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. The current graph-derived result is therefore a safety milestone, not evidence that cleaning is ready: production bubble likelihoods and replicated ordinary-error evidence must be validated first.
 
 ## Incomplete-branch matching
 
@@ -156,11 +168,12 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Calibrate abstention and model margins on held-out graph simulations, including systematic error, low-abundance strains, and profile misspecification.
-2. Expand the candidate-conditioned damage model with whole-library opportunities and fully profiled or bootstrap predictive uncertainty.
-3. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
-4. Implement optional conservative simplification only for high-confidence error-like paths.
-5. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
-6. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
+1. Extend exact molecule likelihoods to bounded bubble alternatives and quantify why ordinary graph errors rarely retain both alternative and reference terminal support.
+2. Expand the graph-derived calibration corpus with low-abundance strains, library protocols, coverage regimes, and repeated non-systematic error fixtures.
+3. Expand the candidate-conditioned damage model with whole-library opportunities and bootstrap or profiled predictive uncertainty.
+4. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
+5. Implement optional conservative simplification only for repeatedly supported `eligible_error` paths.
+6. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
+7. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
