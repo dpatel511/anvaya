@@ -3,7 +3,7 @@
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from math import log
+from math import exp, log, log1p
 
 from anvaya.bidirected import BidirectedDeBruijnGraph, _successor
 from anvaya.damage_likelihood import fit_candidate_damage_model
@@ -13,6 +13,7 @@ from anvaya.tip_matching import TipBackboneMatch
 
 _EPSILON = 1e-12
 _FOLD_COUNT = 5
+_MAX_SINGLETON_ERROR_QUALITY = 20
 LocusKey = tuple[int, int, str]
 
 
@@ -35,6 +36,7 @@ class EventLikelihood:
     status: str
     reasons: tuple[str, ...]
     profile_scope: str
+    conditioning_scope: str
     observations: int
     alternative_observations: int
     reference_observations: int
@@ -43,8 +45,11 @@ class EventLikelihood:
     damage_log_likelihood_min: float | None
     damage_log_likelihood_max: float | None
     damage_log_likelihood_spread: float | None
+    damage_conditioning_log_probability: float | None
     error_log_likelihood: float | None
+    error_conditioning_log_probability: float | None
     variation_log_likelihood: float | None
+    variation_conditioning_log_probability: float | None
     variation_frequency: float | None
     variation_complexity_penalty: float | None
     variation_penalized_log_likelihood: float | None
@@ -174,47 +179,157 @@ def _emission_probability(
     return min(1.0 - _EPSILON, max(_EPSILON, probability))
 
 
-def _log_likelihood(
+def _logaddexp(left: float, right: float) -> float:
+    maximum = max(left, right)
+    return maximum + log(exp(left - maximum) + exp(right - maximum))
+
+
+def _observation_groups(
+    observations: Sequence[NucleotideObservation],
+) -> tuple[tuple[NucleotideObservation, ...], ...]:
+    groups: dict[tuple[str, object], list[NucleotideObservation]] = {}
+    for index, observation in enumerate(observations):
+        key = (
+            ("molecule", observation.molecule_id)
+            if observation.molecule_id is not None
+            else ("observation", index)
+        )
+        groups.setdefault(key, []).append(observation)
+    return tuple(tuple(group) for group in groups.values())
+
+
+def _conditioned_log_likelihood(
     observations: Sequence[NucleotideObservation],
     probabilities: Sequence[float],
     *,
     use_observation_damage: bool = False,
-) -> float:
-    return sum(
-        log(
-            _emission_probability(
-                observation.alternative,
-                (
+    ensemble_index: int | None = None,
+    groups: Sequence[Sequence[NucleotideObservation]] | None = None,
+) -> tuple[float, float]:
+    """Condition a two-path likelihood on consistent, observed alleles."""
+    observed_log_likelihood = 0.0
+    consistency_log_probability = 0.0
+    log_all_alternative = 0.0
+    log_all_reference = 0.0
+    if groups is None:
+        groups = _observation_groups(observations)
+    for group in groups:
+        alternative_log_probability = 0.0
+        reference_log_probability = 0.0
+        for observation in group:
+            if ensemble_index is not None:
+                latent_probability = observation.damage_probability_ensemble[
+                    ensemble_index
+                ]
+            else:
+                latent_probability = (
                     observation.damage_probability
                     if use_observation_damage
                     and observation.damage_probability is not None
                     else probabilities[observation.distance]
-                ),
-                observation.quality,
+                )
+            alternative_log_probability += log(
+                _emission_probability(
+                    True,
+                    latent_probability,
+                    observation.quality,
+                )
             )
+            reference_log_probability += log(
+                _emission_probability(
+                    False,
+                    latent_probability,
+                    observation.quality,
+                )
+            )
+        normalization = _logaddexp(
+            alternative_log_probability,
+            reference_log_probability,
         )
-        for observation in observations
+        consistency_log_probability += normalization
+        log_all_alternative += alternative_log_probability - normalization
+        log_all_reference += reference_log_probability - normalization
+        observed_log_likelihood += (
+            alternative_log_probability
+            if group[0].alternative
+            else reference_log_probability
+        )
+
+    excluded_probability = exp(log_all_alternative) + exp(log_all_reference)
+    selection_log_probability = log1p(
+        -min(1.0 - _EPSILON, excluded_probability)
+    )
+    conditioning_log_probability = (
+        consistency_log_probability + selection_log_probability
+    )
+    return (
+        observed_log_likelihood - conditioning_log_probability,
+        conditioning_log_probability,
+    )
+
+
+def _conditioned_constant_log_likelihood(
+    group_counts: Counter[tuple[bool, tuple[int, ...]]],
+    frequency: float,
+) -> tuple[float, float]:
+    """Evaluate a constant-frequency model over compressed fragments."""
+    observed_log_likelihood = 0.0
+    consistency_log_probability = 0.0
+    log_all_alternative = 0.0
+    log_all_reference = 0.0
+    for (observed_alternative, qualities), count in group_counts.items():
+        alternative_log_probability = sum(
+            log(_emission_probability(True, frequency, quality))
+            for quality in qualities
+        )
+        reference_log_probability = sum(
+            log(_emission_probability(False, frequency, quality))
+            for quality in qualities
+        )
+        normalization = _logaddexp(
+            alternative_log_probability,
+            reference_log_probability,
+        )
+        consistency_log_probability += count * normalization
+        log_all_alternative += count * (
+            alternative_log_probability - normalization
+        )
+        log_all_reference += count * (
+            reference_log_probability - normalization
+        )
+        observed_log_likelihood += count * (
+            alternative_log_probability
+            if observed_alternative
+            else reference_log_probability
+        )
+    excluded_probability = exp(log_all_alternative) + exp(log_all_reference)
+    selection_log_probability = log1p(
+        -min(1.0 - _EPSILON, excluded_probability)
+    )
+    conditioning_log_probability = (
+        consistency_log_probability + selection_log_probability
+    )
+    return (
+        observed_log_likelihood - conditioning_log_probability,
+        conditioning_log_probability,
     )
 
 
 def _ensemble_damage_log_likelihoods(
     observations: Sequence[NucleotideObservation],
-) -> tuple[float, ...]:
+    groups: Sequence[Sequence[NucleotideObservation]],
+) -> tuple[tuple[float, float], ...]:
     """Score aligned cross-fit curves without treating folds as molecules."""
     ensemble_size = min(
         (len(observation.damage_probability_ensemble) for observation in observations),
         default=0,
     )
     return tuple(
-        sum(
-            log(
-                _emission_probability(
-                    observation.alternative,
-                    observation.damage_probability_ensemble[index],
-                    observation.quality,
-                )
-            )
-            for observation in observations
+        _conditioned_log_likelihood(
+            observations,
+            (),
+            ensemble_index=index,
+            groups=groups,
         )
         for index in range(ensemble_size)
     )
@@ -222,11 +337,15 @@ def _ensemble_damage_log_likelihoods(
 
 def _maximize_variation_frequency(
     observations: Sequence[NucleotideObservation],
-) -> tuple[float, float]:
+    groups: Sequence[Sequence[NucleotideObservation]],
+) -> tuple[float, float, float]:
     """Fit one constant alternative frequency by bounded golden search."""
-    observation_counts = Counter(
-        (observation.alternative, observation.quality)
-        for observation in observations
+    group_counts = Counter(
+        (
+            group[0].alternative,
+            tuple(sorted(observation.quality for observation in group)),
+        )
+        for group in groups
     )
     lower = _EPSILON
     upper = 0.5
@@ -235,21 +354,17 @@ def _maximize_variation_frequency(
     right = lower + ratio * (upper - lower)
 
     def objective(frequency: float) -> float:
-        return sum(
-            count
-            * log(
-                _emission_probability(
-                    alternative,
-                    frequency,
-                    quality,
-                )
-            )
-            for (alternative, quality), count in observation_counts.items()
+        likelihood, _ = _conditioned_constant_log_likelihood(
+            group_counts,
+            frequency,
         )
+        return likelihood
 
     left_score = objective(left)
     right_score = objective(right)
-    for _ in range(80):
+    # Forty iterations resolve a frequency interval below 1e-8, far beyond
+    # the six decimal places written to reports.
+    for _ in range(40):
         if left_score > right_score:
             upper = right
             right = left
@@ -263,7 +378,11 @@ def _maximize_variation_frequency(
             right = lower + ratio * (upper - lower)
             right_score = objective(right)
     frequency = (lower + upper) / 2.0
-    return frequency, objective(frequency)
+    likelihood, conditioning = _conditioned_constant_log_likelihood(
+        group_counts,
+        frequency,
+    )
+    return frequency, likelihood, conditioning
 
 
 def compare_event_likelihoods(
@@ -287,7 +406,7 @@ def compare_event_likelihoods(
         )
         for index, observation in enumerate(observations)
     ]
-    alleles_by_molecule: dict[tuple[str, int], set[bool]] = {}
+    alleles_by_molecule: dict[tuple[str, object], set[bool]] = {}
     for key, observation in keyed_observations:
         alleles_by_molecule.setdefault(key, set()).add(observation.alternative)
     conflicting_molecules = {
@@ -337,6 +456,7 @@ def compare_event_likelihoods(
             status="insufficient_evidence",
             reasons=tuple(reasons),
             profile_scope=profile_scope,
+            conditioning_scope="two_path_fragment_ascertainment",
             observations=molecule_count,
             alternative_observations=alternatives,
             reference_observations=references,
@@ -345,8 +465,11 @@ def compare_event_likelihoods(
             damage_log_likelihood_min=None,
             damage_log_likelihood_max=None,
             damage_log_likelihood_spread=None,
+            damage_conditioning_log_probability=None,
             error_log_likelihood=None,
+            error_conditioning_log_probability=None,
             variation_log_likelihood=None,
+            variation_conditioning_log_probability=None,
             variation_frequency=None,
             variation_complexity_penalty=None,
             variation_penalized_log_likelihood=None,
@@ -357,20 +480,28 @@ def compare_event_likelihoods(
             error_variation_log_contrast=None,
         )
 
-    damage = _log_likelihood(
+    observation_groups = _observation_groups(observations)
+    damage, damage_conditioning = _conditioned_log_likelihood(
         observations,
         damage_probabilities,
         use_observation_damage=has_embedded_damage,
+        groups=observation_groups,
     )
-    ensemble_damage = _ensemble_damage_log_likelihoods(observations)
-    damage_candidates = (damage, *ensemble_damage)
+    ensemble_damage = _ensemble_damage_log_likelihoods(
+        observations,
+        observation_groups,
+    )
+    damage_candidates = (damage, *(score for score, _ in ensemble_damage))
     damage_min = min(damage_candidates)
     damage_max = max(damage_candidates)
-    error = _log_likelihood(
+    error, error_conditioning = _conditioned_log_likelihood(
         observations,
         (0.0,) * (max(observation.distance for observation in observations) + 1),
+        groups=observation_groups,
     )
-    variation_frequency, variation = _maximize_variation_frequency(observations)
+    variation_frequency, variation, variation_conditioning = (
+        _maximize_variation_frequency(observations, observation_groups)
+    )
     variation_penalty = 0.5 * log(len(observations))
     variation_penalized = variation - variation_penalty
     scores = {
@@ -380,10 +511,25 @@ def compare_event_likelihoods(
     if damage_explanation_applicable:
         scores["damage"] = damage
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    best_explanation = ranked[0][0]
+    ranking_reasons = ["conditioned_on_two_path_fragment_ascertainment"]
+    if (
+        best_explanation == "sequencing_error"
+        and alternatives == 1
+        and min(
+            observation.quality
+            for observation in observations
+            if observation.alternative
+        ) > _MAX_SINGLETON_ERROR_QUALITY
+    ):
+        best_explanation = "ambiguous"
+        ranking_reasons.append("high_quality_singleton_cannot_exclude_variation")
+    ranking_reasons.append("ranking_not_calibrated_for_classification")
     return EventLikelihood(
         status="scored",
-        reasons=("ranking_not_calibrated_for_classification",),
+        reasons=tuple(ranking_reasons),
         profile_scope=profile_scope,
+        conditioning_scope="two_path_fragment_ascertainment",
         observations=molecule_count,
         alternative_observations=alternatives,
         reference_observations=references,
@@ -392,12 +538,15 @@ def compare_event_likelihoods(
         damage_log_likelihood_min=damage_min,
         damage_log_likelihood_max=damage_max,
         damage_log_likelihood_spread=damage_max - damage_min,
+        damage_conditioning_log_probability=damage_conditioning,
         error_log_likelihood=error,
+        error_conditioning_log_probability=error_conditioning,
         variation_log_likelihood=variation,
+        variation_conditioning_log_probability=variation_conditioning,
         variation_frequency=variation_frequency,
         variation_complexity_penalty=variation_penalty,
         variation_penalized_log_likelihood=variation_penalized,
-        best_explanation=ranked[0][0],
+        best_explanation=best_explanation,
         log_likelihood_margin=ranked[0][1] - ranked[1][1],
         damage_error_log_contrast=damage - error,
         damage_variation_log_contrast=damage - variation_penalized,

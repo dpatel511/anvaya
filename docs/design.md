@@ -146,7 +146,13 @@ On `SRR32866683`, the expanded scorer preserved all 111,399 report rows and incr
 
 The v5, v6, and optimized v7 public contigs and damage profiles were byte-identical. Expanding likelihood coverage initially increased event reporting from 131.18 to 244.46 seconds. Exact aggregation of repeated beta-binomial locus-count patterns and repeated allele-quality observations reduced it to 135.13 seconds without changing scores. Total runtime fell from 567.21 to 446.85 seconds, leaving the expanded report only 3.0% slower than the earlier 1,478-event report.
 
-The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. The current graph-derived result is therefore a safety milestone, not evidence that cleaning is ready: event-conditioned error likelihoods and sufficiently replicated ordinary-error evidence must be validated first.
+The event-conditioned scorer evaluates each model given that at least one consistent alternative fragment and one consistent reference fragment were observed. This corrects the raw error model's failure to account for graph-event ascertainment. A high-quality singleton remains non-identifiable as error versus rare variation, so the report now abstains instead of forcing that case into an error rank. Phred quality at or below 20 can still supply direct singleton-error evidence; this is an explicit conservative reporting boundary, not a cleaning threshold.
+
+On the held-out graph matrix, conditioning improved damage-truth rankings from 1,644 to 1,680 of 1,909 and recovered 21 sequencing-error rankings. Conservative singleton abstention retained 17 Q20 independent-error rankings, changed four Q23 independent errors to ambiguous, and changed all four affected rare-strain events from erroneous error rankings to ambiguous. The six scoreable variation events then contained four ambiguous and two damage rankings, with none ranked error. No event became cleaning-eligible, and deliberately damage-shaped systematic errors remained unresolved.
+
+The `SRR32866683` v9 run preserved byte-identical contigs and damage profile, 111,399 rows, and 25,415 scoreable events. It reported 646 damage, 470 error, 20,428 variation, and 3,871 ambiguous rankings. All ambiguous rankings were high-quality singletons. Event reporting took 158.15 seconds versus 254.33 for the first conditioned implementation and 135.13 for v7; total runtime was 464.59 seconds versus 585.55 and 446.85, respectively.
+
+The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. Simulation truth validates implementation behavior; byte-identical public reruns validate non-regression. Neither establishes biological accuracy on an unlabeled public library. That requires independently characterized untreated and UDG-treated libraries plus expanded held-out community mixtures.
 
 ## Incomplete-branch matching
 
@@ -174,10 +180,10 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Implement and validate an event-ascertainment-conditioned error model so a branch is evaluated given that it survived graph construction and detection.
+1. Add local graph-context features—path multiplicity, relative coverage, topology, independent-fragment support, and positional recurrence—to the held-out calibration records without enabling cleaning.
 2. Expand exact fragment evidence beyond the terminal window where scientifically justified, and quantify the support loss for bubble alternatives.
 3. Expand the graph-derived calibration corpus with low-abundance strains, library protocols, coverage regimes, and repeated non-systematic error fixtures.
-4. Expand the candidate-conditioned damage model with whole-library opportunities and bootstrap or profiled predictive uncertainty.
+4. Validate the damage model on independently characterized untreated, partial-UDG, and full-UDG libraries, then add whole-library opportunities and bootstrap or profiled predictive uncertainty.
 5. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 6. Implement optional conservative simplification only for repeatedly supported `eligible_error` paths.
 7. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.

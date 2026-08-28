@@ -6,6 +6,15 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Event-ascertainment-conditioned damage, sequencing-error, and variation
+  likelihoods evaluated over physical fragments, with the conditioning scope
+  and per-model selection probability written to event reports.
+- Conservative singleton abstention: a high-quality alternative supported by
+  one fragment is reported as ambiguous because sequencing error cannot be
+  distinguished from genuine rare variation, while low-quality singleton
+  evidence may still rank as error.
+- Conditioning provenance in experiment 15 validation tables and shared
+  fragment grouping across likelihood models to reduce repeated scoring work.
 - Direct likelihood comparison of equal-length bubble alternatives against the
   dominant path, including production event-report fields for matched and
   scoreable bubble paths.

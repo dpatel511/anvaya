@@ -129,6 +129,18 @@ class EventReportTests(unittest.TestCase):
             alternative["likelihood_profile_scope"],
             "ordinary_substitution_no_damage_channel",
         )
+        self.assertEqual(
+            alternative["likelihood_conditioning_scope"],
+            "two_path_fragment_ascertainment",
+        )
+        self.assertNotEqual(
+            alternative["error_model_conditioning_log_probability"],
+            "",
+        )
+        self.assertNotEqual(
+            alternative["variation_model_conditioning_log_probability"],
+            "",
+        )
         self.assertGreater(
             int(alternative["likelihood_alternative_observations"]),
             0,

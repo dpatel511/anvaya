@@ -72,8 +72,26 @@ class EventLikelihoodTests(unittest.TestCase):
 
         self.assertEqual(result.status, "scored")
         self.assertEqual(result.best_explanation, "damage")
-        self.assertAlmostEqual(result.variation_frequency or 0.0, 0.2, places=3)
+        self.assertAlmostEqual(result.variation_frequency or 0.0, 0.2, places=2)
         self.assertGreater(result.log_likelihood_margin or 0.0, 0.0)
+
+    def test_high_quality_singleton_remains_ambiguous_after_conditioning(self) -> None:
+        result = compare_event_likelihoods(
+            _observations(1, 9, 0),
+            (0.0,),
+            damage_explanation_applicable=False,
+        )
+
+        self.assertEqual(result.best_explanation, "ambiguous")
+        self.assertEqual(
+            result.conditioning_scope,
+            "two_path_fragment_ascertainment",
+        )
+        self.assertLess(result.error_conditioning_log_probability or 0.0, 0.0)
+        self.assertIn(
+            "high_quality_singleton_cannot_exclude_variation",
+            result.reasons,
+        )
 
     def test_low_quality_single_alternative_favors_error(self) -> None:
         result = compare_event_likelihoods(
