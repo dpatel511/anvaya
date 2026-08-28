@@ -8,6 +8,7 @@ import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from statistics import median
 
 from anvaya.bidirected import build_bidirected_dbg, spell_edge_path
 from anvaya.bubbles import find_simple_bubbles
@@ -19,6 +20,7 @@ from anvaya.event_calibration import (
     fit_conformal_calibration,
     scores_from_likelihood,
 )
+from anvaya.event_context import extract_event_graph_context
 from anvaya.event_likelihood import (
     fit_cross_fitted_damage_models,
     score_matched_event,
@@ -64,6 +66,24 @@ class GraphEventRecord:
     truth: str
     event_type: str
     event_index: int
+    path_edge_count: int
+    substitution_count: int
+    alternative_path_observations: int
+    reference_path_observations: int
+    alternative_minimum_edge_support: int
+    reference_minimum_edge_support: int
+    relative_coverage: float
+    sequence_identity: float
+    ry_identity: float
+    damage_compatible: bool
+    branch_out_degree: int
+    terminal_fraction: float
+    strand_balance: float | None
+    terminal_enrichment: float
+    substitution_terminal_fraction: float
+    mean_damage_distance: float | None
+    joint_molecule_fraction: float | None
+    mean_base_quality: float | None
     likelihood_status: str
     likelihood_conditioning_scope: str
     observations: int
@@ -75,6 +95,32 @@ class GraphEventRecord:
     variation_conditioning_log_probability: float | None
     decision: str
     decision_reasons: str
+
+
+@dataclass(slots=True, frozen=True)
+class GraphFeatureSummary:
+    truth: str
+    event_type: str
+    events: int
+    median_relative_coverage: float | None
+    median_alternative_minimum_edge_support: float | None
+    median_reference_minimum_edge_support: float | None
+    median_path_edge_count: float | None
+    median_substitution_count: float | None
+    median_terminal_fraction: float | None
+    median_terminal_enrichment: float | None
+    median_mean_base_quality: float | None
+
+
+@dataclass(slots=True, frozen=True)
+class GraphFeatureSeparation:
+    truth_a: str
+    truth_b: str
+    feature: str
+    truth_a_events: int
+    truth_b_events: int
+    probability_a_greater: float
+    separation: float
 
 
 @dataclass(slots=True, frozen=True)
@@ -161,7 +207,7 @@ def _conditions(seed: int, reference_length: int, total_coverage: int):
             )
         )
 
-    for offset, rate in enumerate((0.005, 0.01)):
+    for offset, rate in enumerate((0.001, 0.005, 0.01)):
         reads = previous.add_sequencing_errors(source, rate, seed + 30_000 + offset)
         conditions.append(
             Condition(
@@ -185,34 +231,61 @@ def _conditions(seed: int, reference_length: int, total_coverage: int):
         )
     )
 
-    related = _damage_compatible_rare_reference(reference)
-    rare_truth_codes = _sequence_kmer_codes(related) - _sequence_kmer_codes(reference)
-    for rare_coverage in (1, 2, 5):
-        major_reads = previous.simulate_fragments(
-            reference,
-            previous.READ_LENGTH,
-            total_coverage,
-            seed + 60_000 + rare_coverage,
-            reverse_fraction=0.5,
+    terminal = previous.add_terminal_errors(
+        source,
+        previous.TERMINAL_ERROR_RATE,
+        seed + 50_000,
+    )
+    conditions.append(
+        Condition(
+            "sequencing_error",
+            "independent_terminal_error",
+            terminal,
+            _quality_for_error_rate(previous.TERMINAL_ERROR_RATE),
+            previous.mutated_kmer_codes(source, terminal, "error_positions"),
         )
-        rare_reads = previous.simulate_fragments(
-            related,
-            previous.READ_LENGTH,
-            rare_coverage,
-            seed + 70_000 + rare_coverage,
-            reverse_fraction=0.5,
+    )
+
+    related_references = (
+        (
+            "damage_compatible",
+            _damage_compatible_rare_reference(reference),
+        ),
+        (
+            "ordinary",
+            previous.rare_reference(reference, seed + 55_000)[0],
+        ),
+    )
+    for related_index, (variant_kind, related) in enumerate(related_references):
+        rare_truth_codes = (
+            _sequence_kmer_codes(related) - _sequence_kmer_codes(reference)
         )
-        conditions.append(
-            Condition(
-                "variation",
-                f"rare_{rare_coverage}x",
-                major_reads + rare_reads,
-                35,
-                rare_truth_codes,
-                major_reference=reference,
-                rare_reference=related,
+        for rare_coverage in (1, 2, 5, 10):
+            major_reads = previous.simulate_fragments(
+                reference,
+                previous.READ_LENGTH,
+                total_coverage - rare_coverage,
+                seed + 60_000 + related_index * 1_000 + rare_coverage,
+                reverse_fraction=0.5,
             )
-        )
+            rare_reads = previous.simulate_fragments(
+                related,
+                previous.READ_LENGTH,
+                rare_coverage,
+                seed + 70_000 + related_index * 1_000 + rare_coverage,
+                reverse_fraction=0.5,
+            )
+            conditions.append(
+                Condition(
+                    "variation",
+                    f"rare_{variant_kind}_{rare_coverage}x",
+                    major_reads + rare_reads,
+                    35,
+                    rare_truth_codes,
+                    major_reference=reference,
+                    rare_reference=related,
+                )
+            )
     return conditions
 
 
@@ -294,7 +367,8 @@ def _evaluate_condition(phase, seed, condition, models):
                 continue
             matched_truth_events += 1
             likelihood = score_matched_event(graph, match, models)
-            events.append((event_type, index, truth, likelihood))
+            context = extract_event_graph_context(graph, match, event_type)
+            events.append((event_type, index, truth, context, likelihood))
     bubble_path_index = 0
     for bubble in bubbles:
         reference_index = max(
@@ -330,7 +404,14 @@ def _evaluate_condition(phase, seed, condition, models):
                 continue
             matched_truth_events += 1
             likelihood = score_matched_event(graph, match, models)
-            events.append(("bubble_path", bubble_path_index, truth, likelihood))
+            context = extract_event_graph_context(
+                graph,
+                match,
+                "bubble_path",
+            )
+            events.append(
+                ("bubble_path", bubble_path_index, truth, context, likelihood)
+            )
     run = GraphRunRecord(
         phase,
         seed,
@@ -352,6 +433,128 @@ def _write(path: Path, records, fields):
         writer = csv.DictWriter(handle, fields, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         writer.writerows(asdict(record) for record in records)
+
+
+def _median(values) -> float | None:
+    present = [value for value in values if value is not None]
+    return median(present) if present else None
+
+
+def _feature_summaries(
+    records: list[GraphEventRecord],
+) -> list[GraphFeatureSummary]:
+    summaries = []
+    keys = sorted(
+        {
+            (record.truth, event_type)
+            for record in records
+            for event_type in (record.event_type, "all")
+        }
+    )
+    for truth, event_type in keys:
+        selected = [
+            record
+            for record in records
+            if record.truth == truth
+            and (event_type == "all" or record.event_type == event_type)
+        ]
+        summaries.append(
+            GraphFeatureSummary(
+                truth,
+                event_type,
+                len(selected),
+                _median(record.relative_coverage for record in selected),
+                _median(
+                    record.alternative_minimum_edge_support
+                    for record in selected
+                ),
+                _median(
+                    record.reference_minimum_edge_support
+                    for record in selected
+                ),
+                _median(record.path_edge_count for record in selected),
+                _median(record.substitution_count for record in selected),
+                _median(record.terminal_fraction for record in selected),
+                _median(record.terminal_enrichment for record in selected),
+                _median(record.mean_base_quality for record in selected),
+            )
+        )
+    return summaries
+
+
+def _probability_greater(left: list[float], right: list[float]) -> float:
+    comparisons = len(left) * len(right)
+    if not comparisons:
+        raise ValueError("feature separation requires both truth classes")
+    wins = sum(
+        (
+            1.0
+            if left_value > right_value
+            else 0.5
+            if left_value == right_value
+            else 0.0
+        )
+        for left_value in left
+        for right_value in right
+    )
+    return wins / comparisons
+
+
+def _feature_separations(
+    records: list[GraphEventRecord],
+) -> list[GraphFeatureSeparation]:
+    features = (
+        "path_edge_count",
+        "substitution_count",
+        "alternative_path_observations",
+        "reference_path_observations",
+        "alternative_minimum_edge_support",
+        "reference_minimum_edge_support",
+        "relative_coverage",
+        "branch_out_degree",
+        "terminal_fraction",
+        "strand_balance",
+        "terminal_enrichment",
+        "substitution_terminal_fraction",
+        "mean_damage_distance",
+        "joint_molecule_fraction",
+        "mean_base_quality",
+    )
+    truth_pairs = (
+        ("damage", "sequencing_error"),
+        ("damage", "variation"),
+        ("sequencing_error", "variation"),
+    )
+    separations = []
+    for truth_a, truth_b in truth_pairs:
+        for feature in features:
+            left = [
+                float(value)
+                for record in records
+                if record.truth == truth_a
+                and (value := getattr(record, feature)) is not None
+            ]
+            right = [
+                float(value)
+                for record in records
+                if record.truth == truth_b
+                and (value := getattr(record, feature)) is not None
+            ]
+            if not left or not right:
+                continue
+            probability = _probability_greater(left, right)
+            separations.append(
+                GraphFeatureSeparation(
+                    truth_a,
+                    truth_b,
+                    feature,
+                    len(left),
+                    len(right),
+                    probability,
+                    2.0 * abs(probability - 0.5),
+                )
+            )
+    return separations
 
 
 def main() -> None:
@@ -389,7 +592,7 @@ def main() -> None:
                     phase, seed, condition, models
                 )
                 runs.append(run)
-                for event_type, index, truth, likelihood in events:
+                for event_type, index, truth, context, likelihood in events:
                     scores = scores_from_likelihood(likelihood)
                     if scores is None:
                         continue
@@ -403,7 +606,16 @@ def main() -> None:
                         )
                     else:
                         validation_events.append(
-                            (seed, condition.scenario, event_type, index, truth, likelihood, scores)
+                            (
+                                seed,
+                                condition.scenario,
+                                event_type,
+                                index,
+                                truth,
+                                context,
+                                likelihood,
+                                scores,
+                            )
                         )
 
     counts = Counter(example.truth for example in calibration_examples)
@@ -429,7 +641,16 @@ def main() -> None:
     )
     records = []
     for event, decision in zip(validation_events, confidence, strict=True):
-        seed, scenario, event_type, index, truth, likelihood, _ = event
+        (
+            seed,
+            scenario,
+            event_type,
+            index,
+            truth,
+            context,
+            likelihood,
+            _,
+        ) = event
         records.append(
             GraphEventRecord(
                 "validation",
@@ -438,6 +659,24 @@ def main() -> None:
                 truth,
                 event_type,
                 index,
+                context.path_edge_count,
+                context.substitution_count,
+                context.alternative_path_observations,
+                context.reference_path_observations,
+                context.alternative_minimum_edge_support,
+                context.reference_minimum_edge_support,
+                context.relative_coverage,
+                context.sequence_identity,
+                context.ry_identity,
+                context.damage_compatible,
+                context.branch_out_degree,
+                context.terminal_fraction,
+                context.strand_balance,
+                context.terminal_enrichment,
+                context.substitution_terminal_fraction,
+                context.mean_damage_distance,
+                context.joint_molecule_fraction,
+                context.mean_base_quality,
                 likelihood.status,
                 likelihood.conditioning_scope,
                 likelihood.observations,
@@ -462,6 +701,18 @@ def main() -> None:
         arguments.output_dir / "validation_events.tsv",
         records,
         tuple(GraphEventRecord.__dataclass_fields__),
+    )
+    feature_summaries = _feature_summaries(records)
+    _write(
+        arguments.output_dir / "feature_summary.tsv",
+        feature_summaries,
+        tuple(GraphFeatureSummary.__dataclass_fields__),
+    )
+    feature_separations = _feature_separations(records)
+    _write(
+        arguments.output_dir / "feature_separation.tsv",
+        feature_separations,
+        tuple(GraphFeatureSeparation.__dataclass_fields__),
     )
     funnel_records = []
     for phase in ("calibration", "validation"):

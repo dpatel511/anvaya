@@ -6,6 +6,12 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Report-only graph-context extraction for matched events, including topology,
+  path multiplicity, local coverage, fragment support, terminal behavior,
+  strand balance, damage distance, and base quality.
+- Expanded experiment 15 with fixed-depth ordinary and damage-compatible
+  rare-strain mixtures, independent and terminal error processes, per-class
+  feature summaries, and pairwise feature-separation reports.
 - Event-ascertainment-conditioned damage, sequencing-error, and variation
   likelihoods evaluated over physical fragments, with the conditioning scope
   and per-model selection probability written to event reports.

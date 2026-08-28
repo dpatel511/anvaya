@@ -152,6 +152,12 @@ On the held-out graph matrix, conditioning improved damage-truth rankings from 1
 
 The `SRR32866683` v9 run preserved byte-identical contigs and damage profile, 111,399 rows, and 25,415 scoreable events. It reported 646 damage, 470 error, 20,428 variation, and 3,871 ambiguous rankings. All ambiguous rankings were high-quality singletons. Event reporting took 158.15 seconds versus 254.33 for the first conditioned implementation and 135.13 for v7; total runtime was 464.59 seconds versus 585.55 and 446.85, respectively.
 
+The graph-context follow-up extracts existing evidence without changing the graph or production classifier: event topology, path length, substitution count, alternative and reference path observations, minimum edge support, relative coverage, branch degree, sequence identity, terminal fraction and enrichment, strand balance, damage distance, joint-fragment support, and mean base quality. Experiment 15 writes these fields per truth-labelled validation event plus median summaries and pairwise probability-of-superiority measurements.
+
+The expanded matrix holds rare-strain mixtures at 20× total depth and includes ordinary and damage-compatible variants at 1×, 2×, 5×, and 10×, three independent error rates, independent terminal errors, systematic paired terminal errors, and three damage strengths. Scored calibration examples increased from 54 to 152 for error and from 12 to 26 for variation; validation examples increased from 47 to 103 and from six to 17, respectively, while damage remained 2,762/1,909. No variation event ranked sequencing error: 13 were ambiguous, three ranked damage, and one ranked variation.
+
+Variation was strongly separated by path length, alternative/reference path observations, terminal fraction, terminal enrichment, and relative coverage. Median variation paths contained 21 edges and terminal fraction 0.33, compared with one edge/1.0 for damage and two edges/1.0 for error. Damage versus error remained less separable, and independent terminal errors continued to resemble damage or variation. Graph context is therefore suitable first as variation-protection evidence, not as a standalone deletion rule. The funnel also exposes the next bottleneck: 96 variation events were detected and matched but only 17 were scoreable inside the five-base terminal likelihood window.
+
 The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. Simulation truth validates implementation behavior; byte-identical public reruns validate non-regression. Neither establishes biological accuracy on an unlabeled public library. That requires independently characterized untreated and UDG-treated libraries plus expanded held-out community mixtures.
 
 ## Incomplete-branch matching
@@ -180,9 +186,9 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Add local graph-context features—path multiplicity, relative coverage, topology, independent-fragment support, and positional recurrence—to the held-out calibration records without enabling cleaning.
-2. Expand exact fragment evidence beyond the terminal window where scientifically justified, and quantify the support loss for bubble alternatives.
-3. Expand the graph-derived calibration corpus with low-abundance strains, library protocols, coverage regimes, and repeated non-systematic error fixtures.
+1. Expand exact changed-base fragment evidence beyond the terminal window for ordinary error and variation models while keeping damage probabilities restricted to biologically meaningful terminal cycles.
+2. Expand the graph-derived calibration corpus across additional references, coverage regimes, library protocols, and recurrent non-systematic error fixtures.
+3. Fit and validate a regularized context-aware variation-protection model only after the held-out variation class reaches adequate sample size.
 4. Validate the damage model on independently characterized untreated, partial-UDG, and full-UDG libraries, then add whole-library opportunities and bootstrap or profiled predictive uncertainty.
 5. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
 6. Implement optional conservative simplification only for repeatedly supported `eligible_error` paths.

@@ -37,6 +37,7 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - report-only damage/error/variation likelihood rankings with explicit model scope and margins;
 - fragment-level event-ascertainment conditioning with auditable per-model conditioning probabilities;
 - conservative ambiguity for high-quality singleton alternatives that cannot be separated from genuine rare variation;
+- report-only graph-context features and held-out separation summaries for topology, path multiplicity, local coverage, fragment support, and terminal evidence;
 - direct dominant-path likelihood comparison for equal-length bubble alternatives;
 - ordinary-substitution likelihood scoring without inventing a damage channel;
 - physical-fragment identities shared by paired reads, with conflicting allele evidence excluded;
