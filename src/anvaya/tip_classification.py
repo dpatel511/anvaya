@@ -124,12 +124,12 @@ def _oriented_path_evidence(
         if graph.molecule_links_collected:
             links = graph.molecule_end_links(edge_id)
             left_molecules = tuple(
-                (link.read_index, link.distance, link.base_quality)
+                (link.molecule_id, link.distance, link.base_quality)
                 for link in links
                 if link.end == "left"
             )
             right_molecules = tuple(
-                (link.read_index, link.distance, link.base_quality)
+                (link.molecule_id, link.distance, link.base_quality)
                 for link in links
                 if link.end == "right"
             )

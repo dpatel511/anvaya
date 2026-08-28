@@ -42,9 +42,10 @@ class EndSupport:
 
 @dataclass(slots=True, frozen=True)
 class MoleculeEndLink:
-    """One terminal edge observation linked to its source read."""
+    """One terminal edge observation linked to its read and molecule."""
 
     read_index: int
+    molecule_id: int
     end: str
     distance: int
     base_quality: int | None = None
@@ -70,6 +71,7 @@ class BidirectedDeBruijnGraph:
     molecule_link_offsets: array = field(default_factory=lambda: array("Q"))
     molecule_link_tokens: array = field(default_factory=lambda: array("Q"))
     molecule_link_qualities: bytearray = field(default_factory=bytearray)
+    read_molecule_ids: array = field(default_factory=lambda: array("Q"))
     out_edges: array = field(default_factory=lambda: array("i"))
     out_degrees: bytearray = field(default_factory=bytearray)
     active_edge_count: int = 0
@@ -123,6 +125,7 @@ class BidirectedDeBruijnGraph:
             links.append(
                 MoleculeEndLink(
                     read_index=read_index,
+                    molecule_id=self.read_molecule_ids[read_index],
                     end="left" if side == 0 else "right",
                     distance=distance,
                     base_quality=None if quality == 255 else quality,
@@ -249,6 +252,7 @@ def build_bidirected_dbg(
     end_window: int = 0,
     track_molecule_links: bool = False,
     read_qualities: Sequence[Sequence[int] | None] | None = None,
+    read_molecule_ids: Sequence[int] | None = None,
 ) -> BidirectedDeBruijnGraph:
     """Build a compact canonical graph with strand-specific edge support."""
     if not reads:
@@ -271,6 +275,15 @@ def build_bidirected_dbg(
         raise ValueError("molecule links require read-end evidence")
     if read_qualities is not None and len(read_qualities) != len(reads):
         raise ValueError("read qualities must align one-to-one with reads")
+    if read_molecule_ids is not None and len(read_molecule_ids) != len(reads):
+        raise ValueError("molecule IDs must align one-to-one with reads")
+    if read_molecule_ids is not None and any(
+        not isinstance(molecule_id, int)
+        or isinstance(molecule_id, bool)
+        or molecule_id < 0
+        for molecule_id in read_molecule_ids
+    ):
+        raise ValueError("molecule IDs must be non-negative integers")
     if read_qualities is not None:
         for read, qualities in zip(reads, read_qualities, strict=True):
             if qualities is not None and len(qualities) != len(read):
@@ -362,6 +375,10 @@ def build_bidirected_dbg(
             graph.terminal_observations += terminal_support
 
     if track_molecule_links:
+        graph.read_molecule_ids = array(
+            "Q",
+            range(len(reads)) if read_molecule_ids is None else read_molecule_ids,
+        )
         _collect_molecule_links(
             graph,
             reads,

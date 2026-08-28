@@ -25,7 +25,11 @@ from anvaya.incomplete_branches import (
     match_incomplete_branch_to_backbone,
 )
 from anvaya.tip_classification import classify_tip_match
-from anvaya.tip_matching import TipBackboneMatch, match_tip_to_backbone
+from anvaya.tip_matching import (
+    TipBackboneMatch,
+    match_competing_paths,
+    match_tip_to_backbone,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -195,6 +199,7 @@ def _bubble_rows(
     graph: BidirectedDeBruijnGraph,
     event_id: str,
     bubble: Bubble,
+    likelihood_models: CrossFittedDamageModels | None,
 ) -> list[list[object]]:
     sequences = [
         spell_edge_path(graph, bubble.start, path.edge_ids)
@@ -214,6 +219,31 @@ def _bubble_rows(
     for index, (path, sequence) in enumerate(
         zip(bubble.paths, sequences, strict=True)
     ):
+        if index != reference_index:
+            match = match_competing_paths(
+                graph,
+                bubble.start,
+                path.edge_ids,
+                bubble.paths[reference_index].edge_ids,
+            )
+            if match is not None:
+                rows.append(
+                    _matched_path_row(
+                        graph,
+                        event_id,
+                        "bubble",
+                        bubble.start,
+                        bubble.end,
+                        path.edge_ids,
+                        path.observations,
+                        path.minimum_edge_support,
+                        sequence,
+                        match,
+                        likelihood_models,
+                        path_index=index,
+                    )
+                )
+                continue
         left, right, internal, ambiguous = _path_evidence(
             graph,
             bubble.start,
@@ -423,6 +453,8 @@ def _matched_path_row(
     sequence: str,
     match: TipBackboneMatch | None,
     likelihood_models: CrossFittedDamageModels | None,
+    *,
+    path_index: int = 0,
 ) -> list[object]:
     left, right, internal, ambiguous = _path_evidence(
         graph,
@@ -437,7 +469,7 @@ def _matched_path_row(
     return [
         event_id,
         event_type,
-        0,
+        path_index,
         "false",
         start,
         end,
@@ -589,7 +621,12 @@ def write_event_report(
                 matched_incomplete_count += 1
             path_count += 1
         for index, bubble in enumerate(bubbles, start=1):
-            rows = _bubble_rows(graph, f"bubble-{index}", bubble)
+            rows = _bubble_rows(
+                graph,
+                f"bubble-{index}",
+                bubble,
+                likelihood_models,
+            )
             writer.writerows(rows)
             path_count += len(rows)
 

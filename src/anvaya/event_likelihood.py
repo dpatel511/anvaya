@@ -1,5 +1,6 @@
 """Held-out likelihood comparison for matched graph alternatives."""
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import log
@@ -24,6 +25,7 @@ class NucleotideObservation:
     quality: int
     damage_probability: float | None = None
     damage_probability_ensemble: tuple[float, ...] = ()
+    molecule_id: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -222,6 +224,10 @@ def _maximize_variation_frequency(
     observations: Sequence[NucleotideObservation],
 ) -> tuple[float, float]:
     """Fit one constant alternative frequency by bounded golden search."""
+    observation_counts = Counter(
+        (observation.alternative, observation.quality)
+        for observation in observations
+    )
     lower = _EPSILON
     upper = 0.5
     ratio = (5.0**0.5 - 1.0) / 2.0
@@ -230,14 +236,15 @@ def _maximize_variation_frequency(
 
     def objective(frequency: float) -> float:
         return sum(
-            log(
+            count
+            * log(
                 _emission_probability(
-                    observation.alternative,
+                    alternative,
                     frequency,
-                    observation.quality,
+                    quality,
                 )
             )
-            for observation in observations
+            for (alternative, quality), count in observation_counts.items()
         )
 
     left_score = objective(left)
@@ -265,11 +272,47 @@ def compare_event_likelihoods(
     *,
     profile_scope: str = "held_out_candidate_profile",
     missing_quality_observations: int = 0,
+    damage_explanation_applicable: bool = True,
 ) -> EventLikelihood:
     """Compare damage, error, and constant-frequency variation models."""
     reasons = []
-    alternatives = sum(observation.alternative for observation in observations)
-    references = len(observations) - alternatives
+    keyed_observations = [
+        (
+            (
+                ("molecule", observation.molecule_id)
+                if observation.molecule_id is not None
+                else ("observation", index)
+            ),
+            observation,
+        )
+        for index, observation in enumerate(observations)
+    ]
+    alleles_by_molecule: dict[tuple[str, int], set[bool]] = {}
+    for key, observation in keyed_observations:
+        alleles_by_molecule.setdefault(key, set()).add(observation.alternative)
+    conflicting_molecules = {
+        key for key, alleles in alleles_by_molecule.items() if len(alleles) > 1
+    }
+    keyed_observations = [
+        item for item in keyed_observations if item[0] not in conflicting_molecules
+    ]
+    molecule_keys = [key for key, _ in keyed_observations]
+    observations = [observation for _, observation in keyed_observations]
+    alternatives = len(
+        {
+            key
+            for key, observation in zip(molecule_keys, observations, strict=True)
+            if observation.alternative
+        }
+    )
+    references = len(
+        {
+            key
+            for key, observation in zip(molecule_keys, observations, strict=True)
+            if not observation.alternative
+        }
+    )
+    molecule_count = len(set(molecule_keys))
     if not observations:
         reasons.append("no_eligible_terminal_observations")
     if alternatives == 0:
@@ -294,7 +337,7 @@ def compare_event_likelihoods(
             status="insufficient_evidence",
             reasons=tuple(reasons),
             profile_scope=profile_scope,
-            observations=len(observations),
+            observations=molecule_count,
             alternative_observations=alternatives,
             reference_observations=references,
             missing_quality_observations=missing_quality_observations,
@@ -331,16 +374,17 @@ def compare_event_likelihoods(
     variation_penalty = 0.5 * log(len(observations))
     variation_penalized = variation - variation_penalty
     scores = {
-        "damage": damage,
         "sequencing_error": error,
         "variation": variation_penalized,
     }
+    if damage_explanation_applicable:
+        scores["damage"] = damage
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     return EventLikelihood(
         status="scored",
         reasons=("ranking_not_calibrated_for_classification",),
         profile_scope=profile_scope,
-        observations=len(observations),
+        observations=molecule_count,
         alternative_observations=alternatives,
         reference_observations=references,
         missing_quality_observations=0,
@@ -379,31 +423,85 @@ def _edge_observations_at(
             if current != graph.edge_sources[edge_id]:
                 side = "right" if side == "left" else "left"
             offset = graph.node_length if expected_end == "left" else 0
-            observations = []
-            missing = 0
+            observations_by_molecule: dict[int, NucleotideObservation] = {}
+            missing_molecules: set[int] = set()
             for link in graph.molecule_end_links(edge_id):
                 distance = link.distance + offset
                 if link.end != side or distance >= graph.end_window:
                     continue
                 if link.base_quality is None:
-                    missing += 1
+                    missing_molecules.add(link.molecule_id)
                 else:
-                    observations.append(
-                        NucleotideObservation(
-                            alternative=alternative,
-                            distance=distance,
-                            quality=link.base_quality,
-                            damage_probability=damage_probabilities[distance],
-                            damage_probability_ensemble=tuple(
-                                probabilities[distance]
-                                for probabilities in damage_probability_ensemble
-                                if distance < len(probabilities)
-                            ),
-                        )
+                    observation = NucleotideObservation(
+                        alternative=alternative,
+                        distance=distance,
+                        quality=link.base_quality,
+                        damage_probability=damage_probabilities[distance],
+                        damage_probability_ensemble=tuple(
+                            probabilities[distance]
+                            for probabilities in damage_probability_ensemble
+                            if distance < len(probabilities)
+                        ),
+                        molecule_id=link.molecule_id,
                     )
-            return observations, missing
+                    previous = observations_by_molecule.get(link.molecule_id)
+                    if previous is None or (
+                        observation.distance,
+                        -observation.quality,
+                    ) < (previous.distance, -previous.quality):
+                        observations_by_molecule[link.molecule_id] = observation
+            missing_molecules.difference_update(observations_by_molecule)
+            return list(observations_by_molecule.values()), len(missing_molecules)
         current = _successor(graph, current, edge_id)
     return [], 0
+
+
+def _ordinary_edge_observations_at(
+    graph: BidirectedDeBruijnGraph,
+    match: TipBackboneMatch,
+    edge_index: int,
+    ensemble_size: int,
+) -> tuple[list[NucleotideObservation], int]:
+    """Choose the terminal side with the strongest paired path evidence."""
+    zero_probabilities = (0.0,) * graph.end_window
+    zero_ensemble = (zero_probabilities,) * ensemble_size
+    candidates = []
+    for end in ("left", "right"):
+        alternative, alternative_missing = _edge_observations_at(
+            graph,
+            match.branch_handle,
+            match.tip_edge_ids,
+            edge_index,
+            end,
+            alternative=True,
+            damage_probabilities=zero_probabilities,
+            damage_probability_ensemble=zero_ensemble,
+        )
+        reference, reference_missing = _edge_observations_at(
+            graph,
+            match.branch_handle,
+            match.backbone_edge_ids,
+            edge_index,
+            end,
+            alternative=False,
+            damage_probabilities=zero_probabilities,
+            damage_probability_ensemble=zero_ensemble,
+        )
+        candidates.append(
+            (
+                (
+                    bool(alternative) and bool(reference),
+                    min(len(alternative), len(reference)),
+                    len(alternative) + len(reference),
+                    -(alternative_missing + reference_missing),
+                    end == "right",
+                ),
+                alternative + reference,
+                alternative_missing + reference_missing,
+            )
+        )
+    _, observations, missing = max(candidates, key=lambda candidate: candidate[0])
+    return observations, missing
 
 
 def score_matched_event(
@@ -440,6 +538,15 @@ def score_matched_event(
             expected_end = "right"
             channel = "three_prime_ga"
         else:
+            ordinary, ordinary_missing = _ordinary_edge_observations_at(
+                graph,
+                match,
+                edge_index,
+                len(ensemble),
+            )
+            observations.extend(ordinary)
+            missing += ordinary_missing
+            scopes.append("ordinary_substitution_no_damage_channel")
             continue
         key = (
             match.tip_edge_ids[edge_index],
@@ -489,4 +596,8 @@ def score_matched_event(
         (),
         profile_scope=scope,
         missing_quality_observations=missing,
+        damage_explanation_applicable=any(
+            item != "ordinary_substitution_no_damage_channel"
+            for item in unique_scopes
+        ),
     )

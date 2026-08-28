@@ -6,6 +6,15 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Direct likelihood comparison of equal-length bubble alternatives against the
+  dominant path, including production event-report fields for matched and
+  scoreable bubble paths.
+- Ordinary-substitution error-versus-variation likelihood scoring and an
+  evidence-funnel report for retained, detected, matched, and scored graph
+  truth events.
+- Separate read indices and physical-fragment identifiers, with paired mates
+  sharing one identifier and contradictory fragment-level allele evidence
+  excluded from support counts.
 - Report-only class-conditional conformal calibration for event likelihoods,
   with held-out sample provenance, BH-corrected damage and variation tests,
   cross-fit damage instability, and explicit `protect_damage`,
@@ -105,6 +114,13 @@ All notable project changes will be documented in this file.
 
 ### Changed
 
+- Compressed repeated beta-binomial locus records and repeated allele-quality
+  observations during likelihood evaluation. A controlled profile fell from
+  110.13 to 25.50 seconds with byte-identical matrix outputs; public event
+  reporting fell from 244.46 to 135.13 seconds while retaining 25,415 scored
+  events.
+- Ordinary-only substitutions can no longer rank as damage because a
+  zero-damage model ties the sequencing-error model.
 - Replaced repeated graph-wide degree scans with linear-time degree calculation.
 - Avoided duplicate unitig extraction during CLI assembly.
 - Replaced string-based orientation-aware k-mers with rolling 2-bit encoding.

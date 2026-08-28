@@ -1033,9 +1033,35 @@ weaken the public-data singleton protection, so the correct next step is to
 improve evidence recovery rather than tune the threshold.
 
 The test also confirms a topology gap: damage primarily appears in tips and
-incomplete branches, while most rare-strain controls appear as bubbles. The
-experiment can score a bubble path through the generic branch matcher, but
-production event reporting does not yet provide calibrated bubble likelihoods.
+incomplete branches, while most rare-strain controls appear as bubbles.
+
+The follow-up implementation compares each equal-length non-reference bubble
+path directly with its dominant competitor, scores ordinary substitutions
+without inventing a damage channel, and counts paired mates by physical
+fragment. Experiment 15 now writes `evidence_funnel.tsv` with retained,
+detected, matched, and scored truth counts. Repeating the same three
+calibration and two validation seeds increased scored calibration errors from
+24 to 54 and validation errors from 26 to 47. Damage remained 2,762/1,909 and
+variation 12/6 for calibration/validation, respectively. No recovered error
+passed the conservative molecule gates; the added observations reveal an
+event-ascertainment problem rather than support for weakening those gates.
+
+On the 1,409,072-read `SRR32866683` run, v7 preserved all 111,399 event rows,
+the byte-identical 43,447,947-byte assembly, and the byte-identical damage
+profile. Scoreable rows increased from 1,478 in v5 to 25,415: 5,692 tips,
+19,716 incomplete branches, and seven bubble alternatives. Direct comparison
+matched 3,552 of 3,706 non-reference bubble paths. Final rankings were 24,453
+variation, 852 damage, and 110 sequencing error; these remain uncalibrated,
+report-only explanations.
+
+The first expanded run required 244.46 seconds for event reporting. Profiling
+showed repeated beta-binomial damage-model evaluations as the dominant cost.
+Aggregating identical `(distance, alternative count, depth)` records and
+identical `(allele, quality)` observations is mathematically equivalent and
+reduced a controlled profile from 110.13 to 25.50 seconds with byte-identical
+matrix outputs. Public event reporting then fell to 135.13 seconds and total
+runtime from 567.21 to 446.85 seconds while preserving all 25,415 scores.
+
 Generated outputs remain ignored under
 `experiments/validation/generated/graph_event_calibration_validation/`.
 

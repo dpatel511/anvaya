@@ -163,10 +163,6 @@ def match_branch_to_backbone(
         return None
 
     tip_edge_ids = branch_edge_ids
-    tip_sequence = spell_edge_path(graph, branch_handle, tip_edge_ids)
-    tip_observations = sum(
-        _edge_support_total(graph, edge_id) for edge_id in tip_edge_ids
-    )
     excluded = set(tip_edge_ids)
     best: TipBackboneMatch | None = None
     best_key: tuple[float, float, int, int] | None = None
@@ -184,55 +180,99 @@ def match_branch_to_backbone(
         if backbone_edge_ids is None:
             continue
 
-        backbone_sequence = spell_edge_path(
+        candidate = match_competing_paths(
             graph,
             branch_handle,
+            tip_edge_ids,
             backbone_edge_ids,
+            require_same_end=False,
         )
-        sequence_identity = _identity(backbone_sequence, tip_sequence)
-        ry_identity = _identity(
-            _ry_sequence(backbone_sequence),
-            _ry_sequence(tip_sequence),
-        )
-        backbone_supports = tuple(
-            _edge_support_total(graph, path_edge)
-            for path_edge in backbone_edge_ids
-        )
-        backbone_observations = sum(backbone_supports)
-        minimum_support = min(backbone_supports)
-        changes = substitutions(backbone_sequence, tip_sequence)
-        candidate = TipBackboneMatch(
-            branch_handle=branch_handle,
-            tip_edge_ids=tip_edge_ids,
-            backbone_edge_ids=backbone_edge_ids,
-            tip_sequence=tip_sequence,
-            backbone_sequence=backbone_sequence,
-            tip_observations=tip_observations,
-            backbone_observations=backbone_observations,
-            backbone_minimum_edge_support=minimum_support,
-            relative_coverage=(
-                tip_observations / backbone_observations
-                if backbone_observations
-                else 0.0
-            ),
-            sequence_identity=sequence_identity,
-            ry_identity=ry_identity,
-            substitutions=changes,
-            damage_compatible=_damage_compatible(
-                graph,
-                branch_handle,
-                tip_edge_ids,
-                changes,
-            ),
-        )
+        assert candidate is not None
         key = (
-            ry_identity,
-            sequence_identity,
-            minimum_support,
-            backbone_observations,
+            candidate.ry_identity,
+            candidate.sequence_identity,
+            candidate.backbone_minimum_edge_support,
+            candidate.backbone_observations,
         )
         if best_key is None or key > best_key:
             best = candidate
             best_key = key
 
     return best
+
+
+def match_competing_paths(
+    graph: BidirectedDeBruijnGraph,
+    branch_handle: int,
+    alternative_edge_ids: tuple[int, ...],
+    reference_edge_ids: tuple[int, ...],
+    *,
+    require_same_end: bool = True,
+) -> TipBackboneMatch | None:
+    """Compare two explicit equal-length paths leaving the same handle."""
+    if (
+        not alternative_edge_ids
+        or len(alternative_edge_ids) != len(reference_edge_ids)
+    ):
+        return None
+
+    def path_end(edge_ids: tuple[int, ...]) -> int:
+        current = branch_handle
+        for edge_id in edge_ids:
+            current = _successor(graph, current, edge_id)
+        return current
+
+    if (
+        require_same_end
+        and path_end(alternative_edge_ids) != path_end(reference_edge_ids)
+    ):
+        return None
+
+    alternative_sequence = spell_edge_path(
+        graph,
+        branch_handle,
+        alternative_edge_ids,
+    )
+    reference_sequence = spell_edge_path(
+        graph,
+        branch_handle,
+        reference_edge_ids,
+    )
+    if len(alternative_sequence) != len(reference_sequence):
+        return None
+
+    alternative_observations = sum(
+        _edge_support_total(graph, edge_id) for edge_id in alternative_edge_ids
+    )
+    reference_supports = tuple(
+        _edge_support_total(graph, edge_id) for edge_id in reference_edge_ids
+    )
+    reference_observations = sum(reference_supports)
+    changes = substitutions(reference_sequence, alternative_sequence)
+    return TipBackboneMatch(
+        branch_handle=branch_handle,
+        tip_edge_ids=alternative_edge_ids,
+        backbone_edge_ids=reference_edge_ids,
+        tip_sequence=alternative_sequence,
+        backbone_sequence=reference_sequence,
+        tip_observations=alternative_observations,
+        backbone_observations=reference_observations,
+        backbone_minimum_edge_support=min(reference_supports),
+        relative_coverage=(
+            alternative_observations / reference_observations
+            if reference_observations
+            else 0.0
+        ),
+        sequence_identity=_identity(reference_sequence, alternative_sequence),
+        ry_identity=_identity(
+            _ry_sequence(reference_sequence),
+            _ry_sequence(alternative_sequence),
+        ),
+        substitutions=changes,
+        damage_compatible=_damage_compatible(
+            graph,
+            branch_handle,
+            alternative_edge_ids,
+            changes,
+        ),
+    )

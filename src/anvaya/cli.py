@@ -250,6 +250,11 @@ def _run_assemble(
     if len(read_groups) == 2 and len(read_groups[0]) != len(read_groups[1]):
         raise ValueError("paired-end input files must contain the same number of reads")
     reads = [read for group in read_groups for read in group]
+    molecule_ids = (
+        list(range(len(read_groups[0]))) * 2
+        if len(read_groups) == 2
+        else list(range(len(reads)))
+    )
     sequences = [read.sequence for read in reads]
     _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
 
@@ -267,6 +272,7 @@ def _run_assemble(
             end_window=end_window,
             track_molecule_links=event_report is not None,
             read_qualities=[read.qualities for read in reads],
+            read_molecule_ids=molecule_ids,
         )
         node_count = graph.node_count
         edge_count = graph.edge_count
