@@ -1062,6 +1062,35 @@ reduced a controlled profile from 110.13 to 25.50 seconds with byte-identical
 matrix outputs. Public event reporting then fell to 135.13 seconds and total
 runtime from 567.21 to 446.85 seconds while preserving all 25,415 scores.
 
+The event-conditioned follow-up evaluates all three explanations conditional
+on observing at least one consistent alternative fragment and one consistent
+reference fragment. On the same held-out matrix, damage-truth rankings improved
+from 1,644 to 1,680 of 1,909 scoreable events. Twenty-one of 47 error events
+ranked sequencing error instead of zero before conditioning, including 21 of
+23 scoreable independent errors. The first version also incorrectly moved four
+of six scoreable rare-strain events to sequencing error, demonstrating that a
+high-quality singleton is not identifiable as error merely because it survived
+event detection.
+
+The refined policy therefore abstains when sequencing error ranks first but
+the alternative consists of one fragment with Phred quality above 20. In the
+held-out matrix, 17 Q20 independent errors remained error-ranked, four Q23
+independent errors became ambiguous, and all four affected rare-strain events
+became ambiguous rather than error-ranked. Damage rankings were unchanged at
+1,680 damage and 229 variation. Systematic terminal errors remained confounded
+with damage or variation, as expected from their deliberately damage-shaped
+generating process. No validation event became cleaning-eligible.
+
+On `SRR32866683`, v9 preserved the byte-identical 43,447,947-byte assembly,
+byte-identical damage profile, all 111,399 event rows, and all 25,415 scoreable
+events. Rankings were 646 damage, 470 sequencing error, 20,428 variation, and
+3,871 ambiguous. Every ambiguous event was a high-quality singleton. Of the
+470 error-ranked events, 420 were low-quality singletons, 39 had two alternative
+fragments, and 11 had three or more. Event reporting fell from 254.33 seconds
+in the initial conditioned v8 run to 158.15 seconds in v9; total runtime fell
+from 585.55 to 464.59 seconds. These public results establish deterministic
+non-regression and plausible candidate behavior, not biological ground truth.
+
 Generated outputs remain ignored under
 `experiments/validation/generated/graph_event_calibration_validation/`.
 

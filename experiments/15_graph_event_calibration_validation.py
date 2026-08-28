@@ -65,10 +65,14 @@ class GraphEventRecord:
     event_type: str
     event_index: int
     likelihood_status: str
+    likelihood_conditioning_scope: str
     observations: int
     alternative_observations: int
     reference_observations: int
     ranked_explanation: str
+    damage_conditioning_log_probability: float | None
+    error_conditioning_log_probability: float | None
+    variation_conditioning_log_probability: float | None
     decision: str
     decision_reasons: str
 
@@ -435,10 +439,14 @@ def main() -> None:
                 event_type,
                 index,
                 likelihood.status,
+                likelihood.conditioning_scope,
                 likelihood.observations,
                 likelihood.alternative_observations,
                 likelihood.reference_observations,
                 likelihood.best_explanation or "",
+                likelihood.damage_conditioning_log_probability,
+                likelihood.error_conditioning_log_probability,
+                likelihood.variation_conditioning_log_probability,
                 decision.decision,
                 ";".join(decision.reasons),
             )

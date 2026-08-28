@@ -80,6 +80,7 @@ _TIP_CLASSIFICATION_FIELDS = (
     "likelihood_status",
     "likelihood_reasons",
     "likelihood_profile_scope",
+    "likelihood_conditioning_scope",
     "likelihood_observations",
     "likelihood_alternative_observations",
     "likelihood_reference_observations",
@@ -88,8 +89,11 @@ _TIP_CLASSIFICATION_FIELDS = (
     "damage_model_log_likelihood_min",
     "damage_model_log_likelihood_max",
     "damage_model_log_likelihood_spread",
+    "damage_model_conditioning_log_probability",
     "error_model_log_likelihood",
+    "error_model_conditioning_log_probability",
     "variation_model_log_likelihood",
+    "variation_model_conditioning_log_probability",
     "variation_model_frequency",
     "variation_model_complexity_penalty",
     "variation_model_penalized_log_likelihood",
@@ -363,6 +367,7 @@ def _match_columns(
         likelihood.status,
         ";".join(likelihood.reasons),
         likelihood.profile_scope,
+        likelihood.conditioning_scope,
         likelihood.observations,
         likelihood.alternative_observations,
         likelihood.reference_observations,
@@ -389,13 +394,28 @@ def _match_columns(
         ),
         (
             ""
+            if likelihood.damage_conditioning_log_probability is None
+            else f"{likelihood.damage_conditioning_log_probability:.6f}"
+        ),
+        (
+            ""
             if likelihood.error_log_likelihood is None
             else f"{likelihood.error_log_likelihood:.6f}"
         ),
         (
             ""
+            if likelihood.error_conditioning_log_probability is None
+            else f"{likelihood.error_conditioning_log_probability:.6f}"
+        ),
+        (
+            ""
             if likelihood.variation_log_likelihood is None
             else f"{likelihood.variation_log_likelihood:.6f}"
+        ),
+        (
+            ""
+            if likelihood.variation_conditioning_log_probability is None
+            else f"{likelihood.variation_conditioning_log_probability:.6f}"
         ),
         (
             ""
