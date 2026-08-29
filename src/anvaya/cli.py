@@ -11,7 +11,11 @@ from anvaya.bidirected import (
     summarize_bidirected_graph,
 )
 from anvaya.bubbles import find_simple_bubbles
-from anvaya.cleaning import TipCleaningSummary, remove_weak_tips
+from anvaya.cleaning import (
+    TipCleaningSummary,
+    remove_damage_aware_tips,
+    remove_weak_tips,
+)
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.events import EventReportSummary, write_event_report
 from anvaya.event_calibration import calibrate_event_report
@@ -123,10 +127,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use the experimental orientation-aware graph",
     )
-    assemble_parser.add_argument(
+    cleaning_group = assemble_parser.add_mutually_exclusive_group()
+    cleaning_group.add_argument(
         "--clean-tips",
         action="store_true",
         help="experimentally remove short, weak dead-end paths",
+    )
+    cleaning_group.add_argument(
+        "--damage-aware-clean-tips",
+        action="store_true",
+        help=(
+            "iteratively remove only one-sided error-like weak tips and "
+            "protect damage-like, variation-like, ambiguous, unmatched, "
+            "or bidirectionally supported tips"
+        ),
     )
     assemble_parser.add_argument(
         "--detect-bubbles",
@@ -222,6 +236,7 @@ def _run_assemble(
     min_count: int,
     orientation_aware: bool,
     clean_tips: bool,
+    damage_aware_clean_tips: bool,
     detect_bubbles: bool,
     end_window: int,
     event_report: Path | None,
@@ -231,6 +246,14 @@ def _run_assemble(
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
         raise ValueError("--clean-tips requires --orientation-aware")
+    if damage_aware_clean_tips and not orientation_aware:
+        raise ValueError(
+            "--damage-aware-clean-tips requires --orientation-aware"
+        )
+    if damage_aware_clean_tips and end_window == 0:
+        raise ValueError(
+            "--damage-aware-clean-tips requires a positive --end-window"
+        )
     if detect_bubbles and not orientation_aware:
         raise ValueError("--detect-bubbles requires --orientation-aware")
     if end_window and not orientation_aware:
@@ -313,10 +336,17 @@ def _run_assemble(
         )
 
     cleaning_summary = TipCleaningSummary()
-    if clean_tips:
+    if clean_tips or damage_aware_clean_tips:
         stage_started = time.perf_counter()
-        _progress("Removing short, weak tips")
-        cleaning_summary = remove_weak_tips(graph)
+        if damage_aware_clean_tips:
+            _progress(
+                "Removing one-sided error-like tips with damage-aware "
+                "protection"
+            )
+            cleaning_summary = remove_damage_aware_tips(graph)
+        else:
+            _progress("Removing short, weak tips")
+            cleaning_summary = remove_weak_tips(graph)
         _progress(
             f"Removed {cleaning_summary.tips_removed} tips containing "
             f"{cleaning_summary.edges_removed} edges in "
@@ -378,10 +408,39 @@ def _run_assemble(
     print(f"k={k}")
     print(f"min_count={min_count}")
     print(f"orientation_aware={str(orientation_aware).lower()}")
-    print(f"tip_cleaning={str(clean_tips).lower()}")
+    print(
+        "tip_cleaning="
+        f"{str(clean_tips or damage_aware_clean_tips).lower()}"
+    )
+    print(
+        "damage_aware_tip_cleaning="
+        f"{str(damage_aware_clean_tips).lower()}"
+    )
     print(f"tips_removed={cleaning_summary.tips_removed}")
     print(f"tip_edges_removed={cleaning_summary.edges_removed}")
     print(f"tip_observations_removed={cleaning_summary.observations_removed}")
+    print(f"tip_cleaning_rounds={cleaning_summary.rounds}")
+    print(f"tips_protected={cleaning_summary.tips_protected}")
+    print(
+        "damage_like_tips_protected="
+        f"{cleaning_summary.damage_like_protected}"
+    )
+    print(
+        "variation_like_tips_protected="
+        f"{cleaning_summary.variation_like_protected}"
+    )
+    print(
+        "ambiguous_tips_protected="
+        f"{cleaning_summary.ambiguous_protected}"
+    )
+    print(
+        "unmatched_tips_protected="
+        f"{cleaning_summary.unmatched_protected}"
+    )
+    print(
+        "bidirectional_tips_protected="
+        f"{cleaning_summary.bidirectional_protected}"
+    )
     print(f"bubble_detection={str(detect_bubbles).lower()}")
     print(f"bubbles_detected={len(bubbles)}")
     print(f"end_window={end_window}")
@@ -435,6 +494,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.min_count,
                 arguments.orientation_aware,
                 arguments.clean_tips,
+                arguments.damage_aware_clean_tips,
                 arguments.detect_bubbles,
                 arguments.end_window,
                 arguments.event_report,

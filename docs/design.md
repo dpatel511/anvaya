@@ -48,9 +48,17 @@ The CLI now writes sequences from this representation. No simplification decisio
 
 ## Conservative tip cleaning
 
-The experimental cleaner considers only dead-end paths no longer than `2 × k`. A path is removed when its strongest edge has at most 20% of the support of a competing edge at the attachment branch. Long tips, isolated paths, and strongly supported alternatives are preserved.
+The experimental support-only cleaner considers only dead-end paths no longer than `2 × k`. A path is removed when its strongest edge has at most 20% of the support of a competing edge at the attachment branch. Long tips, isolated paths, and strongly supported alternatives are preserved.
 
-Edges are deactivated directly in the compact adjacency arrays, and degrees and active graph totals are updated in place. This avoids copying the graph or allocating per-edge cleaning objects. The operation remains opt-in until it is validated on damaged and low-abundance data.
+The damage-aware mode applies the same topology and support boundary, then
+matches each candidate to its local backbone and classifies the evidence before
+deactivation. Only an `error-like` tip with no support from the opposite read
+orientation is removable. Damage-like, variation-like, ambiguous, unmatched,
+and bidirectionally supported candidates are cached as protected. Both modes
+run for at most five rounds so newly exposed tips can be considered without an
+unbounded cleanup pass.
+
+Edges are deactivated directly in the compact adjacency arrays, and degrees and active graph totals are updated in place. This avoids copying the graph or allocating per-edge cleaning objects. Both policies remain opt-in: the support-only mode is a useful contiguity comparison, while `--damage-aware-clean-tips` is the conservative prototype policy.
 
 ## Unitig-level bubble scoring
 
@@ -88,7 +96,9 @@ Weak tips are also matched non-destructively to an equal-length locally competin
 
 In the original 20-seed matrix, 30,960 of 34,762 matched damage tips were classified damage-like (89.06%). Thirty-two of 1,641 matched error tips and none of 110 genuine rare-strain tips were called damage-like. Error-like calls additionally require terminal depletion: this protects low-abundance variation but deliberately leaves most errors ambiguous. These are heuristic evidence scores, not calibrated probabilities or an authorization to remove graph paths.
 
-Reporting does not change the graph. Tips without a suitable linear competitor remain unmatched, and no evidence-based simplification decision is implemented yet. When an event report is requested, retained terminal edge observations are now stored in compact edge-indexed arrays with their source-read index, oriented end, and end distance. For paths with multiple substitutions, the classifier intersects source-read identities and adds linkage evidence only when the same reads support every expected C→T/G→A change. A single substitution receives no linkage score bonus because its exact edge already associates it with a read.
+Reporting itself does not change the graph. Tips without a suitable linear
+competitor remain unmatched and are protected by the separate damage-aware
+cleaner. When an event report is requested, retained terminal edge observations are now stored in compact edge-indexed arrays with their source-read index, oriented end, and end distance. For paths with multiple substitutions, the classifier intersects source-read identities and adds linkage evidence only when the same reads support every expected C→T/G→A change. A single substitution receives no linkage score bonus because its exact edge already associates it with a read.
 
 FASTQ observations additionally retain the Phred quality of the exact nucleotide represented by each oriented terminal-edge observation. Event reports include observed and missing quality counts, mean quality, and the sum of `log(10^(-Q/10) / 3)` over damage-compatible alternative observations. This is the likelihood of the specific alternative calls under an independent, symmetric sequencing-error model. FASTA input remains supported and produces explicit missing-quality evidence instead of an assumed quality. The value is report-only: it does not include damage or polymorphism likelihoods, does not assume independence between overlapping graph events, and does not alter the heuristic classification.
 
@@ -180,7 +190,36 @@ non-regression results rather than biological-accuracy estimates. The targeted
 read pass increased event reporting from 171.65 to 547.07 seconds and total
 runtime from 504.61 to 853.12 seconds, with 7,011,012 KiB peak RSS and no swap.
 
-The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. Simulation truth validates implementation behavior; byte-identical public reruns validate non-regression. Neither establishes biological accuracy on an unlabeled public library. That requires independently characterized untreated and UDG-treated libraries plus expanded held-out community mixtures.
+Matched-tip heuristic classification can now change topology only when
+`--damage-aware-clean-tips` is explicitly enabled. The event-likelihood and
+conformal-calibration layers remain report-only and are not used as deletion
+probabilities. Simulation truth validates selection behavior; reference-backed
+assemblies validate sequence accuracy; an unlabeled public library cannot
+establish biological accuracy. That still requires independently characterized
+untreated and UDG-treated libraries plus expanded held-out community mixtures.
+
+The complete 20-seed tip-selection matrix contained 36,977 candidates across
+360 runs. The initial error-like-only rule selected 97 simulated errors but also
+one rare-strain candidate. That rare candidate had balanced support from both
+read orientations. Requiring one-sided support retained 82 simulated errors,
+protected the 15 bidirectional error-like candidates, and selected zero of
+35,202 damage candidates and zero of 111 rare-strain candidates.
+
+Four clean reference-backed assemblies then exercised actual graph mutation at
+5× and 20× coverage. The damage-aware policy removed no tips at 5× and 10 and
+seven tips in the two 20× replicates. It introduced no misassemblies, mismatches,
+indels, or genome-fraction loss. N50 was unchanged at 5× and increased only from
+4,648 to 4,665 bp and from 4,680 to 4,703 bp at 20×. The policy is therefore
+safe but intentionally low-recall in this validation; it is not a replacement
+for the larger contiguity gains of support-only cleaning.
+
+On `SRR32866683`, v13 removed 989 tips containing 1,121 edges in 7.93 seconds.
+Unitigs fell from 740,785 to 739,660 and assembled bases from 24,239,229 to
+24,215,608, while N50 remained 32 bp and the largest unitig remained 461 bp.
+The pre-cleaning event report and damage profile were byte-identical to v12, as
+expected from their pipeline position. Total wall time increased from 13:08.86
+to 13:28.28 and peak RSS from 7,011,012 to 7,033,856 KiB. This public run proves
+execution and deterministic pre-cleaning evidence, not removal accuracy.
 
 ## Incomplete-branch matching
 
@@ -198,7 +237,7 @@ A fixed-k sweep showed that `k=31` gives the best current contiguity for 150 bp 
 
 The directed filtered assemblies have a duplication ratio near 2.0. The orientation-aware graph corrected this to 1.005 and reduced physical nodes from 9.92 million to 5.01 million. Its compact representation preserved the same unitigs while reducing peak memory from 6.92 GiB to 2.78 GiB and wall time from 193.90 seconds to 113.99 seconds.
 
-Across two clean bacterial genomes, two seeds, and 5×/20× coverage, conservative tip cleaning introduced no reported misassemblies. At 20×, N50 improved by 56–67% and the largest contig by 52–128%. At 5×, cleaning made few changes and did not reduce genome fraction. This supports the current rule on clean isolates but does not establish safety for damaged molecules or rare strains.
+Across two clean bacterial genomes, two seeds, and 5×/20× coverage, support-only conservative tip cleaning introduced no reported misassemblies. At 20×, N50 improved by 56–67% and the largest contig by 52–128%. At 5×, cleaning made few changes and did not reduce genome fraction. The new damage-aware policy was much more selective: zero removals at 5× and 17 total at 20×, with 0.4–0.5% N50 gains and no accuracy regression. The 20-seed truth-labelled selection audit additionally observed no damage or rare-strain selections after the bidirectional guard.
 
 Controlled bubble tests showed zero detections in clean conditions. Sequencing errors and low-abundance strain SNPs both produced simple bubbles, confirming that topology and abundance alone cannot distinguish them. Recovery of 12 introduced SNPs rose from a mean of 1.0 bubble at 1× minor-strain coverage to 11.6 at 10×.
 
@@ -208,20 +247,21 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Recalibrate ordinary whole-read events separately from terminal
+1. Extend the validated one-sided error-like protection gate to bounded
+   incomplete branches, first as a truth-labelled selection audit and then as
+   an opt-in topology change.
+2. Validate incomplete-branch removal against damage, independent errors,
+   rare strains, and clean reference-backed assemblies before public-data use.
+3. Recalibrate ordinary whole-read events separately from terminal
    damage-compatible events and expand held-out references, coverage regimes,
    library protocols, and recurrent non-systematic error fixtures.
-2. Fit and validate a regularized context-aware variation-protection model now
-   that the held-out variation class has substantially more scoreable events.
-3. Add report-only shadow-cleaning decisions and measure false removal of
-   damage and rare-strain paths before allowing topology changes.
 4. Validate the damage model on independently characterized untreated,
    partial-UDG, and full-UDG libraries, then add whole-library opportunities
    and bootstrap or profiled predictive uncertainty.
 5. Extend incomplete-branch matching to unequal-length and locally non-linear
-   backbones.
-6. Implement optional conservative simplification only for repeatedly
-   supported `eligible_error` paths.
+   backbones only after the bounded equal-length policy is validated.
+6. Evaluate calibrated `eligible_error` decisions as an optional stricter
+   simplification policy once error sensitivity is adequate.
 7. Validate N50, accuracy, and strain retention on simulated and empirical
    mixtures, including direct comparison with MEGAHIT, metaSPAdes, and
    CarpeDeam.
