@@ -269,3 +269,41 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
    pure-Python targeted pass as the auditable reference implementation.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
+
+## Reciprocal paired-read unitig extension
+
+The optional paired-extension stage maps each read's nearest retained 3′ k-mer
+to an oriented compacted unitig. Each physical pair contributes one
+reverse-symmetric unitig observation. At a branching junction, only mate targets
+reachable through exactly one outgoing candidate are discriminating; shared
+repeat targets abstain. A candidate must win with at least five independent
+pairs and 3:1 support over the runner-up, and the reverse orientation must select
+the reciprocal link before sequences are joined.
+
+Reachability is target-aware and capped at 1,000 visited states per junction.
+Exceeding the cap marks the junction ambiguous. This reduced the public
+`SRR32866683` extension stage from more than 50 minutes without completion to
+34.22 seconds at `k=21`, with 4,003 of 21,014 evaluated orientations safely
+work-limited. That run accepted 17 physical joins and left N50 at 32 bp.
+
+The final accuracy gate used the existing `GCF_001050915.2`, 20×, seed-42 ART
+reads at `k=31`. Damage-aware cleaning alone was compared with the identical
+pipeline plus paired extension using QUAST 5.3.0:
+
+| Metric | Damage-aware baseline | Strict paired extension |
+|---|---:|---:|
+| Largest contig | 24,470 bp | 24,470 bp |
+| N50 | 4,665 bp | 4,733 bp |
+| Genome fraction | 92.952% | 93.014% |
+| Duplication ratio | 1.005 | 1.005 |
+| Misassemblies | 0 | 0 |
+| Mismatches per 100 kbp | 0.00 | 0.00 |
+| Indels per 100 kbp | 0.00 | 0.00 |
+
+The strict run accepted 387 physical joins. A 3-pair/2:1 rule increased N50 to
+5,296 bp but introduced 0.43 mismatches and 0.04 indels per 100 kbp. A simplified
+unique-predecessor path-context experiment increased N50 to 5,297 bp but caused
+one misassembly, 1.50 mismatches, and 0.04 indels per 100 kbp. Both were rejected.
+Correct exSPAnder-style growing-path context requires insert-size-aware mapping
+and is not approximated by propagating evidence through a topologically unique
+chain.

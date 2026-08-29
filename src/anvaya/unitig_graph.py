@@ -58,6 +58,7 @@ class CompactedUnitigGraph:
     )
     terminal_observations: array = field(default_factory=lambda: array("Q"))
     internal_observations: array = field(default_factory=lambda: array("Q"))
+    edge_handles: array = field(default_factory=lambda: array("q"))
     out_links: array = field(default_factory=lambda: array("q"))
     out_degrees: bytearray = field(default_factory=bytearray)
 
@@ -142,9 +143,15 @@ def _append_link(
 
 def build_compacted_unitig_graph(
     source_graph: BidirectedDeBruijnGraph,
+    *,
+    track_edge_handles: bool = False,
 ) -> CompactedUnitigGraph:
     """Compact active non-branching paths while retaining links and evidence."""
+    if not isinstance(track_edge_handles, bool):
+        raise TypeError("track_edge_handles must be a boolean")
     graph = CompactedUnitigGraph(k=source_graph.node_length + 1)
+    if track_edge_handles:
+        graph.edge_handles = array("q", [-1]) * source_graph.edge_count
     entries: dict[tuple[Handle, int], Handle] = {}
     internal_exits: set[tuple[Handle, int]] = set()
 
@@ -165,6 +172,12 @@ def build_compacted_unitig_graph(
 
         for edge_id in edge_ids:
             traverses_forward = current == source_graph.edge_sources[edge_id]
+            if track_edge_handles:
+                graph.edge_handles[edge_id] = (
+                    unitig_id << 1
+                    if traverses_forward
+                    else (unitig_id << 1) | 1
+                )
             support = _edge_support_total(source_graph, edge_id)
             observations += support
             minimum_support = (

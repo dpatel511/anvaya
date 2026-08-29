@@ -60,6 +60,14 @@ from anvaya.incomplete_branches import (
 )
 from anvaya.metrics import GraphSummary, summarize_graph
 from anvaya.output import write_fasta
+from anvaya.paired_extension import (
+    PairedExtensionResult,
+    PairedExtensionSummary,
+    collect_paired_unitig_links,
+    extend_paired_unitig_paths,
+    resolve_paired_extensions,
+    spell_extended_paths,
+)
 from anvaya.reads import Read, load_reads
 from anvaya.sequences import canonical_sequence, normalize_dna, reverse_complement
 from anvaya.tip_matching import (
@@ -87,6 +95,8 @@ __all__ = [
     "GraphSummary",
     "IncompleteBranchCandidate",
     "MoleculeEndLink",
+    "PairedExtensionResult",
+    "PairedExtensionSummary",
     "Read",
     "ParameterEstimate",
     "StrandSupport",
@@ -102,8 +112,10 @@ __all__ = [
     "build_bidirected_dbg",
     "build_dbg",
     "canonical_sequence",
+    "collect_paired_unitig_links",
     "extract_bidirected_unitigs",
     "extract_unitigs",
+    "extend_paired_unitig_paths",
     "find_incomplete_branch_candidates",
     "fit_candidate_damage_model",
     "in_degree",
@@ -118,9 +130,11 @@ __all__ = [
     "normalize_dna",
     "out_degree",
     "reverse_complement",
+    "resolve_paired_extensions",
     "remove_weak_tips",
     "sink_nodes",
     "source_nodes",
+    "spell_extended_paths",
     "summarize_bidirected_graph",
     "summarize_graph",
     "write_fasta",

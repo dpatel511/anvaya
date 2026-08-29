@@ -6,6 +6,12 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Opt-in reciprocal paired-read extension of compacted unitig paths, with
+  orientation-aware molecule anchors, strong-winner scoring, bounded target
+  searches, reciprocal joins, and explicit search-work audit counters.
+- Conservative paired-extension defaults of five independent pairs and 3:1
+  dominance, selected by reference-backed QUAST validation; weaker and
+  path-context variants are documented as rejected accuracy experiments.
 - Optional iterative damage-aware tip cleaning through
   `--damage-aware-clean-tips`, removing only short, weak, one-sided tips
   classified as error-like while protecting damage-like, variation-like,

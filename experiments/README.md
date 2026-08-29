@@ -1259,3 +1259,46 @@ The approximately 2.0 duplication ratio and graph size near twice the 5.08 Mb re
 5. introduce damage-aware evidence after the ordinary baseline is stable.
 
 The full report remains ignored under `experiments/baseline/results/k_sweep/quast/`.
+
+## Paired unitig-extension validation
+
+The final paired-extension implementation was validated on the frozen
+`GCF_001050915.2` 20× seed-42 ART read pair. Both comparison arms used `k=31`,
+`min_count=2`, orientation-aware construction, a five-base end window, and
+damage-aware tip cleaning. The treatment additionally enabled bounded reciprocal
+paired extension. QUAST 5.3.0 evaluated contigs of at least 200 bp against the
+known reference.
+
+| Metric | Damage-aware baseline | 5-pair, 3:1 paired extension |
+|---|---:|---:|
+| Unitigs/contigs | 13,349 | 12,964 |
+| Joined physical links | — | 387 |
+| Largest contig | 24,470 bp | 24,470 bp |
+| N50 | 4,665 bp | 4,733 bp |
+| Genome fraction | 92.952% | 93.014% |
+| Duplication ratio | 1.005 | 1.005 |
+| Misassemblies | 0 | 0 |
+| Mismatches per 100 kbp | 0.00 | 0.00 |
+| Indels per 100 kbp | 0.00 | 0.00 |
+
+The paired run mapped 461,916 of 512,820 physical pairs, evaluated 4,325
+oriented junctions, work-limited 504, searched 751,210 graph states, and resolved
+418 oriented junctions. Wall time was 7:23.96 with 6,775,572 KiB peak RSS,
+compared with 3:51.48 and 6,243,052 KiB for the baseline. The continuity gain is
+therefore modest and computationally expensive, but passed the accuracy gate.
+
+Two broader policies were rejected. The 3-pair/2:1 rule produced N50 5,296 bp
+but 0.43 mismatches and 0.04 indels per 100 kbp. Carrying evidence through a
+unique predecessor path produced N50 5,297 bp but one misassembly, 1.50
+mismatches, and 0.04 indels per 100 kbp. The production implementation retains
+direct junction anchors, strict support, reciprocal agreement, and work-capped
+abstention.
+
+On public `SRR32866683` data, the bounded resolver completed in 34.22 seconds
+after the earlier unbounded traversal failed to finish after more than 50
+minutes. It accepted only 17 `k=21` joins and left N50 at 32 bp. A fixed `k=31`
+run raised N50 to 38 bp and reduced branching nodes from 247,669 to 194,244, but
+reduced the longest contig from 461 to 366 bp. These mixed fixed-k results make
+iterative multi-k construction the next continuity target; paired extension
+remains optional and is not presented as the solution to public-data
+fragmentation.

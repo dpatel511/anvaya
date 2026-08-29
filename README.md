@@ -56,6 +56,8 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - source, sink, and branch identification;
 - maximal non-branching unitig extraction;
 - oriented unitig-level graph links with aggregate coverage and terminal evidence;
+- optional reciprocal paired-read unitig extension with strong-winner and
+  bounded-work ambiguity guards;
 - bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
 - labelled unitig-bubble validation across clean, error, damage, and rare-strain simulations;
 - unitig-path terminal/internal evidence, terminal enrichment, and strand-balance scores;
@@ -105,6 +107,26 @@ tips and no simulated damage or rare-strain tips. Four reference-backed clean
 assemblies at 5× and 20× introduced no misassemblies, mismatches, indels, or
 genome-fraction loss. This establishes conservative behavior in those tests,
 not universal biological accuracy.
+
+Paired-end reads can optionally resolve a conservative subset of compacted-graph
+junctions after damage-aware cleaning:
+
+```bash
+anvaya assemble -1 left.fastq.gz -2 right.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --end-window 5 --damage-aware-clean-tips \
+  --paired-unitig-extension -o contigs.fasta
+```
+
+The default rule requires five independent pairs, 3:1 winner-to-runner-up
+dominance, reciprocal orientation agreement, and at most 1,000 searched graph
+states per junction. Work-limited or ambiguous junctions are left unresolved.
+These defaults are deliberately stricter than the initial 3-pair/2:1 prototype:
+on a clean 20× reference-backed validation the initial rule introduced small
+base-level errors, while the strict rule increased N50 from 4,665 to 4,733 bp
+and genome fraction from 92.952% to 93.014% with zero QUAST misassemblies,
+mismatches, or indels. On the unlabeled `SRR32866683` library, paired extension
+made only 17 joins at `k=21` and did not change its 32 bp N50, so this remains
+an experimental repeat resolver rather than a general continuity solution.
 
 Simple bubbles can be reported without changing the graph or output unitigs:
 
