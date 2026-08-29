@@ -48,6 +48,7 @@ class MoleculeEndLink:
     molecule_id: int
     end: str
     distance: int
+    orientation: int
     base_quality: int | None = None
 
 
@@ -119,8 +120,15 @@ class BidirectedDeBruijnGraph:
         links: list[MoleculeEndLink] = []
         for index in range(start, end):
             token = self.molecule_link_tokens[index]
-            read_side, distance = divmod(token, self.end_window)
-            read_index, side = divmod(read_side, 2)
+            read_side_orientation, distance = divmod(
+                token,
+                self.end_window,
+            )
+            read_index, side_orientation = divmod(
+                read_side_orientation,
+                4,
+            )
+            side, orientation = divmod(side_orientation, 2)
             quality = self.molecule_link_qualities[index]
             links.append(
                 MoleculeEndLink(
@@ -128,6 +136,7 @@ class BidirectedDeBruijnGraph:
                     molecule_id=self.read_molecule_ids[read_index],
                     end="left" if side == 0 else "right",
                     distance=distance,
+                    orientation=orientation,
                     base_quality=None if quality == 255 else quality,
                 )
             )
@@ -147,8 +156,12 @@ class BidirectedDeBruijnGraph:
         start = self.molecule_link_offsets[edge_id]
         end = self.molecule_link_offsets[edge_id + 1]
         for token in self.molecule_link_tokens[start:end]:
-            read_side, distance = divmod(token, self.end_window)
-            if read_side % 2 == expected_side:
+            read_side_orientation, distance = divmod(
+                token,
+                self.end_window,
+            )
+            side_orientation = read_side_orientation % 4
+            if side_orientation // 2 == expected_side:
                 yield distance
 
 
@@ -442,16 +455,30 @@ def _collect_molecule_links(
                         if qualities is None
                         else qualities[left_base_index]
                     )
-                    yield edge_id, read_index, 0, left_distance, quality
+                    yield (
+                        edge_id,
+                        read_index,
+                        0,
+                        orientation,
+                        left_distance,
+                        quality,
+                    )
                 if right_distance < graph.end_window:
                     quality = (
                         None
                         if qualities is None
                         else qualities[right_base_index]
                     )
-                    yield edge_id, read_index, 1, right_distance, quality
+                    yield (
+                        edge_id,
+                        read_index,
+                        1,
+                        orientation,
+                        right_distance,
+                        quality,
+                    )
 
-    for edge_id, _, _, _, _ in observations():
+    for edge_id, _, _, _, _, _ in observations():
         counts[edge_id] += 1
 
     graph.molecule_link_offsets.append(0)
@@ -467,9 +494,18 @@ def _collect_molecule_links(
         [255]
     ) * graph.molecule_link_offsets[-1]
     cursors = graph.molecule_link_offsets[:-1]
-    for edge_id, read_index, side, distance, quality in observations():
+    for (
+        edge_id,
+        read_index,
+        side,
+        orientation,
+        distance,
+        quality,
+    ) in observations():
         token = (
-            (read_index * 2 + side) * graph.end_window + distance
+            (read_index * 4 + side * 2 + orientation)
+            * graph.end_window
+            + distance
         )
         index = cursors[edge_id]
         graph.molecule_link_tokens[index] = token

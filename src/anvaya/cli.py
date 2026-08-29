@@ -23,6 +23,10 @@ from anvaya.graph import build_dbg
 from anvaya.incomplete_branches import find_incomplete_branch_candidates
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
+from anvaya.paired_extension import (
+    PairedExtensionSummary,
+    extend_paired_unitig_paths,
+)
 from anvaya.reads import load_reads
 from anvaya.unitigs import extract_unitigs
 from anvaya.unitig_bubbles import (
@@ -73,6 +77,20 @@ def _probability(value: str) -> float:
     if not 0.0 < probability < 1.0:
         raise argparse.ArgumentTypeError("probability must be between zero and one")
     return probability
+
+
+def _dominance_ratio(value: str) -> float:
+    try:
+        ratio = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "dominance ratio must be numeric"
+        ) from error
+    if ratio < 1.0:
+        raise argparse.ArgumentTypeError(
+            "dominance ratio must be at least 1"
+        )
+    return ratio
 
 
 def _progress(message: str) -> None:
@@ -146,6 +164,38 @@ def build_parser() -> argparse.ArgumentParser:
         "--detect-bubbles",
         action="store_true",
         help="report simple graph bubbles without changing the assembly",
+    )
+    assemble_parser.add_argument(
+        "--paired-unitig-extension",
+        action="store_true",
+        help=(
+            "extend compacted unitigs only across reciprocal paired-read "
+            "strong-winner links"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--paired-min-support",
+        type=_minimum_count,
+        default=5,
+        help="minimum independent read pairs for extension (default: 5)",
+    )
+    assemble_parser.add_argument(
+        "--paired-dominance-ratio",
+        type=_dominance_ratio,
+        default=3.0,
+        help="winner-to-runner-up support ratio (default: 3.0)",
+    )
+    assemble_parser.add_argument(
+        "--paired-max-distance",
+        type=_minimum_count,
+        default=1000,
+        help="maximum graph distance for mate support (default: 1000)",
+    )
+    assemble_parser.add_argument(
+        "--paired-max-search-states",
+        type=_minimum_count,
+        default=1_000,
+        help="maximum graph states searched per junction (default: 1000)",
     )
     assemble_parser.add_argument(
         "--end-window",
@@ -237,6 +287,11 @@ def _run_assemble(
     orientation_aware: bool,
     clean_tips: bool,
     damage_aware_clean_tips: bool,
+    paired_unitig_extension: bool,
+    paired_min_support: int,
+    paired_dominance_ratio: float,
+    paired_max_distance: int,
+    paired_max_search_states: int,
     detect_bubbles: bool,
     end_window: int,
     event_report: Path | None,
@@ -253,6 +308,16 @@ def _run_assemble(
     if damage_aware_clean_tips and end_window == 0:
         raise ValueError(
             "--damage-aware-clean-tips requires a positive --end-window"
+        )
+    if paired_unitig_extension and len(input_paths) != 2:
+        raise ValueError("--paired-unitig-extension requires paired-end input")
+    if paired_unitig_extension and not orientation_aware:
+        raise ValueError(
+            "--paired-unitig-extension requires --orientation-aware"
+        )
+    if paired_unitig_extension and end_window == 0:
+        raise ValueError(
+            "--paired-unitig-extension requires a positive --end-window"
         )
     if detect_bubbles and not orientation_aware:
         raise ValueError("--detect-bubbles requires --orientation-aware")
@@ -293,7 +358,9 @@ def _run_assemble(
             k,
             min_count,
             end_window=end_window,
-            track_molecule_links=event_report is not None,
+            track_molecule_links=(
+                event_report is not None or paired_unitig_extension
+            ),
             read_qualities=[read.qualities for read in reads],
             read_molecule_ids=molecule_ids,
         )
@@ -366,12 +433,35 @@ def _run_assemble(
     stage_started = time.perf_counter()
     _progress("Extracting unitigs")
     if orientation_aware:
-        unitig_graph = build_compacted_unitig_graph(graph)
+        unitig_graph = build_compacted_unitig_graph(
+            graph,
+            track_edge_handles=paired_unitig_extension,
+        )
         unitigs = unitig_graph.sequences
     else:
         unitig_graph = None
         unitigs = extract_unitigs(graph)
     _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
+
+    paired_extension_summary = PairedExtensionSummary()
+    if paired_unitig_extension:
+        stage_started = time.perf_counter()
+        _progress("Extending unitigs with reciprocal paired-read evidence")
+        paired_result = extend_paired_unitig_paths(
+            graph,
+            unitig_graph,
+            minimum_support=paired_min_support,
+            dominance_ratio=paired_dominance_ratio,
+            maximum_distance=paired_max_distance,
+            maximum_states=paired_max_search_states,
+        )
+        unitigs = list(paired_result.sequences)
+        paired_extension_summary = paired_result.summary
+        _progress(
+            f"Joined {paired_extension_summary.joined_unitig_links} "
+            f"unitig links into {len(unitigs)} contigs in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
 
     unitig_bubble_summary = UnitigBubbleReportSummary()
     if unitig_bubble_report is not None:
@@ -466,6 +556,39 @@ def _run_assemble(
     print(f"unitig_variation_like={unitig_bubble_summary.variation_like}")
     print(f"unitig_ambiguous={unitig_bubble_summary.ambiguous}")
     print(f"unitig_bubble_report={unitig_bubble_report or ''}")
+    print(
+        "paired_unitig_extension="
+        f"{str(paired_unitig_extension).lower()}"
+    )
+    print(
+        "paired_molecules="
+        f"{paired_extension_summary.paired_molecules}"
+    )
+    print(f"paired_mapped_pairs={paired_extension_summary.mapped_pairs}")
+    print(
+        "paired_evidence_links="
+        f"{paired_extension_summary.evidence_links}"
+    )
+    print(
+        "paired_resolved_oriented_junctions="
+        f"{paired_extension_summary.resolved_oriented_junctions}"
+    )
+    print(
+        "paired_evaluated_oriented_junctions="
+        f"{paired_extension_summary.evaluated_oriented_junctions}"
+    )
+    print(
+        "paired_work_limited_oriented_junctions="
+        f"{paired_extension_summary.work_limited_oriented_junctions}"
+    )
+    print(
+        "paired_searched_states="
+        f"{paired_extension_summary.searched_states}"
+    )
+    print(
+        "paired_joined_unitig_links="
+        f"{paired_extension_summary.joined_unitig_links}"
+    )
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -495,6 +618,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.orientation_aware,
                 arguments.clean_tips,
                 arguments.damage_aware_clean_tips,
+                arguments.paired_unitig_extension,
+                arguments.paired_min_support,
+                arguments.paired_dominance_ratio,
+                arguments.paired_max_distance,
+                arguments.paired_max_search_states,
                 arguments.detect_bubbles,
                 arguments.end_window,
                 arguments.event_report,
