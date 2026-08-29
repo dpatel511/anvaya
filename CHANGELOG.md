@@ -6,6 +6,13 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Optional iterative damage-aware tip cleaning through
+  `--damage-aware-clean-tips`, removing only short, weak, one-sided tips
+  classified as error-like while protecting damage-like, variation-like,
+  ambiguous, unmatched, and bidirectionally supported alternatives.
+- Cleaning summaries with round, removal, and protection counts, plus
+  controlled damage/error/rare-strain selection tests and reference-backed
+  QUAST validation of the new policy.
 - Targeted whole-read exact-base evidence for ordinary substitutions, collected
   in a second read pass only for matched allele edges and deduplicated by
   physical molecule, while damage likelihoods remain restricted to oriented

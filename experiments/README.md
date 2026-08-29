@@ -1154,6 +1154,64 @@ not execute the targeted rescan.
 Generated outputs remain ignored under
 `experiments/validation/generated/graph_event_calibration_validation/`.
 
+## Damage-aware tip-cleaning validation
+
+### Question
+
+Can the matched-tip classifier drive real graph simplification without deleting
+simulated damage or rare-strain paths, and does the resulting assembly preserve
+reference-backed accuracy?
+
+The opt-in `--damage-aware-clean-tips` policy applies the existing `2 × k`
+length and 20% competing-support limits for at most five rounds. It removes only
+tips classified as `error-like` when their observed support is one-sided.
+Damage-like, variation-like, ambiguous, unmatched, and bidirectionally
+supported tips remain active.
+
+The complete 20-seed experiment-06 matrix covered 360 runs and 36,977 detected
+tip candidates. Applying the production gate to those truth-labelled rows gave:
+
+| Truth condition | Candidates | One-sided error-like selected | Protected |
+|---|---:|---:|---:|
+| Damage | 35,202 | 0 | 35,202 |
+| Sequencing error | 1,664 | 82 | 1,582 |
+| Rare strain | 111 | 0 | 111 |
+
+An error-like-only rule would have selected 97 error candidates and one
+rare-strain candidate. The false rare-strain candidate and 15 error-like error
+candidates had bidirectional support, so the final guard retained all 16. This
+is a conservative selection audit rather than a claim that every protected
+error is biologically real.
+
+Actual graph mutation was then tested against the exact clean bacterial
+reference on the existing 5×/20×, two-seed matrix. QUAST compared the frozen
+baseline, support-only cleaning, and damage-aware cleaning on identical reads:
+
+| Coverage | Seed | Tips removed | Baseline N50 | Damage-aware N50 | Genome fraction | Misassemblies |
+|---|---:|---:|---:|---:|---:|---:|
+| 5× | 42 | 0 | 695 bp | 695 bp | 73.523% → 73.523% | 0 → 0 |
+| 5× | 43 | 0 | 693 bp | 693 bp | 73.784% → 73.784% | 0 → 0 |
+| 20× | 42 | 10 | 4,648 bp | 4,665 bp | 92.947% → 92.952% | 0 → 0 |
+| 20× | 43 | 7 | 4,680 bp | 4,703 bp | 92.920% → 92.921% | 0 → 0 |
+
+Mismatches and indels per 100 kbp were unchanged in every condition. The new
+policy is therefore high precision but low recall: it preserved measured
+accuracy and made only 0.4–0.5% N50 gains at 20×, compared with the much larger
+but less biologically guarded support-only cleanup.
+
+The public `SRR32866683` v13 run removed 989 tips and 1,121 edges in 7.93
+seconds. Unitigs fell from 740,785 to 739,660 and total assembled bases from
+24,239,229 to 24,215,608. N50 remained 32 bp and the largest unitig remained
+461 bp. The pre-cleaning event TSV and damage-profile JSON were byte-identical
+to v12. Wall time changed from 13:08.86 to 13:28.28 and peak RSS from 7,011,012
+to 7,033,856 KiB. Because this public library has no event truth, those results
+measure execution, topology change, and performance—not biological accuracy.
+
+The lack of public N50 improvement shows that terminal tips are not the main
+fragmentation source in this graph. The next simplification target is the much
+larger set of bounded incomplete branches, using the same protection-first
+validation sequence before any broader bubble handling.
+
 ## K-mer size experiment
 
 ### Question

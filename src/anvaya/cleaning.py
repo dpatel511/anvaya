@@ -1,5 +1,6 @@
 """Conservative simplification of compact orientation-aware graphs."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from anvaya.bidirected import (
@@ -24,6 +25,12 @@ class TipCleaningSummary:
     edges_removed: int = 0
     observations_removed: int = 0
     rounds: int = 0
+    tips_protected: int = 0
+    damage_like_protected: int = 0
+    variation_like_protected: int = 0
+    ambiguous_protected: int = 0
+    unmatched_protected: int = 0
+    bidirectional_protected: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -107,6 +114,8 @@ def find_weak_tip_candidates(
 def remove_weak_tips(
     graph: BidirectedDeBruijnGraph,
     max_tip_length: int | None = None,
+    *,
+    protect: Callable[[TipCandidate], bool] | None = None,
 ) -> TipCleaningSummary:
     """Remove short dead ends supported at no more than 20% of a competitor."""
     if max_tip_length is None:
@@ -131,6 +140,8 @@ def remove_weak_tips(
             candidate = _tip_candidate(graph, start, max_tip_length)
             if candidate is None:
                 continue
+            if protect is not None and protect(candidate):
+                continue
 
             for edge_id in candidate.edge_ids:
                 observations_removed += _deactivate_edge(graph, edge_id)
@@ -147,4 +158,59 @@ def remove_weak_tips(
         edges_removed=edges_removed,
         observations_removed=observations_removed,
         rounds=rounds,
+    )
+
+
+def remove_damage_aware_tips(
+    graph: BidirectedDeBruijnGraph,
+    max_tip_length: int | None = None,
+) -> TipCleaningSummary:
+    """Iteratively remove only one-sided weak tips classified as error-like."""
+    if graph.end_window == 0:
+        raise ValueError("damage-aware tip cleaning requires read-end evidence")
+
+    # Local imports avoid a module cycle: tip matching depends on TipCandidate.
+    from anvaya.tip_classification import classify_tip_match
+    from anvaya.tip_matching import match_tip_to_backbone
+
+    protected: dict[tuple[int, ...], str] = {}
+
+    def protect(candidate: TipCandidate) -> bool:
+        signature = tuple(sorted(candidate.edge_ids))
+        if signature in protected:
+            return True
+        match = match_tip_to_backbone(graph, candidate)
+        if match is None:
+            protected.setdefault(signature, "unmatched")
+            return True
+        classification = classify_tip_match(graph, match)
+        if (
+            classification.label == "error-like"
+            and classification.evidence.tip_strand_balance == 0.0
+        ):
+            return False
+        if classification.label == "error-like":
+            protected.setdefault(signature, "bidirectional")
+            return True
+        label = classification.label
+        protected.setdefault(signature, label)
+        return True
+
+    removed = remove_weak_tips(
+        graph,
+        max_tip_length,
+        protect=protect,
+    )
+    labels = tuple(protected.values())
+    return TipCleaningSummary(
+        tips_removed=removed.tips_removed,
+        edges_removed=removed.edges_removed,
+        observations_removed=removed.observations_removed,
+        rounds=removed.rounds,
+        tips_protected=len(labels),
+        damage_like_protected=labels.count("damage-like"),
+        variation_like_protected=labels.count("variation-like"),
+        ambiguous_protected=labels.count("ambiguous"),
+        unmatched_protected=labels.count("unmatched"),
+        bidirectional_protected=labels.count("bidirectional"),
     )

@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, conservative tip cleaning, simple-bubble detection, weak-tip-to-backbone matching, unitig-level bubble scoring, and non-destructive evidence-based classification of graph alternatives.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, support-only and damage-aware conservative tip cleaning, simple-bubble detection, weak-tip-to-backbone matching, unitig-level bubble scoring, and evidence-based classification of graph alternatives.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -29,6 +29,9 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - combined forward and reverse-complement k-mer support;
 - optional minimum k-mer support filtering;
 - experimental conservative tip cleaning for short, weak dead-end paths;
+- experimental damage-aware tip cleaning that removes only one-sided
+  error-like tips and protects damage-like, variation-like, ambiguous,
+  unmatched, or bidirectionally supported alternatives;
 - non-destructive detection of bounded, simple graph bubbles;
 - compact read-end evidence collected during orientation-aware graph construction;
 - side-specific base qualities retained for molecule-linked terminal observations;
@@ -86,7 +89,22 @@ anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
   --orientation-aware --clean-tips -o contigs.fasta
 ```
 
-Tip cleaning is not yet a default because it must be validated on damaged reads and low-abundance strains.
+The support-only cleaner is useful as a comparison policy but can erase genuine
+low-abundance alternatives. The damage-aware policy adds read-end classification
+and bidirectional-support gates:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --end-window 5 --damage-aware-clean-tips \
+  -o contigs.fasta
+```
+
+The two cleaning modes are mutually exclusive and remain opt-in. In a 20-seed
+controlled selection matrix, the damage-aware gate selected 82 simulated error
+tips and no simulated damage or rare-strain tips. Four reference-backed clean
+assemblies at 5× and 20× introduced no misassemblies, mismatches, indels, or
+genome-fraction loss. This establishes conservative behavior in those tests,
+not universal biological accuracy.
 
 Simple bubbles can be reported without changing the graph or output unitigs:
 
