@@ -158,6 +158,28 @@ The expanded matrix holds rare-strain mixtures at 20× total depth and includes 
 
 Variation was strongly separated by path length, alternative/reference path observations, terminal fraction, terminal enrichment, and relative coverage. Median variation paths contained 21 edges and terminal fraction 0.33, compared with one edge/1.0 for damage and two edges/1.0 for error. Damage versus error remained less separable, and independent terminal errors continued to resemble damage or variation. Graph context is therefore suitable first as variation-protection evidence, not as a standalone deletion rule. The funnel also exposes the next bottleneck: 96 variation events were detected and matched but only 17 were scoreable inside the five-base terminal likelihood window.
 
+Targeted whole-read recovery closes much of that evidence gap for ordinary
+substitutions. Event matches are computed once, their changed allele edges are
+collected, and the loaded reads are rescanned once. Evidence is aggregated to
+one best-quality call per physical molecule and edge, rather than storing a
+Python object for every k-mer occurrence. Damage-compatible C→T/G→A scoring
+continues to use only orientation-correct terminal cycles.
+
+In the repeated three-calibration/two-validation matrix, scoreable error events
+increased from 152/103 to 301/202 and variation from 26/17 to 78/53 for
+calibration/validation. Correct validation rankings increased from 19 to 49
+for error and from one to 44 for variation. Damage remained unchanged at
+2,762/1,909 scored events and 1,680 damage versus 229 variation rankings.
+
+The `SRR32866683` v12 run preserved byte-identical v10 contigs and damage
+profile and all 111,399 event rows. Scoreable rows increased from 25,415 to
+78,663; error rankings increased from 470 to 2,994 and variation rankings from
+20,428 to 71,021, while damage remained effectively stable at 646 versus 645.
+Because the public library has no event truth, these are evidence-coverage and
+non-regression results rather than biological-accuracy estimates. The targeted
+read pass increased event reporting from 171.65 to 547.07 seconds and total
+runtime from 504.61 to 853.12 seconds, with 7,011,012 KiB peak RSS and no swap.
+
 The classifier does not yet change topology or improve N50 directly. It creates an auditable decision layer that can later protect damage-like and ambiguous paths while a separately validated simplifier targets only high-confidence errors. Simulation truth validates implementation behavior; byte-identical public reruns validate non-regression. Neither establishes biological accuracy on an unlabeled public library. That requires independently characterized untreated and UDG-treated libraries plus expanded held-out community mixtures.
 
 ## Incomplete-branch matching
@@ -186,13 +208,24 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Expand exact changed-base fragment evidence beyond the terminal window for ordinary error and variation models while keeping damage probabilities restricted to biologically meaningful terminal cycles.
-2. Expand the graph-derived calibration corpus across additional references, coverage regimes, library protocols, and recurrent non-systematic error fixtures.
-3. Fit and validate a regularized context-aware variation-protection model only after the held-out variation class reaches adequate sample size.
-4. Validate the damage model on independently characterized untreated, partial-UDG, and full-UDG libraries, then add whole-library opportunities and bootstrap or profiled predictive uncertainty.
-5. Extend incomplete-branch matching to unequal-length and locally non-linear backbones.
-6. Implement optional conservative simplification only for repeatedly supported `eligible_error` paths.
-7. Validate N50, accuracy, and strain retention on simulated and empirical mixtures, including direct comparison with MEGAHIT, metaSPAdes, and CarpeDeam.
-8. Evaluate paired-read linkage, controlled multi-k assembly, and profiled native-code optimization where needed.
+1. Recalibrate ordinary whole-read events separately from terminal
+   damage-compatible events and expand held-out references, coverage regimes,
+   library protocols, and recurrent non-systematic error fixtures.
+2. Fit and validate a regularized context-aware variation-protection model now
+   that the held-out variation class has substantially more scoreable events.
+3. Add report-only shadow-cleaning decisions and measure false removal of
+   damage and rare-strain paths before allowing topology changes.
+4. Validate the damage model on independently characterized untreated,
+   partial-UDG, and full-UDG libraries, then add whole-library opportunities
+   and bootstrap or profiled predictive uncertainty.
+5. Extend incomplete-branch matching to unequal-length and locally non-linear
+   backbones.
+6. Implement optional conservative simplification only for repeatedly
+   supported `eligible_error` paths.
+7. Validate N50, accuracy, and strain retention on simulated and empirical
+   mixtures, including direct comparison with MEGAHIT, metaSPAdes, and
+   CarpeDeam.
+8. Profile a native or compiled whole-read evidence scanner; retain the current
+   pure-Python targeted pass as the auditable reference implementation.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.

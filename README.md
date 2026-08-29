@@ -40,6 +40,8 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - report-only graph-context features and held-out separation summaries for topology, path multiplicity, local coverage, fragment support, and terminal evidence;
 - direct dominant-path likelihood comparison for equal-length bubble alternatives;
 - ordinary-substitution likelihood scoring without inventing a damage channel;
+- targeted whole-read molecule and base-quality recovery for ordinary
+  substitutions, without retaining observations for every graph edge;
 - physical-fragment identities shared by paired reads, with conflicting allele evidence excluded;
 - optional report-only conformal confidence calibration with multiple-testing correction and conservative protection decisions;
 - sequence-level TSV reports for weak tips and bubble paths;
@@ -107,6 +109,16 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
 ```
 
 Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available; equal-length bubble alternatives are compared directly with the locally dominant bubble path. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, physical-fragment linkage across substitutions, retained base-quality summaries, a Phred-derived sequencing-error log likelihood, three heuristic scores, and an auditable classification. Paired mates retain separate read indices but share one fragment identifier, and a fragment with contradictory allele observations is excluded from both support counts. The error likelihood assumes equiprobable wrong nucleotides, `P(observed alternative | sequencing error) = 10^(-Q/10) / 3`, and is omitted rather than imputed when qualities are unavailable. Damage, error, and variation likelihoods are conditioned on the graph event containing at least one consistent alternative fragment and one consistent reference fragment; the report records the conditioning scope and probability for every model. When a damage-profile report is requested, exact C→T/5′ and G→A/3′ events receive all three likelihoods; ordinary substitutions receive error-versus-variation scoring without a damage explanation. Weak-tip loci use deterministic five-fold damage profiles fitted without the fold containing the event; incomplete branches and bubble paths use the tip-derived profile and are therefore independent of its training loci. The variation explanation fits one constant local alternative frequency up to 0.5 and receives a one-parameter BIC penalty. A high-quality alternative seen in only one physical fragment is reported as ambiguous when error otherwise ranks first, because the observations cannot distinguish it from genuine rare variation. Rankings and margins are diagnostic—not posterior probabilities, classifier inputs, or removal decisions.
+
+Ordinary substitutions are no longer limited to the configured damage window.
+After event matching, reporting rescans the loaded reads for only the changed
+alternative and reference edges, retains one best-quality observation per
+physical molecule, and applies the error-versus-variation models to that
+whole-read evidence. This targeted second pass avoids an all-edge occurrence
+index, but it is intentionally accuracy-first: on the 1,409,072-read public
+dataset it increased report time from 171.65 to 547.07 seconds and the complete
+run from 504.61 to 853.12 seconds. Assembly without `--event-report` does not
+pay this cost.
 
 Classification accuracy is assessed at three distinct levels. Controlled simulations provide exact generating-process labels for damage, independent errors, systematic terminal errors, and rare-strain variants; calibration and validation references use disjoint seeds. Public-data reruns test deterministic non-regression by requiring identical contigs, damage profiles, event counts, and evidence funnels. They do not provide biological ground truth. Claims of real-library damage accuracy therefore remain deferred until independently characterized untreated, partial-UDG, and full-UDG libraries reproduce the expected protocol-specific damage behavior.
 

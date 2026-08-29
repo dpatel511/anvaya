@@ -1125,6 +1125,32 @@ The evidence funnel detected and matched 96 validation variation events but
 scored only 17, making exact evidence recovery beyond the five-base terminal
 window the next implementation target.
 
+The follow-up adds targeted whole-read evidence for ordinary substitutions.
+After all event paths are matched once, only changed alternative/reference
+edges are indexed during one additional read pass. Repeated occurrences are
+collapsed to the best-quality call per physical molecule. Damage-compatible
+C→T/G→A events retain the existing terminal-cycle model, so the additional
+ordinary evidence cannot create an internal damage explanation.
+
+Using the same three calibration and two validation references, scored errors
+increased from 152/103 to 301/202 and variation from 26/17 to 78/53 for
+calibration/validation. Validation error rankings were 49 error, 140 variation,
+12 damage, and one ambiguous; variation rankings were 44 variation, six
+ambiguous, and three damage. Damage results were unchanged at 1,909 scoreable:
+1,680 damage and 229 variation. Calibration still produced no
+`eligible_error` decisions, so the next bottleneck is calibration of the new
+evidence scope rather than event recovery.
+
+On `SRR32866683`, v12 preserved the byte-identical v10 contigs and damage
+profile and all 111,399 event rows. Scoreable events increased from 25,415 to
+78,663; insufficient-evidence rows fell from 75,463 to 22,215. Rankings changed
+from 646 damage, 470 error, 20,428 variation, and 3,871 ambiguous to 645 damage,
+2,994 error, 71,021 variation, and 4,003 ambiguous. Event reporting increased
+from 171.65 to 547.07 seconds and total runtime from 504.61 to 853.12 seconds.
+Peak RSS was 7,011,012 KiB with no swap. This report-only accuracy/performance
+tradeoff is documented explicitly; assembly runs without event reporting do
+not execute the targeted rescan.
+
 Generated outputs remain ignored under
 `experiments/validation/generated/graph_event_calibration_validation/`.
 

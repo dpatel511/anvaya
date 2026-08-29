@@ -5,7 +5,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from math import exp, log, log1p
 
-from anvaya.bidirected import BidirectedDeBruijnGraph, _successor
+from anvaya.bidirected import (
+    BidirectedDeBruijnGraph,
+    _successor,
+)
 from anvaya.damage_likelihood import fit_candidate_damage_model
 from anvaya.damage_profile import DamageProfile, DamageProfileLocus
 from anvaya.tip_matching import TipBackboneMatch
@@ -653,10 +656,41 @@ def _ordinary_edge_observations_at(
     return observations, missing
 
 
+def _whole_read_edge_observations_at(
+    graph: BidirectedDeBruijnGraph,
+    edge_ids: tuple[int, ...],
+    edge_index: int,
+    *,
+    alternative: bool,
+    edge_links: dict[int, dict[int, int | None]],
+) -> tuple[list[NucleotideObservation], int]:
+    """Return exact-base evidence from every read crossing one allele edge."""
+    edge_id = edge_ids[edge_index]
+    observations: dict[int, NucleotideObservation] = {}
+    missing: set[int] = set()
+    for molecule_id, quality in edge_links.get(edge_id, {}).items():
+        if quality is None:
+            missing.add(molecule_id)
+            continue
+        observation = NucleotideObservation(
+            alternative=alternative,
+            distance=graph.end_window,
+            quality=quality,
+            damage_probability=0.0,
+            molecule_id=molecule_id,
+        )
+        previous = observations.get(molecule_id)
+        if previous is None or observation.quality > previous.quality:
+            observations[molecule_id] = observation
+    missing.difference_update(observations)
+    return list(observations.values()), len(missing)
+
+
 def score_matched_event(
     graph: BidirectedDeBruijnGraph,
     match: TipBackboneMatch,
     models: CrossFittedDamageModels | None,
+    edge_links: dict[int, dict[int, int | None]] | None = None,
 ) -> EventLikelihood:
     """Score one matched graph event using exact-base molecule evidence."""
     if models is None:
@@ -679,6 +713,31 @@ def score_matched_event(
             0 <= edge_index < len(match.tip_edge_ids)
             and edge_index < len(match.backbone_edge_ids)
         ):
+            continue
+        damage_compatible = (
+            change.reference == "C" and change.alternative == "T"
+        ) or (
+            change.reference == "G" and change.alternative == "A"
+        )
+        if edge_links is not None and not damage_compatible:
+            alternative, alternative_missing = _whole_read_edge_observations_at(
+                graph,
+                match.tip_edge_ids,
+                edge_index,
+                alternative=True,
+                edge_links=edge_links,
+            )
+            reference, reference_missing = _whole_read_edge_observations_at(
+                graph,
+                match.backbone_edge_ids,
+                edge_index,
+                alternative=False,
+                edge_links=edge_links,
+            )
+            observations.extend(alternative)
+            observations.extend(reference)
+            missing += alternative_missing + reference_missing
+            scopes.append("ordinary_whole_read_exact_base_evidence")
             continue
         if change.reference == "C" and change.alternative == "T":
             expected_end = "left"

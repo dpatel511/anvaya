@@ -6,6 +6,13 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Targeted whole-read exact-base evidence for ordinary substitutions, collected
+  in a second read pass only for matched allele edges and deduplicated by
+  physical molecule, while damage likelihoods remain restricted to oriented
+  terminal cycles.
+- Reusable precomputed tip, incomplete-branch, and bubble-path matches during
+  event reporting, avoiding repeated path matching during evidence collection
+  and TSV generation.
 - Report-only graph-context extraction for matched events, including topology,
   path multiplicity, local coverage, fragment support, terminal behavior,
   strand balance, damage distance, and base quality.

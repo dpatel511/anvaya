@@ -480,6 +480,52 @@ def _collect_molecule_links(
     graph.molecule_links_collected = True
 
 
+def collect_target_edge_links(
+    graph: BidirectedDeBruijnGraph,
+    reads: Sequence[str],
+    edge_ids: Sequence[int],
+    read_qualities: Sequence[Sequence[int] | None] | None = None,
+    read_molecule_ids: Sequence[int] | None = None,
+) -> dict[int, dict[int, int | None]]:
+    """Aggregate selected edge observations once per source molecule."""
+    if read_qualities is not None and len(read_qualities) != len(reads):
+        raise ValueError("read qualities must align one-to-one with reads")
+    if read_molecule_ids is not None and len(read_molecule_ids) != len(reads):
+        raise ValueError("molecule IDs must align one-to-one with reads")
+
+    k = graph.node_length + 1
+    code_to_edge: dict[int, int] = {}
+    for edge_id in set(edge_ids):
+        source = graph.edge_sources[edge_id]
+        sequence = oriented_sequence(graph, source) + _oriented_last_base(
+            graph, graph.edge_targets[edge_id]
+        )
+        _, code, orientation = next(_positioned_encoded_kmers(sequence, k))
+        if orientation != 2:
+            code_to_edge[code] = edge_id
+
+    links: dict[int, dict[int, int | None]] = {
+        edge_id: {} for edge_id in code_to_edge.values()
+    }
+    for read_index, read in enumerate(reads):
+        qualities = None if read_qualities is None else read_qualities[read_index]
+        molecule_id = (
+            read_index
+            if read_molecule_ids is None
+            else read_molecule_ids[read_index]
+        )
+        for start, code, orientation in _positioned_encoded_kmers(read, k):
+            edge_id = code_to_edge.get(code)
+            if edge_id is None or orientation == 2:
+                continue
+            base_index = start + k - 1 if orientation == 0 else start
+            quality = None if qualities is None else qualities[base_index]
+            previous = links[edge_id].get(molecule_id)
+            if previous is None or (quality is not None and quality > previous):
+                links[edge_id][molecule_id] = quality
+    return links
+
+
 def oriented_sequence(graph: BidirectedDeBruijnGraph, handle: Handle) -> str:
     """Return the node sequence spelled by an oriented handle."""
     code = graph.node_codes[handle >> 1]
