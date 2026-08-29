@@ -26,8 +26,15 @@ from anvaya.output import write_fasta
 from anvaya.paired_extension import (
     PairedExtensionSummary,
     extend_paired_unitig_paths,
+    spell_extended_paths,
 )
 from anvaya.reads import load_reads
+from anvaya.read_threading import (
+    ReadThreadingSummary,
+    audit_read_threads,
+    resolve_read_thread_extensions,
+    write_read_thread_report,
+)
 from anvaya.unitigs import extract_unitigs
 from anvaya.unitig_bubbles import (
     UnitigBubbleReportSummary,
@@ -198,6 +205,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="maximum graph states searched per junction (default: 1000)",
     )
     assemble_parser.add_argument(
+        "--read-thread-report",
+        type=Path,
+        help=(
+            "audit direct read crossings of compacted-graph junctions as TSV "
+            "without changing the assembly"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--read-thread-extension",
+        action="store_true",
+        help=(
+            "join only reciprocal strong-winner unitig transitions directly "
+            "crossed by source reads"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--thread-min-support",
+        type=_minimum_count,
+        default=5,
+        help="minimum molecules for an auditable junction winner (default: 5)",
+    )
+    assemble_parser.add_argument(
+        "--thread-dominance-ratio",
+        type=_dominance_ratio,
+        default=3.0,
+        help="threaded winner-to-runner-up ratio (default: 3.0)",
+    )
+    assemble_parser.add_argument(
+        "--thread-repeat-coverage-ratio",
+        type=_dominance_ratio,
+        default=2.0,
+        help=(
+            "break joined chains through unitigs with at least this local "
+            "coverage multiple (default: 2.0)"
+        ),
+    )
+    assemble_parser.add_argument(
         "--end-window",
         type=_end_window,
         default=0,
@@ -292,6 +336,11 @@ def _run_assemble(
     paired_dominance_ratio: float,
     paired_max_distance: int,
     paired_max_search_states: int,
+    read_thread_report: Path | None,
+    read_thread_extension: bool,
+    thread_min_support: int,
+    thread_dominance_ratio: float,
+    thread_repeat_coverage_ratio: float,
     detect_bubbles: bool,
     end_window: int,
     event_report: Path | None,
@@ -318,6 +367,19 @@ def _run_assemble(
     if paired_unitig_extension and end_window == 0:
         raise ValueError(
             "--paired-unitig-extension requires a positive --end-window"
+        )
+    if read_thread_report is not None and not orientation_aware:
+        raise ValueError("--read-thread-report requires --orientation-aware")
+    if read_thread_extension and not orientation_aware:
+        raise ValueError("--read-thread-extension requires --orientation-aware")
+    if read_thread_extension and end_window == 0:
+        raise ValueError(
+            "--read-thread-extension requires a positive --end-window"
+        )
+    if read_thread_extension and paired_unitig_extension:
+        raise ValueError(
+            "--read-thread-extension and --paired-unitig-extension are "
+            "currently mutually exclusive"
         )
     if detect_bubbles and not orientation_aware:
         raise ValueError("--detect-bubbles requires --orientation-aware")
@@ -435,13 +497,52 @@ def _run_assemble(
     if orientation_aware:
         unitig_graph = build_compacted_unitig_graph(
             graph,
-            track_edge_handles=paired_unitig_extension,
+            track_edge_handles=(
+                paired_unitig_extension
+                or read_thread_report is not None
+                or read_thread_extension
+            ),
         )
         unitigs = unitig_graph.sequences
     else:
         unitig_graph = None
         unitigs = extract_unitigs(graph)
     _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
+
+    read_thread_summary = ReadThreadingSummary()
+    threaded_links = 0
+    if read_thread_report is not None or read_thread_extension:
+        stage_started = time.perf_counter()
+        _progress("Auditing direct read paths across unitig junctions")
+        molecules = (
+            zip(*read_groups, strict=True)
+            if len(read_groups) == 2
+            else ((read,) for read in read_groups[0])
+        )
+        transitions, read_thread_summary = audit_read_threads(
+            graph,
+            unitig_graph,
+            molecules,
+            end_window=end_window,
+            minimum_support=thread_min_support,
+            dominance_ratio=thread_dominance_ratio,
+        )
+        if read_thread_report is not None:
+            write_read_thread_report(transitions, read_thread_report)
+        if read_thread_extension:
+            successors = resolve_read_thread_extensions(
+                transitions,
+                repeat_coverage_ratio=thread_repeat_coverage_ratio,
+            )
+            threaded_links = len(successors) // 2
+            unitigs = list(spell_extended_paths(unitig_graph, successors))
+        _progress(
+            f"Observed {read_thread_summary.supported_transitions} direct "
+            f"transitions and {read_thread_summary.resolvable_junctions} "
+            f"strong-winner junctions ({read_thread_summary.reciprocal_resolvable_links} "
+            f"reciprocal physical links) in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
 
     paired_extension_summary = PairedExtensionSummary()
     if paired_unitig_extension:
@@ -589,6 +690,29 @@ def _run_assemble(
         "paired_joined_unitig_links="
         f"{paired_extension_summary.joined_unitig_links}"
     )
+    print(f"read_thread_report={read_thread_report or ''}")
+    print(f"read_thread_extension={str(read_thread_extension).lower()}")
+    print(f"thread_joined_unitig_links={threaded_links}")
+    print(f"thread_junctions={read_thread_summary.junctions}")
+    print(
+        "thread_candidate_transitions="
+        f"{read_thread_summary.candidate_transitions}"
+    )
+    print(
+        "thread_supported_transitions="
+        f"{read_thread_summary.supported_transitions}"
+    )
+    print(f"threaded_molecules={read_thread_summary.threaded_molecules}")
+    print(f"threaded_reads={read_thread_summary.threaded_reads}")
+    print(
+        "thread_resolvable_junctions="
+        f"{read_thread_summary.resolvable_junctions}"
+    )
+    print(
+        "thread_reciprocal_resolvable_links="
+        f"{read_thread_summary.reciprocal_resolvable_links}"
+    )
+    print(f"thread_repeat_coverage_ratio={thread_repeat_coverage_ratio}")
     print(f"nodes={summary.nodes}")
     print(f"edges={summary.edges}")
     print(f"observations={summary.observations}")
@@ -623,6 +747,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.paired_dominance_ratio,
                 arguments.paired_max_distance,
                 arguments.paired_max_search_states,
+                arguments.read_thread_report,
+                arguments.read_thread_extension,
+                arguments.thread_min_support,
+                arguments.thread_dominance_ratio,
+                arguments.thread_repeat_coverage_ratio,
                 arguments.detect_bubbles,
                 arguments.end_window,
                 arguments.event_report,

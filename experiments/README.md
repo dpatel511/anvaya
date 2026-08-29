@@ -1302,3 +1302,68 @@ reduced the longest contig from 461 to 366 bp. These mixed fixed-k results make
 iterative multi-k construction the next continuity target; paired extension
 remains optional and is not presented as the solution to public-data
 fragmentation.
+
+## Direct read-thread extension validation
+
+Experiment 16 audits direct source-read crossings of compacted-graph junctions.
+It counts independent physical molecules, requires a five-molecule/3:1 strong
+winner, and accepts a physical link only when the reverse orientation selects
+the reciprocal transition. A boundary-only edge index avoids retaining or
+rescanning mappings for every graph edge. Report-only execution is
+non-destructive and produced byte-identical FASTA output in validation.
+
+Five seeds were tested under clean, standard bidirectional terminal damage,
+0.5% sequencing error, and 15× major plus 5× related-strain conditions. Across
+20 runs, all 2,335 reciprocal links were locally present in the known reference
+or related-strain truth. Final-contig truth was also measured because locally
+valid links can compose through repeated unitigs.
+
+On the clean 20× `GCF_000007145.1` ART dataset, fixed `k=31`, damage-aware tip
+cleaning produced 6,342 unitigs. Direct threading initially accepted 2,401
+links and produced 3,941 contigs:
+
+| Metric | Damage-aware baseline | Unguarded threading | Repeat-guarded threading |
+|---|---:|---:|---:|
+| Unitigs/contigs | 6,342 | 3,941 | 3,942 |
+| Largest contig | 20,336 bp | 81,176 bp | 81,176 bp |
+| N50 | 4,856 bp | 18,021 bp | 18,021 bp |
+| Genome fraction | 96.903% | 97.262% | 97.260% |
+| Duplication ratio | 1.005 | 1.001 | 1.001 |
+| Misassemblies | 0 | 0 | 0 |
+| Mismatches per 100 kbp | 0.00 | 0.00 | 0.00 |
+| Indels per 100 kbp | 0.00 | 0.02 | 0.00 |
+
+The unguarded indel was a seven-base discrepancy inside a repeated 2,530 bp
+unitig, not at an overlap boundary. Its adjacent 37 bp hub had mean edge support
+39.43, compared with 15.22 and 19.63 on its flanks. A same-read
+adjacent-junction gate was rejected because it removed 19 joins, reduced N50 to
+17,474 bp, and did not remove the indel. The final local copy-number guard
+requires the internal unitig to have at least 2× the support of both flanks and
+then discards the weaker adjacent join. It removed one link and eliminated the
+indel without reducing N50 or the largest contig.
+
+Experiment 17 adds short variable fragments, terminal damage, sequencing error,
+a related strain, and unrelated contamination. Across 20 runs it observed
+6,989 reciprocal links. Exact-reference truth counted 6,987 as correct; the two
+failures occurred in one damaged strain-plus-contamination run. All 6,989 were
+correct under R/Y topology truth, which treats C→T and G→A damage as compatible,
+and no condition gained false contigs. The experiment reports exact and R/Y
+truth separately rather than treating retained damage as an assembly error.
+
+Public `SRR32866683` results at `k=31` were:
+
+| Metric | Fixed-k baseline | Unguarded v20 | Guarded v21 |
+|---|---:|---:|---:|
+| Unitigs/contigs | 639,369 | 606,700 | 606,706 |
+| Joined links | — | 32,669 | 32,663 |
+| Largest contig | 366 bp | 435 bp | 435 bp |
+| N50 | 38 bp | 40 bp | 40 bp |
+| Peak RSS | 6,627,640 KiB | 6,619,336 KiB | 6,601,744 KiB |
+
+The guard rejected six links, or 0.018% of reciprocal candidates, and retained
+the continuity gain. The measured v21 wall time was 6:55.61 versus 5:38.61 for
+v20, but graph construction alone varied by 35.58 seconds and v21 wrote a
+larger coverage-annotated audit report. Repeated support-object allocation found
+during this comparison was removed afterward; the optimized arithmetic path
+has unit-test coverage but was not re-timed on the public dataset. No biological
+accuracy claim is made for this unlabeled library.
