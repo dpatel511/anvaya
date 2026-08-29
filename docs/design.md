@@ -307,3 +307,46 @@ one misassembly, 1.50 mismatches, and 0.04 indels per 100 kbp. Both were rejecte
 Correct exSPAnder-style growing-path context requires insert-size-aware mapping
 and is not approximated by propagating evidence through a topologically unique
 chain.
+
+## Direct read-thread unitig extension
+
+The direct threading stage indexes only physical graph edges at compacted-graph
+junction boundaries. Source reads are streamed again, and consecutive indexed
+k-mers provide oriented unitig transitions. Evidence is deduplicated first per
+read and then per physical molecule. A branching source is resolvable only when
+one target has at least five molecules and 3:1 support over the runner-up; the
+reverse orientation must independently choose the reciprocal physical link.
+The audit retains zero-support candidates, orientation counts, terminal and
+internal support, base quality, local mean edge support, rank, and dominance.
+
+Reciprocal links are converted into reverse-symmetric successors and spelled
+with the same overlap-aware path routine as paired extension. Before spelling,
+the resolver examines every internal unitig in a proposed joined chain. If its
+mean edge support is at least twice that of both flanks, it is treated as a
+local multi-copy repeat signal and the weaker adjacent physical link is
+discarded. This is a local ratio rather than a global coverage threshold, which
+is important for uneven-coverage metagenomes. The ratio is configurable through
+`--thread-repeat-coverage-ratio`; the validated default is 2.0.
+
+A same-read adjacent-junction gate was tested first and rejected. It removed 19
+links, reduced reference N50 from 18,021 to 17,474 bp, and retained the same
+7 bp indel. The discrepancy lay inside a 2,530 bp repeated unitig, while the
+short internal hub had mean support 39.43 versus 15.22 and 19.63 on its flanks.
+The final coverage guard removed one unsafe link, restored N50 to 18,021 bp,
+and reduced QUAST indels from one to zero without changing the 81,176 bp
+largest contig or introducing mismatches or misassemblies.
+
+Experiment 17 adds truncated log-normal short fragments, bidirectional terminal
+damage, sequencing errors, a related strain, and an unrelated contaminant.
+Across 20 runs, 6,989 reciprocal links had 6,987 exact-reference matches. The
+two exact failures were C/T- or G/A-compatible paths in one damaged mixture;
+all 6,989 links were correct under R/Y topology truth, and extension did not
+increase false-contig counts. Exact and R/Y results are reported separately so
+validation does not optimize away the damage signal the assembler must retain.
+
+On public `SRR32866683` at `k=31`, the guard rejected six of 32,669 reciprocal
+links. Relative to fixed-k damage-aware output, joined contigs fell from 639,369
+to 606,706, N50 increased from 38 to 40 bp, and the largest contig increased
+from 366 to 435 bp. Relative to unguarded threading, N50 and largest-contig
+length were unchanged. Because this sample has no assembly truth, the public
+run validates execution, conservative selection, and resource behavior only.

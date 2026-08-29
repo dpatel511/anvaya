@@ -58,6 +58,8 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - oriented unitig-level graph links with aggregate coverage and terminal evidence;
 - optional reciprocal paired-read unitig extension with strong-winner and
   bounded-work ambiguity guards;
+- optional direct read-thread extension with molecule-level strong-winner,
+  reciprocal-orientation, and local repeat-coverage guards;
 - bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
 - labelled unitig-bubble validation across clean, error, damage, and rare-strain simulations;
 - unitig-path terminal/internal evidence, terminal enrichment, and strand-balance scores;
@@ -127,6 +129,39 @@ and genome fraction from 92.952% to 93.014% with zero QUAST misassemblies,
 mismatches, or indels. On the unlabeled `SRR32866683` library, paired extension
 made only 17 joins at `k=21` and did not change its 32 bp N50, so this remains
 an experimental repeat resolver rather than a general continuity solution.
+
+Source reads can instead be threaded directly across compacted-graph junctions:
+
+```bash
+anvaya assemble -1 left.fastq.gz -2 right.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --end-window 5 --damage-aware-clean-tips \
+  --read-thread-extension --read-thread-report read-threads.tsv \
+  -o contigs.fasta
+```
+
+The default policy requires five independent molecules, 3:1 dominance, and
+reciprocal orientation agreement. It also breaks the weaker of two adjacent
+joins when their internal unitig has at least twice the mean edge support of
+both flanks, a local copy-number signal controlled by
+`--thread-repeat-coverage-ratio`. The report-only form can be used without
+`--read-thread-extension` and does not change the FASTA.
+
+On the clean 20× `GCF_000007145.1` reference-backed dataset, direct threading
+reduced 6,342 unitigs to 3,942 contigs, increased N50 from 4,856 to 18,021 bp,
+increased the largest contig from 20,336 to 81,176 bp, and recovered 97.260% of
+the reference. QUAST reported zero misassemblies, mismatches, and indels. The
+coverage guard rejected one repeat-like join that otherwise introduced a 7 bp
+indel, without reducing N50. A 20-run short-fragment, damage, sequencing-error,
+related-strain, and contamination matrix accepted 6,989 links with 100% R/Y
+damage-tolerant topology precision and no increase in false contigs.
+
+On public `SRR32866683`, threading at `k=31` joined 32,663 links, reduced
+639,369 unitigs to 606,706 contigs, increased N50 from 38 to 40 bp, and raised
+the largest contig from 366 to 435 bp. The coverage guard rejected only six of
+32,669 reciprocal candidates and preserved the v20 continuity metrics. This
+library lacks assembly truth, so those numbers establish execution and
+reference-free topology changes—not biological correctness. Read threading
+therefore remains experimental and opt-in.
 
 Simple bubbles can be reported without changing the graph or output unitigs:
 

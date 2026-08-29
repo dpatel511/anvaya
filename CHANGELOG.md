@@ -6,6 +6,15 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Opt-in direct read-thread extension across compacted-graph junctions, using
+  independent molecule support, 3:1 strong-winner selection, reciprocal
+  orientation agreement, and a boundary-only edge index.
+- A local two-copy coverage guard that breaks the weaker adjacent join when an
+  internal threaded unitig has at least twice the coverage of both flanks.
+- Thread-audit TSV fields for directional molecule support, terminal and
+  internal evidence, base quality, local unitig coverage, candidate rank,
+  dominance, resolvability, and reciprocal selection, plus clean and
+  ancient-like truth-labelled validation experiments 16 and 17.
 - Opt-in reciprocal paired-read extension of compacted unitig paths, with
   orientation-aware molecule anchors, strong-winner scoring, bounded target
   searches, reciprocal joins, and explicit search-work audit counters.
