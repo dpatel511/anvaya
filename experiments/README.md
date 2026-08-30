@@ -97,6 +97,8 @@ Generated reports remain ignored under `experiments/baseline/results/run_01/`:
 - `quast/report.html`: interactive QUAST report;
 - `timing/*.txt`: wall time and peak-memory measurements;
 - `commands.txt`: exact commands used;
+- `manifest.json`: parameters, git state, runtime, resolved tool paths, command
+  arguments, and SHA-256 checksums for available inputs and primary outputs;
 - `*.log`: tool output and diagnostics.
 
 QUAST reported a non-fatal Minimap2 version warning. Tool versions should be pinned before publication-level experiments.
@@ -1367,3 +1369,28 @@ larger coverage-annotated audit report. Repeated support-object allocation found
 during this comparison was removed afterward; the optimized arithmetic path
 has unit-test coverage but was not re-timed on the public dataset. No biological
 accuracy claim is made for this unlabeled library.
+
+## Public-data fragmentation attribution
+
+The report-only fragmentation diagnostic was run on the paired `SRR32866683`
+fixed-`k=31` graph before topology-changing extension. It classified both
+physical ends of all 639,936 unitigs and left the assembled FASTA unchanged.
+
+| Unitig topology | Count | Fraction |
+|---|---:|---:|
+| Isolated | 135,162 | 21.1% |
+| One-sided | 295,792 | 46.2% |
+| Connected | 208,982 | 32.7% |
+
+| Physical end category | Count | Fraction |
+|---|---:|---:|
+| Dead end | 566,116 | 44.2% |
+| Unique continuation | 501,026 | 39.1% |
+| Ambiguous branch | 212,730 | 16.6% |
+
+This establishes a reference-free baseline for where continuity stops. Nearly
+half of all unitigs are one-sided, while isolated unitigs account for more than
+one fifth; ambiguous branches are important but are not the only fragmentation
+source. These counts describe graph topology, not biological correctness, and
+must not be used alone to justify joining or deleting paths. The generated TSV
+and run outputs remain excluded from version control.

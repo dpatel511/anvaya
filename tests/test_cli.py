@@ -10,6 +10,49 @@ from anvaya.cli import main
 
 
 class CliTests(unittest.TestCase):
+    def test_fragmentation_report_is_report_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads_path = root / "reads.fasta"
+            baseline_path = root / "baseline.fasta"
+            reported_path = root / "reported.fasta"
+            report_path = root / "fragmentation.tsv"
+            reads_path.write_text(
+                ">read-1\nAACTGGA\n>read-2\nAACTAGA\n", encoding="utf-8"
+            )
+
+            baseline_exit = main(
+                [
+                    "assemble",
+                    "--input",
+                    str(reads_path),
+                    "--k",
+                    "3",
+                    "--orientation-aware",
+                    "--output",
+                    str(baseline_path),
+                ]
+            )
+            reported_exit = main(
+                [
+                    "assemble",
+                    "--input",
+                    str(reads_path),
+                    "--k",
+                    "3",
+                    "--orientation-aware",
+                    "--fragmentation-report",
+                    str(report_path),
+                    "--output",
+                    str(reported_path),
+                ]
+            )
+
+            self.assertEqual(baseline_exit, 0)
+            self.assertEqual(reported_exit, 0)
+            self.assertEqual(baseline_path.read_bytes(), reported_path.read_bytes())
+            self.assertIn("category", report_path.read_text(encoding="utf-8"))
+
     def test_assemble_command_writes_fasta_summary_and_progress(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

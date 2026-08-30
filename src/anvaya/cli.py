@@ -19,6 +19,7 @@ from anvaya.cleaning import (
 from anvaya.cleaning import find_weak_tip_candidates
 from anvaya.events import EventReportSummary, write_event_report
 from anvaya.event_calibration import calibrate_event_report
+from anvaya.fragmentation import FragmentationSummary, write_fragmentation_report
 from anvaya.graph import build_dbg
 from anvaya.incomplete_branches import find_incomplete_branch_candidates
 from anvaya.metrics import summarize_graph
@@ -269,6 +270,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="score compacted-graph bubble paths and write them as TSV",
     )
     assemble_parser.add_argument(
+        "--fragmentation-report",
+        type=Path,
+        help=(
+            "write report-only compacted-unitig end topology as TSV "
+            "without changing the assembly"
+        ),
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -346,6 +355,7 @@ def _run_assemble(
     event_report: Path | None,
     damage_profile_report: Path | None,
     unitig_bubble_report: Path | None,
+    fragmentation_report: Path | None,
 ) -> int:
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
@@ -393,6 +403,8 @@ def _run_assemble(
         raise ValueError(
             "--unitig-bubble-report requires --orientation-aware"
         )
+    if fragmentation_report is not None and not orientation_aware:
+        raise ValueError("--fragmentation-report requires --orientation-aware")
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -508,6 +520,19 @@ def _run_assemble(
         unitig_graph = None
         unitigs = extract_unitigs(graph)
     _progress(f"Extracted {len(unitigs)} unitigs in {time.perf_counter() - stage_started:.2f}s")
+
+    fragmentation_summary = FragmentationSummary()
+    if fragmentation_report is not None:
+        stage_started = time.perf_counter()
+        _progress("Attributing compacted-unitig boundaries")
+        fragmentation_summary = write_fragmentation_report(
+            unitig_graph, fragmentation_report
+        )
+        _progress(
+            f"Reported {fragmentation_summary.ends} unitig ends to "
+            f"{fragmentation_report} in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
 
     read_thread_summary = ReadThreadingSummary()
     threaded_links = 0
@@ -648,6 +673,7 @@ def _run_assemble(
     )
     print(f"reported_bubbles={event_summary.bubbles}")
     print(f"reported_paths={event_summary.paths}")
+    print(f"projection_candidates={event_summary.projection_candidates}")
     print(f"event_report={event_report or ''}")
     print(f"damage_profile_report={damage_profile_report or ''}")
     print(f"unitig_bubbles_detected={unitig_bubble_summary.bubbles}")
@@ -657,6 +683,20 @@ def _run_assemble(
     print(f"unitig_variation_like={unitig_bubble_summary.variation_like}")
     print(f"unitig_ambiguous={unitig_bubble_summary.ambiguous}")
     print(f"unitig_bubble_report={unitig_bubble_report or ''}")
+    print(f"fragmentation_report={fragmentation_report or ''}")
+    print(f"fragmentation_ends={fragmentation_summary.ends}")
+    print(f"fragmentation_dead_ends={fragmentation_summary.dead_ends}")
+    print(
+        "fragmentation_unique_continuations="
+        f"{fragmentation_summary.unique_continuations}"
+    )
+    print(
+        "fragmentation_ambiguous_branches="
+        f"{fragmentation_summary.ambiguous_branches}"
+    )
+    print(f"fragmentation_isolated_unitigs={fragmentation_summary.isolated_unitigs}")
+    print(f"fragmentation_one_sided_unitigs={fragmentation_summary.one_sided_unitigs}")
+    print(f"fragmentation_connected_unitigs={fragmentation_summary.connected_unitigs}")
     print(
         "paired_unitig_extension="
         f"{str(paired_unitig_extension).lower()}"
@@ -757,6 +797,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.event_report,
                 arguments.damage_profile_report,
                 arguments.unitig_bubble_report,
+                arguments.fragmentation_report,
             )
         if arguments.command == "calibrate-events":
             summary = calibrate_event_report(

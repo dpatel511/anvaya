@@ -16,6 +16,7 @@ from anvaya.bubbles import Bubble, BubblePath
 from anvaya.cleaning import TipCandidate
 from anvaya.classification import format_substitutions
 from anvaya.damage_profile import infer_damage_profile, write_damage_profile
+from anvaya.damage_projection import decide_damage_projection
 from anvaya.event_likelihood import (
     CrossFittedDamageModels,
     fit_cross_fitted_damage_models,
@@ -43,6 +44,7 @@ class EventReportSummary:
     matched_incomplete_branches: int = 0
     bubbles: int = 0
     paths: int = 0
+    projection_candidates: int = 0
 
 
 _TIP_MATCH_FIELDS = (
@@ -103,6 +105,9 @@ _TIP_CLASSIFICATION_FIELDS = (
     "damage_error_log_contrast",
     "damage_variation_log_contrast",
     "error_variation_log_contrast",
+    "projection_decision",
+    "projection_reasons",
+    "projection_target_sequence",
 )
 
 
@@ -310,6 +315,7 @@ def _match_columns(
 
     decision = classify_tip_match(graph, match)
     likelihood = score_matched_event(graph, match, likelihood_models, edge_links)
+    projection = decide_damage_projection(match, decision, likelihood)
     columns: list[object] = [
         match.tip_sequence,
         "true",
@@ -453,6 +459,9 @@ def _match_columns(
             if likelihood.error_variation_log_contrast is None
             else f"{likelihood.error_variation_log_contrast:.6f}"
         ),
+        projection.decision,
+        ";".join(projection.reasons),
+        projection.target_sequence,
     ]
     return (
         format_substitutions(match.substitutions),
@@ -685,6 +694,7 @@ def write_event_report(
             ]
         )
         path_count = 0
+        projection_candidates = 0
         matched_tip_count = 0
         for index, (tip, match) in enumerate(
             zip(tips, tip_matches, strict=True),
@@ -699,6 +709,7 @@ def write_event_report(
                 edge_links,
             )
             writer.writerow(row)
+            projection_candidates += row[-3] == "would_project"
             if match is not None:
                 matched_tip_count += 1
             path_count += 1
@@ -716,6 +727,7 @@ def write_event_report(
                 edge_links,
             )
             writer.writerow(row)
+            projection_candidates += row[-3] == "would_project"
             if match is not None:
                 matched_incomplete_count += 1
             path_count += 1
@@ -732,6 +744,7 @@ def write_event_report(
                 edge_links,
             )
             writer.writerows(rows)
+            projection_candidates += sum(row[-3] == "would_project" for row in rows)
             path_count += len(rows)
 
     if damage_profile_path is not None:
@@ -782,4 +795,5 @@ def write_event_report(
         matched_incomplete_branches=matched_incomplete_count,
         bubbles=len(bubbles),
         paths=path_count,
+        projection_candidates=projection_candidates,
     )

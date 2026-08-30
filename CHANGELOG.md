@@ -6,6 +6,14 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- A deterministic, report-only fragmentation TSV that attributes both physical
+  ends of every unitig as dead ends, unique continuations, or ambiguous
+  branches and summarizes isolated, one-sided, and connected topology.
+- A conservative, report-only damage-projection gate that emits an auditable
+  candidate decision only when damage classification, likelihood margin,
+  variation contrast, and base-quality requirements all pass.
+- Reproducibility manifests for baseline experiments, including runtime and Git
+  state, resolved tool paths, commands, parameters, and artifact checksums.
 - Opt-in direct read-thread extension across compacted-graph junctions, using
   independent molecule support, 3:1 strong-winner selection, reciprocal
   orientation agreement, and a boundary-only edge index.
