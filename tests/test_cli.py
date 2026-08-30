@@ -10,6 +10,60 @@ from anvaya.cli import main
 
 
 class CliTests(unittest.TestCase):
+    def test_dead_end_and_correction_reports_are_report_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads_path = root / "reads.fastq"
+            baseline_path = root / "baseline.fasta"
+            reported_path = root / "reported.fasta"
+            dead_end_path = root / "dead-ends.tsv"
+            correction_path = root / "corrections.tsv"
+            reads_path.write_text(
+                "@truth-1\nGGGAACCG\n+\nDDDDDDDD\n"
+                "@truth-2\nGGGAACCG\n+\nDDDDDDDD\n"
+                "@error\nGGGAATCG\n+\nDDDDD)DD\n",
+                encoding="utf-8",
+            )
+
+            baseline_exit = main(
+                [
+                    "assemble",
+                    "--input",
+                    str(reads_path),
+                    "--k",
+                    "3",
+                    "--min-count",
+                    "2",
+                    "--orientation-aware",
+                    "--output",
+                    str(baseline_path),
+                ]
+            )
+            reported_exit = main(
+                [
+                    "assemble",
+                    "--input",
+                    str(reads_path),
+                    "--k",
+                    "3",
+                    "--min-count",
+                    "2",
+                    "--orientation-aware",
+                    "--dead-end-report",
+                    str(dead_end_path),
+                    "--correction-report",
+                    str(correction_path),
+                    "--output",
+                    str(reported_path),
+                ]
+            )
+
+            self.assertEqual(baseline_exit, 0)
+            self.assertEqual(reported_exit, 0)
+            self.assertEqual(baseline_path.read_bytes(), reported_path.read_bytes())
+            self.assertIn("cause", dead_end_path.read_text(encoding="utf-8"))
+            self.assertIn("would_correct", correction_path.read_text(encoding="utf-8"))
+
     def test_fragmentation_report_is_report_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

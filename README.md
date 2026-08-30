@@ -70,6 +70,9 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - `anvaya assemble` command-line workflow and FASTA output;
 - deterministic test-only simulation helpers;
 - unit tests for assembler primitives.
+- report-only raw-read attribution of compacted-graph dead ends;
+- report-only solid-k-mer correction-candidate auditing with explicit
+  protection of terminal damage-compatible reversals.
 
 ## Command-line usage
 
@@ -103,6 +106,36 @@ as `isolated`, `one_sided`, or `connected`, making disconnected sequence easy
 to distinguish from branch-limited sequence. These labels describe the
 retained graph only; they do not claim that a missing edge was caused by
 filtering, damage, or insufficient coverage.
+
+Raw reads can be rescanned to attribute those dead ends without changing the
+graph or FASTA:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --dead-end-report dead-ends.tsv \
+  -o contigs.fasta
+```
+
+The P1 report distinguishes read boundaries, apparent coverage gaps, unique
+continuations removed by support filtering, conflicting filtered
+continuations, and retained contexts observed elsewhere. It also records
+terminal, low-quality, and missing-quality evidence for each raw extension.
+
+P2 audits conservative solid-k-mer substitution candidates:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --correction-report corrections.tsv \
+  --correction-max-quality 20 --correction-max-reads 20000 \
+  -o contigs.fasta
+```
+
+Only low-quality positions are considered. A candidate is marked
+`would_correct` only when one substitution uniquely restores every overlapping
+k-mer to solid support. Terminal T-to-C and A-to-G reversals compatible with
+ancient-DNA damage are protected, and ambiguous or incomplete rescues are
+reported separately. Both reports are diagnostic: they do not edit reads,
+graph topology, unitigs, or output contigs.
 
 Tip cleaning can be enabled for controlled comparisons:
 
@@ -262,6 +295,10 @@ versioned configuration is `experiments/benchmark_ladder.json`; generated
 summaries and manifests remain ignored. This ladder is the acceptance baseline
 for future assembly changes. Public data remains a realism/performance check,
 not exact biological truth.
+
+For collaborative validation, Codex supplies the exact test command and the
+user runs it in the target environment. Codex then analyzes the saved console
+output and generated result files; test execution by Codex is not assumed.
 
 The clean tip-validation matrix can be run or safely resumed with:
 

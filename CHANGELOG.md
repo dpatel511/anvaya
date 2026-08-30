@@ -6,6 +6,14 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- P1 report-only dead-end attribution that rescans raw reads only for retained
+  dead-end contexts and separates boundaries, coverage gaps, uniquely filtered
+  continuations, filtered conflicts, and contexts retained elsewhere.
+- P2 report-only solid-k-mer correction auditing for low-quality bases, with
+  unique complete-rescue decisions, ambiguous and incomplete outcomes, and
+  protection of terminal damage-compatible reversals.
+- P1/P2 counts in the frozen validation-ladder output and CLI summaries, plus
+  bounded evenly spaced read sampling for public-data correction audits.
 - A versioned P0 validation ladder with five deterministic seeds across clean,
   terminal-damage, sequencing-error, combined-damage/error, rare-strain, and
   contamination controls, including truth-aware continuity and recovery

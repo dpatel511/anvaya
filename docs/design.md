@@ -350,3 +350,26 @@ to 606,706, N50 increased from 38 to 40 bp, and the largest contig increased
 from 366 to 435 bp. Relative to unguarded threading, N50 and largest-contig
 length were unchanged. Because this sample has no assembly truth, the public
 run validates execution, conservative selection, and resource behavior only.
+
+## P1 dead-end attribution and P2 correction audit
+
+P1 is a targeted second raw-read pass. It indexes only the `k-1` contexts at
+physical compacted-unitig dead ends, scans both read orientations, and records
+raw extension counts, terminal occurrence, base quality, missing quality, and
+read-boundary stops. Its cause hierarchy is intentionally descriptive; no
+cause changes graph topology.
+
+P2 builds a full canonical k-mer spectrum and examines only bases at or below a
+configured Phred threshold. Each alternative base is scored by the number and
+support of overlapping solid k-mers. Correction is proposed only for a unique
+alternative that makes every overlapping k-mer solid. Equal winners abstain,
+partial rescues remain incomplete, and terminal T-to-C or A-to-G reversals are
+protected as damage-compatible. `--correction-max-reads` bounds the audit by
+selecting evenly spaced reads while retaining the full spectrum for scoring.
+
+The two stages deliberately do not solve the filtered-edge decision. A
+count-one continuation may be sequencing error, postmortem damage, or genuine
+low-abundance variation. P1 measures where evidence was lost; P2 isolates a
+quality-supported subset. A future topology-changing policy must add independent
+context or molecule evidence and pass the frozen truth-labelled ladder before
+it can use either report as an assembly decision.
