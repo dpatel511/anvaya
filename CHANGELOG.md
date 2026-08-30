@@ -4,6 +4,14 @@ All notable project changes will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Corrected experiment 18's `summary.tsv` output to use tab separators.
+- Replaced stale DBG roadmap statements with the iterative whole-fragment
+  overlap-backend decision and separated the active experiment index from the
+  preserved chronological research archive.
+- Removed an unused private encoded-k-mer wrapper.
+
 ### Added
 
 - Experimental opt-in damage-aware pre-graph read consensus using a bounded

@@ -1,3 +1,4 @@
+import csv
 import importlib.util
 import json
 import tempfile
@@ -84,6 +85,15 @@ class ValidationLadderTests(unittest.TestCase):
             self.assertTrue((output / "summary.tsv").is_file())
             self.assertTrue((output / "summary.json").is_file())
             self.assertTrue((output / "manifest.json").is_file())
+            with (output / "summary.tsv").open(
+                encoding="utf-8", newline=""
+            ) as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                {row["scenario"] for row in rows},
+                {"clean", "damage_error"},
+            )
             self.assertEqual({record.scenario for record in records}, {"clean", "damage_error"})
             self.assertGreaterEqual(records[1].damage_events, 0)
             self.assertGreaterEqual(records[0].oracle_unique_rescued_kmers, 0)
