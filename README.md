@@ -38,6 +38,8 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - report-only Phred-derived sequencing-error log likelihoods with explicit missing-quality counts;
 - deterministic five-fold held-out damage profiles for matched weak-tip loci;
 - report-only damage/error/variation likelihood rankings with explicit model scope and margins;
+- report-only damage-projection candidates that require concordant classification,
+  held-out likelihood, variation contrast, and complete quality evidence;
 - fragment-level event-ascertainment conditioning with auditable per-model conditioning probabilities;
 - conservative ambiguity for high-quality singleton alternatives that cannot be separated from genuine rare variation;
 - report-only graph-context features and held-out separation summaries for topology, path multiplicity, local coverage, fragment support, and terminal evidence;
@@ -85,6 +87,22 @@ anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
 ```
 
 This mode prevents forward and reverse-complement paths from being assembled separately. It remains experimental while graph-cleaning and damage-aware decisions are developed and validated.
+
+Compacted-graph boundaries can be attributed without changing the FASTA:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --fragmentation-report fragmentation.tsv \
+  -o contigs.fasta
+```
+
+The TSV contains one row per physical unitig end and labels its retained graph
+topology as `dead_end`, `unique_continuation`, or `ambiguous_branch`, together
+with candidate handles and unitig support. It also labels each physical unitig
+as `isolated`, `one_sided`, or `connected`, making disconnected sequence easy
+to distinguish from branch-limited sequence. These labels describe the
+retained graph only; they do not claim that a missing edge was caused by
+filtering, damage, or insufficient coverage.
 
 Tip cleaning can be enabled for controlled comparisons:
 
@@ -183,7 +201,7 @@ anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
   -o contigs.fasta
 ```
 
-Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available; equal-length bubble alternatives are compared directly with the locally dominant bubble path. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, physical-fragment linkage across substitutions, retained base-quality summaries, a Phred-derived sequencing-error log likelihood, three heuristic scores, and an auditable classification. Paired mates retain separate read indices but share one fragment identifier, and a fragment with contradictory allele observations is excluded from both support counts. The error likelihood assumes equiprobable wrong nucleotides, `P(observed alternative | sequencing error) = 10^(-Q/10) / 3`, and is omitted rather than imputed when qualities are unavailable. Damage, error, and variation likelihoods are conditioned on the graph event containing at least one consistent alternative fragment and one consistent reference fragment; the report records the conditioning scope and probability for every model. When a damage-profile report is requested, exact C→T/5′ and G→A/3′ events receive all three likelihoods; ordinary substitutions receive error-versus-variation scoring without a damage explanation. Weak-tip loci use deterministic five-fold damage profiles fitted without the fold containing the event; incomplete branches and bubble paths use the tip-derived profile and are therefore independent of its training loci. The variation explanation fits one constant local alternative frequency up to 0.5 and receives a one-parameter BIC penalty. A high-quality alternative seen in only one physical fragment is reported as ambiguous when error otherwise ranks first, because the observations cannot distinguish it from genuine rare variation. Rankings and margins are diagnostic—not posterior probabilities, classifier inputs, or removal decisions.
+Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available; equal-length bubble alternatives are compared directly with the locally dominant bubble path. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, physical-fragment linkage across substitutions, retained base-quality summaries, a Phred-derived sequencing-error log likelihood, three heuristic scores, and an auditable classification. Paired mates retain separate read indices but share one fragment identifier, and a fragment with contradictory allele observations is excluded from both support counts. The error likelihood assumes equiprobable wrong nucleotides, `P(observed alternative | sequencing error) = 10^(-Q/10) / 3`, and is omitted rather than imputed when qualities are unavailable. Damage, error, and variation likelihoods are conditioned on the graph event containing at least one consistent alternative fragment and one consistent reference fragment; the report records the conditioning scope and probability for every model. When a damage-profile report is requested, exact C→T/5′ and G→A/3′ events receive all three likelihoods; ordinary substitutions receive error-versus-variation scoring without a damage explanation. Weak-tip loci use deterministic five-fold damage profiles fitted without the fold containing the event; incomplete branches and bubble paths use the tip-derived profile and are therefore independent of its training loci. The variation explanation fits one constant local alternative frequency up to 0.5 and receives a one-parameter BIC penalty. A high-quality alternative seen in only one physical fragment is reported as ambiguous when error otherwise ranks first, because the observations cannot distinguish it from genuine rare variation. A `would_project` report row additionally requires all of the damage-like classification, held-out likelihood, variation contrast, and base-quality gates; it is an audit signal only and does not alter graph topology or FASTA output. Rankings and margins are diagnostic—not posterior probabilities, classifier inputs, or removal decisions.
 
 Ordinary substitutions are no longer limited to the configured damage window.
 After event matching, reporting rescans the loaded reads for only the changed

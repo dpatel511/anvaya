@@ -178,6 +178,9 @@ class EventReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["damage_compatible"], "true")
         self.assertEqual(rows[0]["ry_identity"], "1.000000")
         self.assertEqual(rows[0]["tip_classification"], "ambiguous")
+        self.assertEqual(rows[0]["projection_decision"], "leave_unresolved")
+        self.assertEqual(rows[0]["projection_target_sequence"], "")
+        self.assertEqual(summary.projection_candidates, 0)
         self.assertGreater(
             float(rows[0]["tip_damage_score"]),
             float(rows[0]["tip_error_score"]),

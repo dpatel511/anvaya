@@ -1,9 +1,14 @@
 """Run the initial reference-based assembly accuracy benchmark."""
 
 import argparse
+import hashlib
+import json
+import platform
 import shlex
 import shutil
 import subprocess
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -14,6 +19,79 @@ TOOL_NAMES = {
     "spades": "spades.py",
     "quast": "quast.py",
 }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_state(project_root: Path) -> dict[str, object]:
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=project_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "commit": commit.stdout.strip() if commit.returncode == 0 else None,
+        "dirty": bool(status.stdout.strip()) if status.returncode == 0 else None,
+    }
+
+
+def _write_manifest(
+    path: Path,
+    *,
+    arguments: argparse.Namespace,
+    tools: dict[str, str],
+    commands: list[tuple[str, list[str]]],
+    artifacts: list[Path],
+) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    existing_artifacts = {
+        str(artifact.resolve()): {
+            "bytes": artifact.stat().st_size,
+            "sha256": _sha256(artifact),
+        }
+        for artifact in artifacts
+        if artifact.is_file()
+    }
+    manifest = {
+        "schema_version": 1,
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "project": _git_state(project_root),
+        "runtime": {
+            "python": sys.version,
+            "platform": platform.platform(),
+        },
+        "parameters": {
+            "reference": str(arguments.reference.resolve()),
+            "k": arguments.k,
+            "threads": arguments.threads,
+            "coverage": arguments.coverage,
+            "read_length": arguments.read_length,
+            "fragment_mean": arguments.fragment_mean,
+            "fragment_sd": arguments.fragment_sd,
+            "seed": arguments.seed,
+        },
+        "tools": tools,
+        "commands": [
+            {"name": name, "argv": command} for name, command in commands
+        ],
+        "artifacts": existing_artifacts,
+    }
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -209,6 +287,23 @@ def main() -> int:
                     stdout=log_handle,
                     stderr=subprocess.STDOUT,
                 )
+
+    reads_prefix = arguments.output_dir / "reads" / "simulated"
+    _write_manifest(
+        arguments.output_dir / "manifest.json",
+        arguments=arguments,
+        tools=tools,
+        commands=commands,
+        artifacts=[
+            arguments.reference,
+            Path(f"{reads_prefix}1.fq"),
+            Path(f"{reads_prefix}2.fq"),
+            arguments.output_dir / "anvaya" / "contigs.fasta",
+            arguments.output_dir / "megahit" / "final.contigs.fa",
+            arguments.output_dir / "metaspades" / "contigs.fasta",
+            arguments.output_dir / "quast" / "report.txt",
+        ],
+    )
 
     print(f"[baseline] Results: {arguments.output_dir / 'quast' / 'report.txt'}")
     return 0
