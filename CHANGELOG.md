@@ -6,6 +6,10 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Truth-only `oracle_unique` and `oracle_all_truth` validation-ladder arms for
+  measuring the upper bound of filtered-edge rescue without changing the
+  production assembler. The 30-run result rejects singleton dead-end rescue as
+  a continuity strategy for damage and sequencing-error scenarios.
 - P1 report-only dead-end attribution that rescans raw reads only for retained
   dead-end contexts and separates boundaries, coverage gaps, uniquely filtered
   continuations, filtered conflicts, and contexts retained elsewhere.

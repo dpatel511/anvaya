@@ -1482,3 +1482,55 @@ localization of the bottleneck: uniquely filtered continuations are a large
 candidate pool, while Phred-supported candidates form only a small subset and
 filtered conflicts require additional context such as multi-k or molecule-path
 evidence.
+
+## Oracle filtered-edge rescue experiment
+
+Experiment 18 now includes two truth-only upper-bound comparators. The
+`oracle_unique` arm starts from retained compacted-graph dead ends and rescans
+both orientations of the source reads. It selects a continuation only when
+exactly one base was observed below `min_count` and its canonical k-mer occurs
+in a known generating reference. The broader `oracle_all_truth` arm selects
+every observed sub-threshold canonical k-mer present in generating truth.
+Both supply exactly enough additional observations for selected edges to cross
+the existing threshold. Neither corrects reads, removes damage/error k-mers, or
+rescues an unobserved edge.
+
+Each oracle reruns graph construction and reports baseline-versus-oracle
+unitigs, total bases, largest contig, N50, primary-reference recovery,
+rare-strain recovery, false contigs, and explicit deltas. A truth-valid edge can
+still participate in an incorrect graph path, so false-contig changes remain a
+required safety outcome rather than being assumed to be zero.
+
+Together the comparators separate the P1 unique-dead-end hypothesis from the
+general recovery of weak low-abundance sequence. A small `oracle_unique` gain
+is a no-go signal for production dead-end rescue even when `oracle_all_truth`
+improves recovery elsewhere. A large, accuracy-preserving unique-arm gain would
+justify developing a conservative classifier using evidence available without
+a reference.
+
+The completed 30-run ladder produced the following `oracle_unique` means:
+
+| Scenario | Rescued k-mers | Baseline N50 | Oracle N50 | N50 delta |
+|---|---:|---:|---:|---:|
+| Clean | 1.8 | 4,979.8 | 4,981.6 | +1.8 |
+| Damage | 1.8 | 472.4 | 472.6 | +0.2 |
+| Sequencing error | 1.8 | 1,314.6 | 1,314.6 | 0.0 |
+| Damage plus error | 1.8 | 291.6 | 291.6 | 0.0 |
+| Rare strain | 14.6 | 68.8 | 68.6 | -0.2 |
+| Contamination | 49.2 | 377.4 | 389.6 | +12.2 |
+
+Across all scenarios, 355 truth-valid unique continuations were rescued. N50
+was unchanged in 19 runs, increased in ten, and decreased in one. The
+false-contig count did not change, but exact primary-reference recovery fell by
+1,230 bp in aggregate. One sequencing-error run lost 1,103 recovered bases
+after two individually truth-valid edges connected into a path that was no
+longer exactly reference-contained. Edge-level truth therefore did not imply
+contig-level correctness.
+
+This is a no-go result for production singleton dead-end rescue. It provided
+effectively no continuity improvement in damage or sequencing-error scenarios;
+the broader oracle's earlier contamination gain primarily measured recovery of
+weak sequence across the separate low-coverage genome. The next upper-bound
+experiment should independently normalize known simulated damage and sequencing
+errors before deciding between damage-aware consensus projection and multi-k
+construction.

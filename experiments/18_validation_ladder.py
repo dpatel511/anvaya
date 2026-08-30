@@ -17,8 +17,8 @@ from anvaya.bidirected import build_bidirected_dbg
 from anvaya.dead_end_attribution import write_dead_end_attribution_report
 from anvaya.read_correction import write_correction_report
 from anvaya.reads import Read
-from anvaya.sequences import reverse_complement
-from anvaya.unitig_graph import build_compacted_unitig_graph
+from anvaya.sequences import canonical_sequence, reverse_complement
+from anvaya.unitig_graph import CompactedUnitigGraph, build_compacted_unitig_graph
 from helpers.simulation import (
     SimulatedRead,
     add_sequencing_errors,
@@ -53,6 +53,32 @@ class BenchmarkRecord:
     terminal_only_dead_ends: int
     correction_candidates: int
     damage_protected_corrections: int
+    oracle_unique_rescued_kmers: int
+    oracle_unique_unitigs: int
+    oracle_unique_total_bases: int
+    oracle_unique_largest_contig: int
+    oracle_unique_n50: int
+    oracle_unique_reference_bases_recovered: int
+    oracle_unique_reference_fraction: float
+    oracle_unique_false_contigs: int
+    oracle_unique_rare_strain_bases_recovered: int
+    oracle_unique_n50_delta: int
+    oracle_unique_largest_contig_delta: int
+    oracle_unique_reference_bases_delta: int
+    oracle_unique_false_contigs_delta: int
+    oracle_all_truth_rescued_kmers: int
+    oracle_all_truth_unitigs: int
+    oracle_all_truth_total_bases: int
+    oracle_all_truth_largest_contig: int
+    oracle_all_truth_n50: int
+    oracle_all_truth_reference_bases_recovered: int
+    oracle_all_truth_reference_fraction: float
+    oracle_all_truth_false_contigs: int
+    oracle_all_truth_rare_strain_bases_recovered: int
+    oracle_all_truth_n50_delta: int
+    oracle_all_truth_largest_contig_delta: int
+    oracle_all_truth_reference_bases_delta: int
+    oracle_all_truth_false_contigs_delta: int
 
 
 def _load_config(path: Path) -> dict[str, object]:
@@ -148,6 +174,103 @@ def _covered_bases(contigs: list[str], references: tuple[str, ...]) -> int:
             covered += stop - end
         end = max(end, stop)
     return covered
+
+
+def _truth_kmers(references: tuple[str, ...], k: int) -> set[str]:
+    return {
+        canonical_sequence(reference[start : start + k])
+        for reference in references
+        for start in range(len(reference) - k + 1)
+    }
+
+
+def _oracle_supplements(
+    reads: list[SimulatedRead],
+    references: tuple[str, ...],
+    k: int,
+    min_count: int,
+) -> tuple[list[str], int]:
+    """Add only enough support to retain observed, truth-valid weak k-mers."""
+    counts: dict[str, int] = {}
+    for read in reads:
+        for start in range(len(read.sequence) - k + 1):
+            kmer = canonical_sequence(read.sequence[start : start + k])
+            counts[kmer] = counts.get(kmer, 0) + 1
+
+    truth = _truth_kmers(references, k)
+    rescued = {
+        kmer: count
+        for kmer, count in counts.items()
+        if count < min_count and kmer in truth
+    }
+    supplements = [
+        kmer
+        for kmer, count in sorted(rescued.items())
+        for _ in range(min_count - count)
+    ]
+    return supplements, len(rescued)
+
+
+def _oracle_unique_kmers(
+    graph: CompactedUnitigGraph,
+    reads: list[SimulatedRead],
+    references: tuple[str, ...],
+    min_count: int,
+) -> set[str]:
+    """Return truth-valid weak k-mers that uniquely continue a dead end."""
+    context_length = graph.k - 1
+    contexts = {
+        graph.oriented_sequence(oriented_handle)[-context_length:]
+        for unitig_id in range(graph.unitig_count)
+        for oriented_handle in ((unitig_id << 1) | 1, unitig_id << 1)
+        if not graph.outgoing(oriented_handle)
+    }
+    extensions = {context: [0, 0, 0, 0] for context in contexts}
+    base_index = {base: index for index, base in enumerate("ACGT")}
+    for read in reads:
+        for sequence in (read.sequence, reverse_complement(read.sequence)):
+            for start in range(len(sequence) - graph.k + 1):
+                context = sequence[start : start + context_length]
+                counts = extensions.get(context)
+                if counts is None:
+                    continue
+                base = sequence[start + context_length]
+                if base in base_index:
+                    counts[base_index[base]] += 1
+
+    truth = _truth_kmers(references, graph.k)
+    global_counts: dict[str, int] = {}
+    for read in reads:
+        for start in range(len(read.sequence) - graph.k + 1):
+            kmer = canonical_sequence(read.sequence[start : start + graph.k])
+            global_counts[kmer] = global_counts.get(kmer, 0) + 1
+    candidates: set[str] = set()
+    for context, counts in extensions.items():
+        observed = [index for index, count in enumerate(counts) if count]
+        if len(observed) != 1 or counts[observed[0]] >= min_count:
+            continue
+        kmer = canonical_sequence(context + "ACGT"[observed[0]])
+        if kmer in truth and global_counts.get(kmer, 0) < min_count:
+            candidates.add(kmer)
+    return candidates
+
+
+def _restricted_oracle_supplements(
+    reads: list[SimulatedRead],
+    candidates: set[str],
+    k: int,
+    min_count: int,
+) -> list[str]:
+    counts: dict[str, int] = {}
+    for read in reads:
+        for start in range(len(read.sequence) - k + 1):
+            kmer = canonical_sequence(read.sequence[start : start + k])
+            counts[kmer] = counts.get(kmer, 0) + 1
+    return [
+        kmer
+        for kmer in sorted(candidates)
+        for _ in range(max(0, min_count - counts.get(kmer, 0)))
+    ]
 
 
 def _scenario_reads(
@@ -247,6 +370,77 @@ def _run_record(
     ]
     reference_bases = _covered_bases(exact_contigs, (truth[0],))
     rare_bases = _covered_bases(exact_contigs, rare_truth) if rare_truth else 0
+    unique_kmers = _oracle_unique_kmers(
+        unitig_graph,
+        reads,
+        truth,
+        int(config["min_count"]),
+    )
+    unique_supplements = _restricted_oracle_supplements(
+        reads,
+        unique_kmers,
+        int(config["k"]),
+        int(config["min_count"]),
+    )
+    unique_graph = build_bidirected_dbg(
+        [read.sequence for read in reads] + unique_supplements,
+        int(config["k"]),
+        int(config["min_count"]),
+    )
+    unique_contigs = list(build_compacted_unitig_graph(unique_graph).sequences)
+    unique_lengths = [len(contig) for contig in unique_contigs]
+    unique_exact_contigs = [
+        contig
+        for contig in unique_contigs
+        if any(
+            contig in truth_reference
+            or contig in reverse_complement(truth_reference)
+            for truth_reference in truth
+        )
+    ]
+    unique_reference_bases = _covered_bases(
+        unique_exact_contigs, (truth[0],)
+    )
+    unique_rare_bases = (
+        _covered_bases(unique_exact_contigs, rare_truth) if rare_truth else 0
+    )
+    unique_false_contigs = len(unique_contigs) - len(unique_exact_contigs)
+
+    all_truth_supplements, all_truth_rescued_kmers = _oracle_supplements(
+        reads,
+        truth,
+        int(config["k"]),
+        int(config["min_count"]),
+    )
+    all_truth_graph = build_bidirected_dbg(
+        [read.sequence for read in reads] + all_truth_supplements,
+        int(config["k"]),
+        int(config["min_count"]),
+    )
+    all_truth_contigs = list(
+        build_compacted_unitig_graph(all_truth_graph).sequences
+    )
+    all_truth_lengths = [len(contig) for contig in all_truth_contigs]
+    all_truth_exact_contigs = [
+        contig
+        for contig in all_truth_contigs
+        if any(
+            contig in truth_reference
+            or contig in reverse_complement(truth_reference)
+            for truth_reference in truth
+        )
+    ]
+    all_truth_reference_bases = _covered_bases(
+        all_truth_exact_contigs, (truth[0],)
+    )
+    all_truth_rare_bases = (
+        _covered_bases(all_truth_exact_contigs, rare_truth)
+        if rare_truth
+        else 0
+    )
+    all_truth_false_contigs = (
+        len(all_truth_contigs) - len(all_truth_exact_contigs)
+    )
     return BenchmarkRecord(
         seed=seed,
         scenario=scenario,
@@ -268,6 +462,46 @@ def _run_record(
         terminal_only_dead_ends=dead_end_summary.terminal_only,
         correction_candidates=correction_summary.would_correct,
         damage_protected_corrections=correction_summary.protected_damage,
+        oracle_unique_rescued_kmers=len(unique_kmers),
+        oracle_unique_unitigs=len(unique_contigs),
+        oracle_unique_total_bases=sum(unique_lengths),
+        oracle_unique_largest_contig=max(unique_lengths, default=0),
+        oracle_unique_n50=_n50(unique_lengths),
+        oracle_unique_reference_bases_recovered=unique_reference_bases,
+        oracle_unique_reference_fraction=unique_reference_bases / len(truth[0]),
+        oracle_unique_false_contigs=unique_false_contigs,
+        oracle_unique_rare_strain_bases_recovered=unique_rare_bases,
+        oracle_unique_n50_delta=_n50(unique_lengths) - _n50(lengths),
+        oracle_unique_largest_contig_delta=(
+            max(unique_lengths, default=0) - max(lengths, default=0)
+        ),
+        oracle_unique_reference_bases_delta=(
+            unique_reference_bases - reference_bases
+        ),
+        oracle_unique_false_contigs_delta=(
+            unique_false_contigs - (len(contigs) - len(exact_contigs))
+        ),
+        oracle_all_truth_rescued_kmers=all_truth_rescued_kmers,
+        oracle_all_truth_unitigs=len(all_truth_contigs),
+        oracle_all_truth_total_bases=sum(all_truth_lengths),
+        oracle_all_truth_largest_contig=max(all_truth_lengths, default=0),
+        oracle_all_truth_n50=_n50(all_truth_lengths),
+        oracle_all_truth_reference_bases_recovered=all_truth_reference_bases,
+        oracle_all_truth_reference_fraction=(
+            all_truth_reference_bases / len(truth[0])
+        ),
+        oracle_all_truth_false_contigs=all_truth_false_contigs,
+        oracle_all_truth_rare_strain_bases_recovered=all_truth_rare_bases,
+        oracle_all_truth_n50_delta=_n50(all_truth_lengths) - _n50(lengths),
+        oracle_all_truth_largest_contig_delta=(
+            max(all_truth_lengths, default=0) - max(lengths, default=0)
+        ),
+        oracle_all_truth_reference_bases_delta=(
+            all_truth_reference_bases - reference_bases
+        ),
+        oracle_all_truth_false_contigs_delta=(
+            all_truth_false_contigs - (len(contigs) - len(exact_contigs))
+        ),
     )
 
 
