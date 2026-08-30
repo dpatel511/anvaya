@@ -1,4 +1,4 @@
-# Initial design
+# Architecture and research status
 
 Anvaya is a reference-free, damage-aware de Bruijn graph assembler for ancient metagenomic short reads.
 
@@ -36,7 +36,7 @@ The experimental graph stores each canonical `(k-1)`-mer once and uses oriented 
 
 This representation prevents the two DNA strands from producing duplicate assemblies. With a positive end window, each physical edge now stores compact distance-binned support from both canonical ends, internal support, and ambiguous palindromic terminal support. Reverse observations swap their end distances into canonical orientation.
 
-When event reporting is enabled, source-read identity and side-specific Phred quality are retained for terminal observations in compact edge-indexed arrays. The quality corresponds to the nucleotide appended in the relevant oriented traversal, rather than an arbitrary endpoint of the supporting k-mer. Paired-fragment links are not yet stored. A candidate-locus damage profile can now be inferred from matched alternatives, but it is not yet a whole-library calibrated damage model.
+When event reporting is enabled, source-read identity and side-specific Phred quality are retained for terminal observations in compact edge-indexed arrays. The quality corresponds to the nucleotide appended in the relevant oriented traversal, rather than an arbitrary endpoint of the supporting k-mer. Paired mates share a physical molecule identifier, and optional paired-extension and direct read-threading stages use molecule evidence after compaction. A candidate-locus damage profile can be inferred from matched alternatives, but it is not a whole-library calibrated damage model.
 
 The compact implementation represents canonical k-mers with rolling 2-bit integers. Physical edge endpoints and strand-support counts are stored in typed arrays, while node degrees and traversal state use byte arrays. This replaces per-node counters, string k-mers, tuple edge keys, and per-edge support objects without changing graph decisions.
 
@@ -44,7 +44,12 @@ The compact implementation represents canonical k-mers with rolling 2-bit intege
 
 After k-mer-level cleaning and event reporting, each active maximal non-branching path is represented as one physical unitig. Oriented unitig handles retain links in both directions without duplicating reverse-complement sequences. Each unitig stores its sequence, path length, total, minimum, and mean edge support, plus aggregated terminal and internal observations.
 
-The CLI now writes sequences from this representation. No simplification decision is made at the unitig level yet, so compaction must preserve the previous FASTA exactly. The connected unitig graph is the intended substrate for local-coverage bubble and branch decisions because those operations can inspect thousands of unitigs rather than millions of k-mer edges.
+The CLI writes sequences from this representation. Compaction itself preserves
+the previous FASTA exactly; optional paired-extension and read-threading stages
+may subsequently join reciprocal, molecule-supported unitig paths. The
+connected unitig graph remains the substrate for local-coverage bubble and
+branch analysis because those operations inspect thousands of unitigs rather
+than millions of k-mer edges.
 
 ## Conservative tip cleaning
 
@@ -80,7 +85,7 @@ Detected unitig alternatives are now labelled `error-like`, `damage-like`, `vari
 
 The conservative error-like rule combines low local coverage, high sequence similarity, and terminal depletion. A damage-like label additionally requires damage-compatible C→T/G→A substitutions, low local coverage, strand skew, and terminal enrichment. Supported, strand-balanced alternatives are variation-like; conflicting or insufficient evidence remains ambiguous.
 
-Across the 220-condition matrix, the error-like label selected 111 of 182 detected error paths and 20 of 451 biological paths. Tightening the damage rule eliminated damage-like calls among the biological controls. However, terminal-damage simulations produced no detectable unitig bubbles, so the current results establish specificity only—not damage sensitivity. Damage detection must next operate on tips and incomplete branches before cleaning removes them.
+Across the 220-condition matrix, the error-like label selected 111 of 182 detected error paths and 20 of 451 biological paths. Tightening the damage rule eliminated damage-like calls among the biological controls. Later experiments extended detection to tips and incomplete branches, but the resulting report-only evidence and conservative cleaning policies did not deliver a major public-data continuity gain. These results establish useful diagnostics, not the active architecture roadmap.
 
 ## Simple bubble detection
 
@@ -247,26 +252,23 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 ## Near-term development sequence
 
-1. Extend the validated one-sided error-like protection gate to bounded
-   incomplete branches, first as a truth-labelled selection audit and then as
-   an opt-in topology change.
-2. Validate incomplete-branch removal against damage, independent errors,
-   rare strains, and clean reference-backed assemblies before public-data use.
-3. Recalibrate ordinary whole-read events separately from terminal
-   damage-compatible events and expand held-out references, coverage regimes,
-   library protocols, and recurrent non-systematic error fixtures.
-4. Validate the damage model on independently characterized untreated,
-   partial-UDG, and full-UDG libraries, then add whole-library opportunities
-   and bootstrap or profiled predictive uncertainty.
-5. Extend incomplete-branch matching to unequal-length and locally non-linear
-   backbones only after the bounded equal-length policy is validated.
-6. Evaluate calibrated `eligible_error` decisions as an optional stricter
-   simplification policy once error sensitivity is adequate.
-7. Validate N50, accuracy, and strain retention on simulated and empirical
-   mixtures, including direct comparison with MEGAHIT, metaSPAdes, and
-   CarpeDeam.
-8. Profile a native or compiled whole-read evidence scanner; retain the current
-   pure-Python targeted pass as the auditable reference implementation.
+The DBG evidence program established that conservative cleaning, filtered-edge
+rescue, read correction, and pre-graph damage consensus do not by themselves
+resolve the public-data continuity bottleneck. Development now shifts to a
+separate iterative whole-fragment overlap backend:
+
+1. preprocess or require trimmed, merged ancient-DNA fragments;
+2. cluster fragments through bounded shared-k-mer candidates;
+3. validate whole overlaps with DNA and R/Y identity;
+4. estimate sample-specific positional damage likelihoods;
+5. correct cluster centers and extend them first with raw fragments;
+6. merge corrected contigs under a stricter overlap policy;
+7. require safe left/right extension consensus and preserve abstentions;
+8. compare directly with CarpeDeam, MEGAHIT, and metaSPAdes on frozen and
+   empirical benchmarks.
+
+The existing DBG reports remain diagnostic comparators. They are not the
+default implementation path for new continuity features.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 

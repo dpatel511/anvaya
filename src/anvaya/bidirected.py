@@ -187,12 +187,6 @@ def _decode_dna(code: int, length: int) -> str:
     return "".join(sequence)
 
 
-def _encoded_kmers(sequence: str, k: int) -> Iterator[tuple[int, int]]:
-    """Yield canonical k-mer codes and their strand classification."""
-    for _, canonical, orientation in _positioned_encoded_kmers(sequence, k):
-        yield canonical, orientation
-
-
 def _positioned_encoded_kmers(
     sequence: str, k: int
 ) -> Iterator[tuple[int, int, int]]:

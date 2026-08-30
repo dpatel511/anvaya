@@ -46,8 +46,10 @@ DOI: <https://doi.org/10.1371/journal.pcbi.1014591>
 - CarpeDeam clusters overlapping fragments using shared k-mers, filters them at
   90% sequence identity and 99.9% R/Y identity, and uses a sample-specific
   damage likelihood for correction and extension. Its safe consensus mode
-  reduces but does not eliminate misassemblies, so Anvaya adopts its
-  damage-tolerant overlap idea without importing unsafe greedy extension:
+  reduces but does not eliminate misassemblies. Anvaya's next backend will test
+  the published iterative cluster, correction, and safe-consensus extension
+  architecture through a clean-room implementation rather than copying the
+  GPL-3 source. Unsafe extension is not an acceptance target:
   https://pmc.ncbi.nlm.nih.gov/articles/PMC12557918/
 - BayesHammer shows why global abundance thresholds fail under nonuniform
   coverage and instead separates local Hamming-neighborhood clusters using base
@@ -67,6 +69,10 @@ DOI: <https://doi.org/10.1371/journal.pcbi.1014591>
 
 ## Working gap
 
-Existing tools either assess damage after assembly or use it in overlap-based assembly. The targeted search has not identified an ancient-metagenomic DBG assembler that retains original-molecule positional evidence and uses it directly for graph construction, simplification, and path selection.
+The DBG evidence program remains a useful diagnostic contribution, but its
+cleaning and correction paths have not produced a major public-data continuity
+gain. The active gap is a scalable, auditable whole-fragment overlap backend
+that preserves low-abundance strain paths while applying sample-specific damage
+evidence during correction and safe extension.
 
 This is a working novelty assessment and must be rechecked before publication.

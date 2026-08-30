@@ -611,7 +611,11 @@ def _git_state(project_root: Path) -> dict[str, object]:
 def _write_outputs(output_dir: Path, config_path: Path, config: dict[str, object], records: list[BenchmarkRecord]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / "summary.tsv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(asdict(records[0])))
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(asdict(records[0])),
+            delimiter="\t",
+        )
         writer.writeheader()
         writer.writerows(asdict(record) for record in records)
     (output_dir / "summary.json").write_text(

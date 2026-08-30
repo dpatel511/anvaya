@@ -321,49 +321,10 @@ summaries and manifests remain ignored. This ladder is the acceptance baseline
 for future assembly changes. Public data remains a realism/performance check,
 not exact biological truth.
 
-For collaborative validation, Codex supplies the exact test command and the
-user runs it in the target environment. Codex then analyzes the saved console
-output and generated result files; test execution by Codex is not assumed.
-
-The clean tip-validation matrix can be run or safely resumed with:
-
-```bash
-python3 experiments/03_tip_cleaning_validation.py \
-  --reference reference.fna --output-dir results --resume
-```
-
-Completed simulation, assembly, and QUAST stages are verified and skipped.
-
-The controlled terminal-evidence validation can be reproduced with:
-
-```bash
-PYTHONPATH=src:tests python3 \
-  experiments/04_terminal_evidence_ground_truth.py
-```
-
-The extended 20-seed unitig-bubble threshold matrix can be reproduced with:
-
-```bash
-PYTHONPATH=src:tests python3 \
-  experiments/05_unitig_bubble_validation.py
-```
-
-The 20-seed weak-tip matching matrix covering separate 5′/3′ damage,
-ordinary and terminally concentrated errors, and rare strains can be run with:
-
-```bash
-PYTHONPATH=src:tests python3 \
-  experiments/06_tip_matching_validation.py
-```
-
-The 20-seed incomplete-branch matrix can be reproduced with:
-
-```bash
-PYTHONPATH=src:tests python3 \
-  experiments/07_incomplete_branch_validation.py
-```
-
-Generated candidate and threshold tables are written under `experiments/validation/generated/` and remain ignored by Git.
+The active experiment index records the current acceptance gates and decisions.
+The archived chronological notebook retains commands and negative results from
+experiments `01` through `17` without presenting superseded work as the current
+roadmap. Generated candidate and threshold tables remain ignored by Git.
 
 ## Documentation
 
@@ -371,4 +332,5 @@ Generated candidate and threshold tables are written under `experiments/validati
 - [Initial design](docs/design.md)
 - [Benchmark plan](docs/benchmark_plan.md)
 - [Literature notes](notes/literature.md)
-- [Simulation experiments](experiments/README.md)
+- [Active experiments](experiments/README.md)
+- [Historical experiment notebook](experiments/archive.md)

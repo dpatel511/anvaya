@@ -115,7 +115,16 @@ false-contig count changed, but exact primary-reference recovery declined by
 connected into an unsafe sequencing-error path.
 
 The singleton dead-end rescue hypothesis therefore fails the go/no-go gate and
-must not become a production assembly policy. The result also establishes that
-edge truth is insufficient as a contig-safety criterion. Further continuity
-work should first measure perfect damage/error normalization and then evaluate
-damage-aware consensus projection or multi-k construction.
+must not become a production assembly policy. Damage-aware read consensus was
+then evaluated directly: it produced strong synthetic continuity gains, but
+lost 8.98% rare-strain recovery and left public `SRR32866683` N50 unchanged at
+38 bp. It remains opt-in research infrastructure rather than a production
+policy.
+
+The next continuity backend is iterative whole-fragment cluster-and-extend
+assembly with R/Y-aware overlap validation and safe extension consensus. It
+must use this same frozen ladder and additionally report overlap-cluster purity,
+accepted extension support, chimeric-contig counts, rare-strain retention,
+runtime, and peak memory. Direct CarpeDeam, MEGAHIT, and metaSPAdes comparisons
+must use identical prepared inputs; empirical N50 without truth remains a
+resource and realism observation, not a go decision.
