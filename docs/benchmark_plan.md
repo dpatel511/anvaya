@@ -98,3 +98,24 @@ reversals, 58 ambiguous candidates, and 10,863 incomplete rescues. The later P1
 stage in that combined invocation failed on an ambiguous-base edge case that
 was subsequently fixed, so the correction TSV is a valid stage artifact but
 the invocation is not treated as a successful end-to-end run.
+
+## Filtered-edge oracle decision
+
+The frozen ladder compares baseline assembly with two truth-only upper bounds:
+`oracle_unique` rescues only one-way, truth-valid, globally sub-threshold
+continuations at retained dead ends; `oracle_all_truth` rescues every observed
+truth-valid k-mer below `min_count`. Both rebuild the graph without removing
+existing damage or error edges.
+
+The completed 30-run `oracle_unique` comparison rescued 355 k-mers. Mean N50
+changed by +0.2 bp for damage, 0 bp for sequencing error, 0 bp for combined
+damage/error, -0.2 bp for rare strains, and +12.2 bp for contamination. No
+false-contig count changed, but exact primary-reference recovery declined by
+1,230 bp in aggregate, including a 1,103 bp loss after two truth-valid edges
+connected into an unsafe sequencing-error path.
+
+The singleton dead-end rescue hypothesis therefore fails the go/no-go gate and
+must not become a production assembly policy. The result also establishes that
+edge truth is insufficient as a contig-safety criterion. Further continuity
+work should first measure perfect damage/error normalization and then evaluate
+damage-aware consensus projection or multi-k construction.

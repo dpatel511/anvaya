@@ -20,6 +20,51 @@ class ValidationLadderTests(unittest.TestCase):
         self.assertEqual(module._n50([10, 9, 1]), 10)
         self.assertEqual(module._n50([]), 0)
 
+    def test_oracle_supplements_only_observed_truth_kmers(self) -> None:
+        module = _load_module()
+        reads = [
+            module.SimulatedRead("truth", "AAC", "AAC", 0, 3),
+            module.SimulatedRead("error", "AAT", "AAC", 0, 3),
+        ]
+
+        supplements, rescued = module._oracle_supplements(
+            reads, ("AACCG",), 3, 2
+        )
+
+        self.assertEqual(supplements, ["AAC"])
+        self.assertEqual(rescued, 1)
+
+    def test_restricted_oracle_supplements_only_selected_kmers(self) -> None:
+        module = _load_module()
+        reads = [
+            module.SimulatedRead("first", "AAC", "AAC", 0, 3),
+            module.SimulatedRead("second", "AAT", "AAT", 0, 3),
+        ]
+
+        supplements = module._restricted_oracle_supplements(
+            reads, {"AAC"}, 3, 2
+        )
+
+        self.assertEqual(supplements, ["AAC"])
+
+    def test_unique_oracle_selects_truth_continuation_at_dead_end(self) -> None:
+        module = _load_module()
+        reads = [
+            module.SimulatedRead("first", "AAAC", "AAAC", 0, 4),
+            module.SimulatedRead("second", "AAAC", "AAAC", 0, 4),
+            module.SimulatedRead("weak", "AACG", "AACG", 0, 4),
+        ]
+        source = module.build_bidirected_dbg(
+            [read.sequence for read in reads], 3, 2
+        )
+        graph = module.build_compacted_unitig_graph(source)
+
+        selected = module._oracle_unique_kmers(
+            graph, reads, ("AAACG",), 2
+        )
+
+        self.assertEqual(selected, {"ACG"})
+
     def test_runner_writes_truth_labelled_outputs(self) -> None:
         module = _load_module()
         config = json.loads(
@@ -41,6 +86,15 @@ class ValidationLadderTests(unittest.TestCase):
             self.assertTrue((output / "manifest.json").is_file())
             self.assertEqual({record.scenario for record in records}, {"clean", "damage_error"})
             self.assertGreaterEqual(records[1].damage_events, 0)
+            self.assertGreaterEqual(records[0].oracle_unique_rescued_kmers, 0)
+            self.assertEqual(
+                records[0].oracle_unique_n50_delta,
+                records[0].oracle_unique_n50 - records[0].n50,
+            )
+            self.assertGreaterEqual(
+                records[0].oracle_all_truth_rescued_kmers,
+                records[0].oracle_unique_rescued_kmers,
+            )
 
 
 if __name__ == "__main__":
