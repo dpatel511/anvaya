@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "reference_length": 5000,
+  "read_length": 100,
+  "coverage": 20.0,
+  "k": 31,
+  "min_count": 2,
+  "seeds": [2401, 2402, 2403, 2404, 2405],
+  "damage_profile": [0.30, 0.18, 0.10, 0.05, 0.02],
+  "sequencing_error_rate": 0.005,
+  "rare_strain_coverage": 5.0,
+  "contamination_coverage": 5.0,
+  "scenarios": [
+    "clean",
+    "damage",
+    "sequencing_error",
+    "damage_error",
+    "rare_strain",
+    "contamination"
+  ],
+  "comparators": [
+    "megahit",
+    "metaspades"
+  ],
+  "metrics": [
+    "unitigs",
+    "total_bases",
+    "largest_contig",
+    "n50",
+    "reference_bases_recovered",
+    "reference_fraction",
+    "false_contigs",
+    "rare_strain_bases_recovered",
+    "damage_events"
+  ]
+}

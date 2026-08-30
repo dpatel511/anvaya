@@ -6,6 +6,10 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- A versioned P0 validation ladder with five deterministic seeds across clean,
+  terminal-damage, sequencing-error, combined-damage/error, rare-strain, and
+  contamination controls, including truth-aware continuity and recovery
+  metrics plus configuration and runtime manifests.
 - A deterministic, report-only fragmentation TSV that attributes both physical
   ends of every unitig as dead ends, unique continuations, or ambiguous
   branches and summarizes isolated, one-sided, and connected topology.

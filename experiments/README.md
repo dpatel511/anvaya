@@ -2,6 +2,43 @@
 
 Generated FASTQ files and result directories must not be committed. Publication-level experiments will use established simulators with recorded versions, commands, configurations, seeds, and reference checksums.
 
+## Frozen P0 validation ladder
+
+`18_validation_ladder.py` is the reproducible acceptance baseline for future
+assembly changes. Its versioned configuration runs five seeds across clean,
+terminal-damage, sequencing-error, combined-damage/error, rare-strain, and
+contamination scenarios at fixed `k=31` and `min_count=2`. It writes
+truth-labelled continuity and recovery metrics plus a manifest with the
+configuration checksum, Git state, runtime, and output checksums.
+
+```bash
+PYTHONPATH=src:tests python3 experiments/18_validation_ladder.py \
+  --output-dir experiments/validation/generated/ladder
+```
+
+Use `--dry-run` to inspect the six-scenario, five-seed matrix without running
+assembly. The generated ladder directory remains ignored by Git. Established
+assemblers are comparator slots in the frozen plan; they must be run on the
+same generated reads and reported separately from Anvaya's exact-truth metrics.
+
+The initial 30-run baseline (current orientation-aware graph, `k=31`,
+`min_count=2`) was:
+
+| Scenario | Mean N50 (bp) | Mean largest contig (bp) | Mean major-reference fraction | False contigs (total) |
+|---|---:|---:|---:|---:|
+| Clean | 4,980 | 4,980 | 1.0000 | 0 |
+| Sequencing error | 1,315 | 1,890 | 0.7700 | 33 |
+| Damage | 472 | 991 | 0.7400 | 87 |
+| Damage + error | 292 | 966 | 0.7200 | 120 |
+| Rare strain | 69 | 335 | 0.8900 | 120 |
+| Contamination | 377 | 991 | 0.7400 | 87 |
+
+These are baseline measurements, not claims of biological accuracy for the
+public library. The clean-versus-damaged contrast confirms that terminal
+damage is a high-value continuity target for the next phase, while the
+rare-strain row supplies the protection gate against simply deleting shorter
+paths.
+
 ## Graph-disturbance development test
 
 `01_graph_disturbance.py` is a deterministic implementation check, not a scientific benchmark. It uses a random 500 bp reference, 60 bp reads placed every 10 bp, `k=21`, and terminal damage rates of 0.50, 0.30, 0.15, 0.08, and 0.04 from each end.

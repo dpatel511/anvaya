@@ -246,6 +246,23 @@ This report records path support, local coverage, sequence similarity, substitut
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
+The frozen P0 validation ladder runs deterministic truth-labelled controls for
+clean reads, terminal damage, sequencing error, combined damage and error,
+rare-strain mixtures, and contamination. It records contig continuity,
+reference recovery, false contigs, damage-event counts, runtime provenance, and
+the exact benchmark configuration:
+
+```bash
+PYTHONPATH=src:tests python3 experiments/18_validation_ladder.py \
+  --output-dir experiments/validation/generated/ladder
+```
+
+Use `--dry-run` to inspect the frozen matrix without generating data. The
+versioned configuration is `experiments/benchmark_ladder.json`; generated
+summaries and manifests remain ignored. This ladder is the acceptance baseline
+for future assembly changes. Public data remains a realism/performance check,
+not exact biological truth.
+
 The clean tip-validation matrix can be run or safely resumed with:
 
 ```bash
