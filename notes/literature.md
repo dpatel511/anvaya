@@ -41,6 +41,30 @@ DOI: <https://doi.org/10.1371/journal.pcbi.1014591>
 - MEGAHIT: succinct, iterative de Bruijn graph metagenomic assembler.
 - metaSPAdes: metagenomic multi-k assembly and graph simplification.
 
+## Damage-aware consensus implementation choices
+
+- CarpeDeam clusters overlapping fragments using shared k-mers, filters them at
+  90% sequence identity and 99.9% R/Y identity, and uses a sample-specific
+  damage likelihood for correction and extension. Its safe consensus mode
+  reduces but does not eliminate misassemblies, so Anvaya adopts its
+  damage-tolerant overlap idea without importing unsafe greedy extension:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC12557918/
+- BayesHammer shows why global abundance thresholds fail under nonuniform
+  coverage and instead separates local Hamming-neighborhood clusters using base
+  qualities and Bayesian penalties. Anvaya consequently requires local overlap
+  consensus and quality-complete supporting observations rather than treating
+  low-count k-mers globally:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC3549815/
+- Ancient-DNA work predating specialized assemblers notes that randomly
+  distributed deamination can usually be excluded when at least three
+  overlapping molecules support a consensus. Anvaya uses three independent
+  internal molecules as its initial minimum and adds a 4:1 dominance gate:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC2847228/
+- Multi-assembly ancient-DNA workflows map reads back to candidate contigs and
+  remove unsupported contigs before overlap-based merging. This supports the
+  decision not to restore the stashed zero-read-support trusted high-k edges:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC5384568/
+
 ## Working gap
 
 Existing tools either assess damage after assembly or use it in overlap-based assembly. The targeted search has not identified an ancient-metagenomic DBG assembler that retains original-molecule positional evidence and uses it directly for graph construction, simplification, and path selection.

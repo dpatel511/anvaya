@@ -6,6 +6,13 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Experimental opt-in damage-aware pre-graph read consensus using a bounded
+  canonical-anchor sketch, damage-tolerant R/Y overlap identity, independent
+  high-quality nonterminal molecule support, conservative dominance, and a
+  streamed per-base audit TSV. The frozen ladder records strong synthetic
+  continuity gains but an 8.98% rare-strain recovery loss; `SRR32866683`
+  completes within 6.38 GiB peak RSS but retains its 38 bp N50, so the feature
+  remains research-only and disabled by default.
 - Truth-only `oracle_unique` and `oracle_all_truth` validation-ladder arms for
   measuring the upper bound of filtered-edge rescue without changing the
   production assembler. The 30-run result rejects singleton dead-end rescue as

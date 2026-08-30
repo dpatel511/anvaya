@@ -1534,3 +1534,60 @@ weak sequence across the separate low-coverage genome. The next upper-bound
 experiment should independently normalize known simulated damage and sequencing
 errors before deciding between damage-aware consensus projection and multi-k
 construction.
+
+## Damage-aware read consensus
+
+Experiment 18 now includes an opt-in pre-graph consensus comparator derived
+from the conservative overlap principles used by CarpeDeam and local
+quality-aware clustering used by BayesHammer. Exact internal anchors propose
+read overlaps; full overlaps must pass 90% DNA and 99% R/Y identity. Only
+high-quality nonterminal observations from independent molecules vote on 5′
+T-to-C or 3′ A-to-G reversals. Three votes with strict greater-than-4:1
+dominance are required, and tied or repetitive placements abstain.
+
+The ladder records corrected bases, true and false corrections, correction
+precision, unitigs, largest contig, N50, primary and rare-strain recovery,
+false contigs, and baseline deltas. The initial acceptance gate is at least 99%
+correction precision, at least 25% N50 improvement in both damage and combined
+damage/error scenarios, no clean regression or false-contig increase, no
+primary-reference loss, and less than 1% rare-strain recovery loss. Failure of
+any accuracy gate rejects topology use; weak continuity gain closes this design
+and advances multi-k construction instead of threshold tuning.
+
+The first exhaustive-anchor implementation passed the clean and precision
+gates and produced large mean N50 gains: 472.4 to 4,979.8 bp for damage and
+291.6 to 1,314.6 bp for combined damage and sequencing error. It nevertheless
+failed the strain-safety gate: exact rare-strain recovery fell 9.11%. On the
+1,409,072-read `SRR32866683` dataset, its all-read, both-orientation Python
+index exceeded the 7.6 GiB WSL memory limit and was killed at 7.17 GiB
+anonymous RSS before graph construction.
+
+The scalable revision retains at most eight bottom-ranked canonical internal
+anchors per read, packs occurrences into integers, reconstructs reverse
+orientation only for shortlisted overlaps, reuses unchanged read objects, and
+streams audit rows instead of retaining them. The optimized 30-run ladder was:
+
+| Scenario | Baseline mean N50 | Exhaustive consensus | Bounded consensus |
+|---|---:|---:|---:|
+| Clean | 4,979.8 | 4,979.8 | 4,979.8 |
+| Damage | 472.4 | 4,979.8 | 4,803.6 |
+| Damage plus error | 291.6 | 1,314.6 | 982.0 |
+| Contamination | 377.4 | 683.0 | 683.0 |
+| Rare strain | 68.8 | 93.2 | 93.2 |
+| Sequencing error | 1,314.6 | 1,314.6 | 1,314.6 |
+
+The bounded version retained 100% pooled correction precision outside the
+rare-strain scenario and 99.74% within it, but rare-strain recovery still fell
+8.98%. It therefore remains unsafe for strain mixtures despite passing the
+continuity threshold in the damage scenarios.
+
+The optimized public-data run completed in 511.35 seconds with 6,690,384 KiB
+peak RSS. Consensus occupied 326.39 seconds, evaluated 4,168,135 terminal
+candidates, corrected 157 bases in 150 reads, and wrote a 476,025,873-byte TSV.
+Compared with the fixed-`k=31` baseline, contigs decreased from 639,936 to
+639,886 and total assembled bases from 27,517,907 to 27,516,329; largest contig
+remained 366 bp and N50 remained 38 bp. This closes damage correction alone as
+the public-data continuity mechanism. The reusable overlap and R/Y validation
+remain opt-in research infrastructure; the next architecture experiment must
+test iterative whole-fragment cluster-and-extend assembly rather than feeding
+corrected reads back into the same fixed-k graph.
