@@ -31,6 +31,15 @@
     "reference_fraction",
     "false_contigs",
     "rare_strain_bases_recovered",
-    "damage_events"
+    "damage_events",
+    "dead_ends",
+    "read_boundaries",
+    "coverage_gaps",
+    "filtered_unique",
+    "filtered_conflicts",
+    "low_quality_dead_ends",
+    "terminal_only_dead_ends",
+    "correction_candidates",
+    "damage_protected_corrections"
   ]
 }

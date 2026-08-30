@@ -1431,3 +1431,54 @@ one fifth; ambiguous branches are important but are not the only fragmentation
 source. These counts describe graph topology, not biological correctness, and
 must not be used alone to justify joining or deleting paths. The generated TSV
 and run outputs remain excluded from version control.
+
+## P1 dead-end attribution and P2 correction audit
+
+The P1 second pass was added to determine why retained unitig paths stop rather
+than inferring a cause from topology alone. Across the frozen 30-run ladder,
+uniquely filtered extensions were the largest attributable class in every
+perturbed scenario:
+
+| Scenario | Uniquely filtered | Dead ends | Additional P2 candidates |
+|---|---:|---:|---:|
+| Damage | 64 | 97 | 0 |
+| Damage plus error | 101 | 135 | 1,677 |
+| Sequencing error | 42 | 48 | 1,868 |
+| Rare strain | 146 | 203 | — |
+| Contamination | 303 | 339 | — |
+
+Damage-only reads generated no low-quality P2 candidates because the simulated
+postmortem substitutions deliberately retained high Phred scores. This is a
+useful negative result: ordinary quality-based correction cannot represent the
+damage model.
+
+The corrected P1 public-data run used all 1,409,072 `SRR32866683` reads at
+`k=31`, `min_count=2`. It completed in 235.25 seconds, including 69.68 seconds
+for attribution:
+
+| P1 cause | Count | Fraction of 566,116 dead ends |
+|---|---:|---:|
+| Read boundary | 85,190 | 15.0% |
+| Coverage gap | 0 | 0.0% |
+| Uniquely filtered | 254,761 | 45.0% |
+| Filtered conflict | 226,159 | 40.0% |
+| Retained context elsewhere | 6 | <0.1% |
+
+Within the uniquely filtered class, 8,299 dead ends were predominantly
+low-quality and 20,902 were terminal-only. Thus approximately 85% of dead ends
+had an observed continuation removed by `min_count`, but almost half of all
+dead ends had conflicting raw alternatives and cannot be restored safely from
+abundance alone.
+
+The public P2 stage built its spectrum from all reads and audited 20,000 evenly
+spaced reads in 92.64 seconds. It reported 2,926 unique complete solid-k-mer
+rescues, 50 protected terminal damage-compatible reversals, 58 ambiguous
+rescues, and 10,863 incomplete rescues. Its combined invocation later failed
+inside the then-unfixed P1 ambiguous-base path, so these are valid P2-stage
+counts rather than a completed combined-run benchmark.
+
+Neither stage changed N50 or contig sequences. Their positive result is
+localization of the bottleneck: uniquely filtered continuations are a large
+candidate pool, while Phred-supported candidates form only a small subset and
+filtered conflicts require additional context such as multi-k or molecule-path
+evidence.

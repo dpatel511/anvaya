@@ -17,6 +17,10 @@ from anvaya.cleaning import (
     remove_weak_tips,
 )
 from anvaya.cleaning import find_weak_tip_candidates
+from anvaya.dead_end_attribution import (
+    DeadEndAttributionSummary,
+    write_dead_end_attribution_report,
+)
 from anvaya.events import EventReportSummary, write_event_report
 from anvaya.event_calibration import calibrate_event_report
 from anvaya.fragmentation import FragmentationSummary, write_fragmentation_report
@@ -30,6 +34,7 @@ from anvaya.paired_extension import (
     spell_extended_paths,
 )
 from anvaya.reads import load_reads
+from anvaya.read_correction import CorrectionSummary, write_correction_report
 from anvaya.read_threading import (
     ReadThreadingSummary,
     audit_read_threads,
@@ -278,6 +283,37 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     assemble_parser.add_argument(
+        "--dead-end-report",
+        type=Path,
+        help=(
+            "attribute compacted-graph dead ends to raw read boundaries, "
+            "filtered continuations, quality, or coverage as TSV"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--correction-report",
+        type=Path,
+        help=(
+            "audit conservative solid-k-mer substitution candidates as TSV "
+            "without changing reads or assembly"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--correction-max-quality",
+        type=_end_window,
+        default=20,
+        help="maximum Phred quality considered for correction (default: 20)",
+    )
+    assemble_parser.add_argument(
+        "--correction-max-reads",
+        type=_end_window,
+        default=0,
+        help=(
+            "audit an evenly spaced read sample after building the full "
+            "k-mer spectrum (default: 0, all reads)"
+        ),
+    )
+    assemble_parser.add_argument(
         "--output",
         "-o",
         required=True,
@@ -356,6 +392,10 @@ def _run_assemble(
     damage_profile_report: Path | None,
     unitig_bubble_report: Path | None,
     fragmentation_report: Path | None,
+    dead_end_report: Path | None,
+    correction_report: Path | None,
+    correction_max_quality: int,
+    correction_max_reads: int,
 ) -> int:
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
@@ -405,6 +445,10 @@ def _run_assemble(
         )
     if fragmentation_report is not None and not orientation_aware:
         raise ValueError("--fragmentation-report requires --orientation-aware")
+    if dead_end_report is not None and not orientation_aware:
+        raise ValueError("--dead-end-report requires --orientation-aware")
+    if correction_report is not None and min_count < 2:
+        raise ValueError("--correction-report requires --min-count of at least 2")
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -419,6 +463,25 @@ def _run_assemble(
     )
     sequences = [read.sequence for read in reads]
     _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
+
+    correction_summary = CorrectionSummary()
+    if correction_report is not None:
+        stage_started = time.perf_counter()
+        _progress("Auditing conservative solid-k-mer correction candidates")
+        correction_summary = write_correction_report(
+            reads,
+            correction_report,
+            k=k,
+            min_count=min_count,
+            maximum_quality=correction_max_quality,
+            end_window=max(end_window, 5),
+            maximum_reads=correction_max_reads,
+        )
+        _progress(
+            f"Reported {correction_summary.would_correct} correction "
+            f"candidates to {correction_report} in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
 
     stage_started = time.perf_counter()
     graph_kind = "orientation-aware" if orientation_aware else "directed"
@@ -532,6 +595,22 @@ def _run_assemble(
             f"Reported {fragmentation_summary.ends} unitig ends to "
             f"{fragmentation_report} in "
             f"{time.perf_counter() - stage_started:.2f}s"
+        )
+
+    dead_end_summary = DeadEndAttributionSummary()
+    if dead_end_report is not None:
+        stage_started = time.perf_counter()
+        _progress("Attributing dead ends from raw read evidence")
+        dead_end_summary = write_dead_end_attribution_report(
+            unitig_graph,
+            reads,
+            dead_end_report,
+            min_count=min_count,
+            end_window=max(end_window, 5),
+        )
+        _progress(
+            f"Attributed {dead_end_summary.dead_ends} dead ends to "
+            f"{dead_end_report} in {time.perf_counter() - stage_started:.2f}s"
         )
 
     read_thread_summary = ReadThreadingSummary()
@@ -697,6 +776,27 @@ def _run_assemble(
     print(f"fragmentation_isolated_unitigs={fragmentation_summary.isolated_unitigs}")
     print(f"fragmentation_one_sided_unitigs={fragmentation_summary.one_sided_unitigs}")
     print(f"fragmentation_connected_unitigs={fragmentation_summary.connected_unitigs}")
+    print(f"dead_end_report={dead_end_report or ''}")
+    print(f"dead_end_total={dead_end_summary.dead_ends}")
+    print(f"dead_end_read_boundaries={dead_end_summary.read_boundaries}")
+    print(f"dead_end_coverage_gaps={dead_end_summary.coverage_gaps}")
+    print(f"dead_end_filtered_unique={dead_end_summary.filtered_unique}")
+    print(f"dead_end_filtered_conflicts={dead_end_summary.filtered_conflicts}")
+    print(
+        "dead_end_retained_context_elsewhere="
+        f"{dead_end_summary.retained_context_elsewhere}"
+    )
+    print(f"dead_end_low_quality={dead_end_summary.low_quality}")
+    print(f"dead_end_terminal_only={dead_end_summary.terminal_only}")
+    print(f"dead_end_missing_quality={dead_end_summary.missing_quality}")
+    print(f"correction_report={correction_report or ''}")
+    print(f"correction_total_reads={correction_summary.reads}")
+    print(f"correction_audited_reads={correction_summary.audited_reads}")
+    print(f"correction_low_quality_bases={correction_summary.low_quality_bases}")
+    print(f"correction_would_correct={correction_summary.would_correct}")
+    print(f"correction_protected_damage={correction_summary.protected_damage}")
+    print(f"correction_ambiguous={correction_summary.ambiguous}")
+    print(f"correction_incomplete_rescue={correction_summary.incomplete_rescue}")
     print(
         "paired_unitig_extension="
         f"{str(paired_unitig_extension).lower()}"
@@ -798,6 +898,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.damage_profile_report,
                 arguments.unitig_bubble_report,
                 arguments.fragmentation_report,
+                arguments.dead_end_report,
+                arguments.correction_report,
+                arguments.correction_max_quality,
+                arguments.correction_max_reads,
             )
         if arguments.command == "calibrate-events":
             summary = calibrate_event_report(

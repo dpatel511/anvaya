@@ -8,11 +8,15 @@ import platform
 import random
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from anvaya.bidirected import build_bidirected_dbg
+from anvaya.dead_end_attribution import write_dead_end_attribution_report
+from anvaya.read_correction import write_correction_report
+from anvaya.reads import Read
 from anvaya.sequences import reverse_complement
 from anvaya.unitig_graph import build_compacted_unitig_graph
 from helpers.simulation import (
@@ -40,6 +44,15 @@ class BenchmarkRecord:
     false_contigs: int
     rare_strain_bases_recovered: int
     damage_events: int
+    dead_ends: int
+    read_boundaries: int
+    coverage_gaps: int
+    filtered_unique: int
+    filtered_conflicts: int
+    low_quality_dead_ends: int
+    terminal_only_dead_ends: int
+    correction_candidates: int
+    damage_protected_corrections: int
 
 
 def _load_config(path: Path) -> dict[str, object]:
@@ -198,6 +211,31 @@ def _run_record(
     )
     unitig_graph = build_compacted_unitig_graph(graph)
     contigs = list(unitig_graph.sequences)
+    audited_reads = [
+        Read(
+            read.name,
+            read.sequence,
+            tuple(
+                8 if position in read.error_positions else 35
+                for position in range(len(read.sequence))
+            ),
+        )
+        for read in reads
+    ]
+    with tempfile.TemporaryDirectory() as directory:
+        audit_root = Path(directory)
+        dead_end_summary = write_dead_end_attribution_report(
+            unitig_graph,
+            audited_reads,
+            audit_root / "dead-ends.tsv",
+            min_count=int(config["min_count"]),
+        )
+        correction_summary = write_correction_report(
+            audited_reads,
+            audit_root / "corrections.tsv",
+            k=int(config["k"]),
+            min_count=int(config["min_count"]),
+        )
     lengths = [len(contig) for contig in contigs]
     exact_contigs = [
         contig
@@ -221,6 +259,15 @@ def _run_record(
         false_contigs=len(contigs) - len(exact_contigs),
         rare_strain_bases_recovered=rare_bases,
         damage_events=damage_events,
+        dead_ends=dead_end_summary.dead_ends,
+        read_boundaries=dead_end_summary.read_boundaries,
+        coverage_gaps=dead_end_summary.coverage_gaps,
+        filtered_unique=dead_end_summary.filtered_unique,
+        filtered_conflicts=dead_end_summary.filtered_conflicts,
+        low_quality_dead_ends=dead_end_summary.low_quality,
+        terminal_only_dead_ends=dead_end_summary.terminal_only,
+        correction_candidates=correction_summary.would_correct,
+        damage_protected_corrections=correction_summary.protected_damage,
     )
 
 
