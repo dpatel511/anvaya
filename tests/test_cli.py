@@ -10,6 +10,48 @@ from anvaya.cli import main
 
 
 class CliTests(unittest.TestCase):
+    def test_damage_consensus_runs_before_graph_and_writes_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reads_path = root / "reads.fastq"
+            output_path = root / "contigs.fasta"
+            report_path = root / "damage-consensus.tsv"
+            truth = "CCGATCGTACGTTAGCTACGATCGTACGTA"
+            records = [("damaged", "T" + truth[1:])] + [
+                (f"truth-{index}", "GGGGG" + truth) for index in range(3)
+            ]
+            reads_path.write_text(
+                "".join(
+                    f"@{name}\n{sequence}\n+\n{'D' * len(sequence)}\n"
+                    for name, sequence in records
+                ),
+                encoding="utf-8",
+            )
+
+            exit_code = main(
+                [
+                    "assemble",
+                    "--input",
+                    str(reads_path),
+                    "--k",
+                    "7",
+                    "--min-count",
+                    "2",
+                    "--orientation-aware",
+                    "--end-window",
+                    "5",
+                    "--damage-consensus",
+                    "--damage-consensus-report",
+                    str(report_path),
+                    "--output",
+                    str(output_path),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(output_path.is_file())
+            self.assertIn("correct", report_path.read_text(encoding="utf-8"))
+
     def test_dead_end_and_correction_reports_are_report_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

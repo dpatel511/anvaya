@@ -15,6 +15,7 @@ from pathlib import Path
 
 from anvaya.bidirected import build_bidirected_dbg
 from anvaya.dead_end_attribution import write_dead_end_attribution_report
+from anvaya.damage_consensus import apply_damage_aware_consensus
 from anvaya.read_correction import write_correction_report
 from anvaya.reads import Read
 from anvaya.sequences import canonical_sequence, reverse_complement
@@ -53,6 +54,20 @@ class BenchmarkRecord:
     terminal_only_dead_ends: int
     correction_candidates: int
     damage_protected_corrections: int
+    consensus_corrected_bases: int
+    consensus_true_corrections: int
+    consensus_false_corrections: int
+    consensus_precision: float
+    consensus_unitigs: int
+    consensus_largest_contig: int
+    consensus_n50: int
+    consensus_reference_bases_recovered: int
+    consensus_reference_fraction: float
+    consensus_false_contigs: int
+    consensus_rare_strain_bases_recovered: int
+    consensus_n50_delta: int
+    consensus_reference_bases_delta: int
+    consensus_false_contigs_delta: int
     oracle_unique_rescued_kmers: int
     oracle_unique_unitigs: int
     oracle_unique_total_bases: int
@@ -370,6 +385,51 @@ def _run_record(
     ]
     reference_bases = _covered_bases(exact_contigs, (truth[0],))
     rare_bases = _covered_bases(exact_contigs, rare_truth) if rare_truth else 0
+    consensus_reads, consensus_summary = apply_damage_aware_consensus(
+        audited_reads,
+        end_window=len(config["damage_profile"]),
+    )
+    true_corrections = 0
+    false_corrections = 0
+    for simulated, corrected in zip(reads, consensus_reads, strict=True):
+        for position, (before, after) in enumerate(
+            zip(simulated.sequence, corrected.sequence, strict=True)
+        ):
+            if before == after:
+                continue
+            if after == simulated.source_sequence[position]:
+                true_corrections += 1
+            else:
+                false_corrections += 1
+    consensus_graph = build_bidirected_dbg(
+        [read.sequence for read in consensus_reads],
+        int(config["k"]),
+        int(config["min_count"]),
+    )
+    consensus_contigs = list(
+        build_compacted_unitig_graph(consensus_graph).sequences
+    )
+    consensus_lengths = [len(contig) for contig in consensus_contigs]
+    consensus_exact_contigs = [
+        contig
+        for contig in consensus_contigs
+        if any(
+            contig in truth_reference
+            or contig in reverse_complement(truth_reference)
+            for truth_reference in truth
+        )
+    ]
+    consensus_reference_bases = _covered_bases(
+        consensus_exact_contigs, (truth[0],)
+    )
+    consensus_rare_bases = (
+        _covered_bases(consensus_exact_contigs, rare_truth)
+        if rare_truth
+        else 0
+    )
+    consensus_false_contigs = (
+        len(consensus_contigs) - len(consensus_exact_contigs)
+    )
     unique_kmers = _oracle_unique_kmers(
         unitig_graph,
         reads,
@@ -462,6 +522,28 @@ def _run_record(
         terminal_only_dead_ends=dead_end_summary.terminal_only,
         correction_candidates=correction_summary.would_correct,
         damage_protected_corrections=correction_summary.protected_damage,
+        consensus_corrected_bases=consensus_summary.corrected_bases,
+        consensus_true_corrections=true_corrections,
+        consensus_false_corrections=false_corrections,
+        consensus_precision=(
+            true_corrections / (true_corrections + false_corrections)
+            if true_corrections + false_corrections
+            else 1.0
+        ),
+        consensus_unitigs=len(consensus_contigs),
+        consensus_largest_contig=max(consensus_lengths, default=0),
+        consensus_n50=_n50(consensus_lengths),
+        consensus_reference_bases_recovered=consensus_reference_bases,
+        consensus_reference_fraction=consensus_reference_bases / len(truth[0]),
+        consensus_false_contigs=consensus_false_contigs,
+        consensus_rare_strain_bases_recovered=consensus_rare_bases,
+        consensus_n50_delta=_n50(consensus_lengths) - _n50(lengths),
+        consensus_reference_bases_delta=(
+            consensus_reference_bases - reference_bases
+        ),
+        consensus_false_contigs_delta=(
+            consensus_false_contigs - (len(contigs) - len(exact_contigs))
+        ),
         oracle_unique_rescued_kmers=len(unique_kmers),
         oracle_unique_unitigs=len(unique_contigs),
         oracle_unique_total_bases=sum(unique_lengths),

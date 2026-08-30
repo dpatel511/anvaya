@@ -137,6 +137,31 @@ ancient-DNA damage are protected, and ambiguous or incomplete rescues are
 reported separately. Both reports are diagnostic: they do not edit reads,
 graph topology, unitigs, or output contigs.
 
+Damage-aware read consensus can be enabled as an experimental pre-graph stage:
+
+```bash
+anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
+  --orientation-aware --end-window 5 --damage-consensus \
+  --damage-consensus-report damage-consensus.tsv \
+  -o contigs.fasta
+```
+
+The initial safe policy considers only 5′ T-to-C and 3′ A-to-G reversals. A
+bounded sketch retains at most eight canonical internal anchors per read;
+candidate overlaps must pass at least 90% DNA identity and 99% R/Y identity.
+Three independent high-quality nonterminal molecules and 4:1 consensus
+dominance are required. Repetitive, tied, terminal-only, missing-quality, or
+weakly supported overlaps abstain. Graph construction uses corrected sequences,
+while downstream evidence reports retain the original read observations.
+
+This option is research-only. It recovered strong synthetic damage continuity,
+but lost 8.98% rare-strain recovery in the frozen ladder and did not improve
+N50 on `SRR32866683` (`38` before and after). The public-data run corrected 157
+bases, completed in 8:16 with 6.38 GiB peak RSS, and produced a 476 MB full
+audit report. Do not enable it for strain mixtures or routine production
+assembly; omit `--damage-consensus-report` on large exploratory runs unless a
+per-candidate audit is required.
+
 Tip cleaning can be enabled for controlled comparisons:
 
 ```bash

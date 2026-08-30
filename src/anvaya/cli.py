@@ -21,6 +21,10 @@ from anvaya.dead_end_attribution import (
     DeadEndAttributionSummary,
     write_dead_end_attribution_report,
 )
+from anvaya.damage_consensus import (
+    DamageConsensusSummary,
+    apply_damage_aware_consensus,
+)
 from anvaya.events import EventReportSummary, write_event_report
 from anvaya.event_calibration import calibrate_event_report
 from anvaya.fragmentation import FragmentationSummary, write_fragmentation_report
@@ -299,6 +303,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     assemble_parser.add_argument(
+        "--damage-consensus",
+        action="store_true",
+        help=(
+            "correct strongly supported terminal deaminations from "
+            "damage-tolerant read overlaps before graph construction"
+        ),
+    )
+    assemble_parser.add_argument(
+        "--damage-consensus-report",
+        type=Path,
+        help="write damage-aware consensus decisions as TSV",
+    )
+    assemble_parser.add_argument(
         "--correction-max-quality",
         type=_end_window,
         default=20,
@@ -396,6 +413,8 @@ def _run_assemble(
     correction_report: Path | None,
     correction_max_quality: int,
     correction_max_reads: int,
+    damage_consensus: bool,
+    damage_consensus_report: Path | None,
 ) -> int:
     started = time.perf_counter()
     if clean_tips and not orientation_aware:
@@ -449,6 +468,10 @@ def _run_assemble(
         raise ValueError("--dead-end-report requires --orientation-aware")
     if correction_report is not None and min_count < 2:
         raise ValueError("--correction-report requires --min-count of at least 2")
+    if damage_consensus and end_window == 0:
+        raise ValueError("--damage-consensus requires a positive --end-window")
+    if damage_consensus_report is not None and not damage_consensus:
+        raise ValueError("--damage-consensus-report requires --damage-consensus")
 
     stage_started = time.perf_counter()
     _progress(f"Loading reads from {', '.join(map(str, input_paths))}")
@@ -461,8 +484,26 @@ def _run_assemble(
         if len(read_groups) == 2
         else list(range(len(reads)))
     )
-    sequences = [read.sequence for read in reads]
+    raw_sequences = [read.sequence for read in reads]
+    sequences = raw_sequences
     _progress(f"Loaded {len(reads)} reads in {time.perf_counter() - stage_started:.2f}s")
+
+    damage_consensus_summary = DamageConsensusSummary()
+    if damage_consensus:
+        stage_started = time.perf_counter()
+        _progress("Correcting terminal deaminations from read consensus")
+        consensus_reads, damage_consensus_summary = apply_damage_aware_consensus(
+            reads,
+            molecule_ids=molecule_ids,
+            report_path=damage_consensus_report,
+            end_window=end_window,
+        )
+        sequences = [read.sequence for read in consensus_reads]
+        _progress(
+            f"Corrected {damage_consensus_summary.corrected_bases} bases in "
+            f"{damage_consensus_summary.corrected_reads} reads in "
+            f"{time.perf_counter() - stage_started:.2f}s"
+        )
 
     correction_summary = CorrectionSummary()
     if correction_report is not None:
@@ -526,7 +567,7 @@ def _run_assemble(
             event_report,
             incomplete_branches=incomplete_branch_candidates,
             damage_profile_path=damage_profile_report,
-            reads=sequences,
+            reads=raw_sequences,
             read_qualities=[read.qualities for read in reads],
             read_molecule_ids=molecule_ids,
         )
@@ -797,6 +838,16 @@ def _run_assemble(
     print(f"correction_protected_damage={correction_summary.protected_damage}")
     print(f"correction_ambiguous={correction_summary.ambiguous}")
     print(f"correction_incomplete_rescue={correction_summary.incomplete_rescue}")
+    print(f"damage_consensus={str(damage_consensus).lower()}")
+    print(f"damage_consensus_report={damage_consensus_report or ''}")
+    print(f"damage_consensus_candidates={damage_consensus_summary.candidate_bases}")
+    print(f"damage_consensus_corrected_bases={damage_consensus_summary.corrected_bases}")
+    print(f"damage_consensus_corrected_reads={damage_consensus_summary.corrected_reads}")
+    print(
+        "damage_consensus_insufficient_support="
+        f"{damage_consensus_summary.insufficient_support}"
+    )
+    print(f"damage_consensus_ambiguous={damage_consensus_summary.ambiguous}")
     print(
         "paired_unitig_extension="
         f"{str(paired_unitig_extension).lower()}"
@@ -902,6 +953,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.correction_report,
                 arguments.correction_max_quality,
                 arguments.correction_max_reads,
+                arguments.damage_consensus,
+                arguments.damage_consensus_report,
             )
         if arguments.command == "calibrate-events":
             summary = calibrate_event_report(
