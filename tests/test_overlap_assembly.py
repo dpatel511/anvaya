@@ -179,6 +179,123 @@ class OverlapAssemblyTests(unittest.TestCase):
         self.assertEqual(summary.clusters, 2)
         self.assertEqual(summary.contig_merges, 1)
 
+    def test_reports_clusters_below_minimum_support(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"member-{index}", center) for index in range(2))
+
+        contigs, summary = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            minimum_cluster_size=5,
+        )
+
+        self.assertEqual(contigs, [])
+        self.assertGreater(summary.clusters_below_minimum_size, 0)
+        self.assertGreater(summary.candidate_alignments, 0)
+
+    def test_ranked_extension_uses_unique_candidate_from_supported_cluster(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"contained-{index}", center) for index in range(4))
+        reads.append(Read("extension", center[5:] + "TTGCA"))
+
+        baseline, _ = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            maximum_contig_iterations=0,
+        )
+        ranked, summary = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            maximum_contig_iterations=0,
+            ranked_extension=True,
+        )
+
+        self.assertEqual([contig.sequence for contig in baseline], [center])
+        self.assertEqual([contig.sequence for contig in ranked], [center + "TTGCA"])
+        self.assertEqual(summary.added_bases, 5)
+
+    def test_extension_consensus_recalls_supported_appended_base(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(
+            Read(f"truth-{index}", center[5:] + "TTGCA")
+            for index in range(5)
+        )
+        reads.append(Read("long-error", center[5:] + "TCGCAA"))
+
+        contigs, _ = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            maximum_contig_iterations=0,
+            ranked_extension=True,
+            extension_consensus=True,
+        )
+
+        self.assertEqual([contig.sequence for contig in contigs], [center + "TTGCAA"])
+
+    def test_ranked_extension_can_require_boundary_support(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"contained-{index}", center) for index in range(4))
+        reads.append(Read("unsupported", center[5:] + "TTGCA"))
+
+        contigs, _ = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            maximum_contig_iterations=0,
+            ranked_extension=True,
+            minimum_ranked_extension_support=2,
+        )
+
+        self.assertEqual([contig.sequence for contig in contigs], [center])
+
+    def test_reciprocal_best_preserves_consistent_ranked_extension(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"contained-{index}", center) for index in range(4))
+        reads.append(Read("extension", center[5:] + "TTGCA"))
+
+        contigs, summary = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            maximum_contig_iterations=0,
+            ranked_extension=True,
+            reciprocal_best_extension=True,
+        )
+
+        self.assertEqual([contig.sequence for contig in contigs], [center + "TTGCA"])
+        self.assertEqual(summary.reciprocal_extension_checks, 1)
+        self.assertEqual(summary.reciprocal_extension_rejections, 0)
+
+    def test_reciprocal_best_rejects_conflicting_predecessor(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        extension = center[5:] + "TTGCA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"contained-{index}", center) for index in range(4))
+        reads.append(Read("extension", extension))
+        reads.append(Read("conflicting-predecessor", "GGGGG" + extension[:33]))
+
+        contigs, summary = assemble_overlap_contigs(
+            reads,
+            anchor_k=7,
+            minimum_overlap=20,
+            maximum_contig_iterations=0,
+            ranked_extension=True,
+            reciprocal_best_extension=True,
+        )
+
+        self.assertEqual([contig.sequence for contig in contigs], [center])
+        self.assertEqual(summary.reciprocal_extension_checks, 1)
+        self.assertEqual(summary.reciprocal_extension_rejections, 1)
+
     def test_contig_phase_merges_a_unique_best_overlap(self) -> None:
         left = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         right = left[15:] + "TTGCAACGT"
@@ -301,6 +418,7 @@ class OverlapAssemblyTests(unittest.TestCase):
             {center, conflicting},
         )
         self.assertEqual(summary.clusters, 2)
+        self.assertGreater(summary.candidate_ry_rejected, 0)
 
     def test_cli_is_separate_from_dbg_assembly(self) -> None:
         center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
@@ -329,6 +447,35 @@ class OverlapAssemblyTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertIn(center + "TTGCA", output_path.read_text(encoding="utf-8"))
+
+    def test_cli_accepts_candidate_discovery_parameters(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "reads.fasta"
+            output_path = root / "contigs.fasta"
+            input_path.write_text(
+                "".join(
+                    f">read-{index}\n{center}\n"
+                    for index in range(5)
+                ),
+                encoding="utf-8",
+            )
+
+            result = main([
+                "overlap-assemble",
+                "-i", str(input_path),
+                "-o", str(output_path),
+                "--anchor-k", "7",
+                "--anchors-per-read", "16",
+                "--max-anchor-occurrences", "50",
+                "--min-anchor-matches", "2",
+                "--min-overlap", "20",
+                "--reciprocal-best-extension",
+            ])
+
+            self.assertEqual(result, 0)
+            self.assertTrue(output_path.exists())
 
 
 if __name__ == "__main__":

@@ -37,9 +37,10 @@ The acceptance contract is:
 | P1 dead-end attribution and P2 correction audit | Retain as diagnostics; neither changes topology. |
 | Singleton filtered-edge rescue | Rejected; truth-valid edge rescue did not produce safe contig gains. |
 | Damage-aware read consensus | Retain as opt-in infrastructure; synthetic gains are strong, but rare-strain loss is 8.98% and public-data N50 remains 38 bp. |
-| Direct overlap assembly | Retain as the active experimental backend; it crosses the DBG N50/resource baseline on EMN001 subsets but remains far below published full-data continuity. |
+| Reciprocal ranked overlap assembly | Retain as the active safe prototype with contig merging disabled; on EMN001 500k it reached N50/NA50 133/132 and 4.90 Mb aligned with zero misassemblies. |
+| Contig-overlap merging | Keep experimental and disabled in the safe configuration; 2,802 merges bought only +3 N50/+2 NA50 and introduced one 240 bp translocation. |
 | Frozen-layout damage polishing | Retain opt-in; 99.69% resolved edit precision and improved aligned length with unchanged topology, but no N50 effect by design. |
-| Next architecture step | Diagnose rejected/ambiguous overlap edges, then add strain-aware filtering and unique-simple-path layout. |
+| Next architecture step | Rank safe read extensions by alignment and damage-aware mismatch confidence, then improve read recruitment without changing topology. |
 
 Public datasets remain realism and resource checks unless suitable reference
 truth is available. Public-data N50 alone is not an acceptance signal.

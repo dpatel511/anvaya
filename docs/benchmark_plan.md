@@ -148,18 +148,25 @@ five harmful edits). Aggregate mismatch density increased slightly from 493.45
 to 494.22 per 100 kbp while additional sequence aligned, so edit-level causal
 auditing is reported alongside assembly-level alignment metrics.
 
-The next go/no-go work is layout-only, in this order:
+The layout checkpoint produced a safe improvement:
 
-1. Measure why reads fail to join: no candidate, non-unique best candidate,
-   R/Y rejection, insufficient molecule support, or repeat/strain conflict.
-2. Add strain-aware overlap-edge filtering using reciprocal best support and
-   local coverage/allele consistency before layout, while leaving ambiguous
-   edges unjoined.
-3. Extend only unique simple paths in the resulting overlap graph, then use
-   insert-size-aware paired evidence for repeat crossings.
-4. Validate each change on 100k first, then 500k and the frozen truth ladder;
-   reject it unless aligned continuity improves without rare-strain loss or
-   new misassemblies.
+1. Candidate diagnostics showed that identity rejection was not the dominant
+   bottleneck; conservative per-base extension support prevented useful layout.
+2. Ranked extension substantially improved continuity but introduced one
+   misassembly at 500k.
+3. Boundary support reduced continuity without removing the error.
+4. Reciprocal-best filtering retained N50/NA50 136/134, but the same 240 bp
+   translocation survived.
+5. Disabling contig merging removed the translocation while retaining N50/NA50
+   133/132 and increasing aligned length to 4.90 Mb.
+
+The accepted research configuration is therefore ranked read extension with
+extension consensus, reciprocal-best filtering, and
+`--max-contig-iterations 0`. The next go/no-go work is alignment-length and
+damage-aware mismatch confidence for candidate ranking, followed by improved
+read recruitment. Each change must retain zero misassemblies, at least 132 bp
+NA50, and at least 4.90 Mb aligned length on the 500k checkpoint before broader
+validation.
 
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long
