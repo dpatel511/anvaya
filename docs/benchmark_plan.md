@@ -128,3 +128,39 @@ accepted extension support, chimeric-contig counts, rare-strain retention,
 runtime, and peak memory. Direct CarpeDeam, MEGAHIT, and metaSPAdes comparisons
 must use identical prepared inputs; empirical N50 without truth remains a
 resource and realism observation, not a go decision.
+
+## Direct-overlap P0 checkpoint
+
+The separate overlap backend crossed the DBG continuity baseline on the
+CarpeDeam EMN001 100k and 500k subsets. On 500k fragments, direct overlap
+produced N50 109 versus 58 for the DBG, completed in 34.82 versus 54.97 seconds,
+and used 1.00 versus 2.85 GB peak RSS. Reusing reads in a second layout phase
+increased recovered output from 3.52 to 4.32 Mb but reduced N50 to 104. No
+contig reached 1,000 bp, so this is proof that the replacement architecture is
+viable, not evidence that its layout problem is solved.
+
+Frozen-layout terminal-damage polishing is accepted as an opt-in accuracy
+stage, not as a continuity stage. In the exact paired 500k comparison it kept
+45,545 contigs, total length, N50, and largest-contig length unchanged; retained
+zero MetaQUAST misassemblies; increased aligned length by 6,172 bp and NA50 by
+one base; and achieved 99.69% precision among truth-resolved edits (1,591 fixes,
+five harmful edits). Aggregate mismatch density increased slightly from 493.45
+to 494.22 per 100 kbp while additional sequence aligned, so edit-level causal
+auditing is reported alongside assembly-level alignment metrics.
+
+The next go/no-go work is layout-only, in this order:
+
+1. Measure why reads fail to join: no candidate, non-unique best candidate,
+   R/Y rejection, insufficient molecule support, or repeat/strain conflict.
+2. Add strain-aware overlap-edge filtering using reciprocal best support and
+   local coverage/allele consistency before layout, while leaving ambiguous
+   edges unjoined.
+3. Extend only unique simple paths in the resulting overlap graph, then use
+   insert-size-aware paired evidence for repeat crossings.
+4. Validate each change on 100k first, then 500k and the frozen truth ladder;
+   reject it unless aligned continuity improves without rare-strain loss or
+   new misassemblies.
+
+Further polishing, looser identity thresholds, and indiscriminate read reuse
+are not current priorities: the experiments show that they cannot create long
+paths and can trade strain fidelity for small local gains.

@@ -1,6 +1,10 @@
 """Anvaya: damage-aware de Bruijn graph assembly."""
 
 from anvaya.assembly import assemble, assemble_file
+from anvaya.overlap_assembly import (
+    OverlapAssemblySummary,
+    assemble_overlap_contigs,
+)
 from anvaya.bidirected import (
     BidirectedDeBruijnGraph,
     MoleculeEndLink,
@@ -108,6 +112,8 @@ __all__ = [
     "TipSubstitutionEvidence",
     "assemble",
     "assemble_file",
+    "assemble_overlap_contigs",
+    "OverlapAssemblySummary",
     "branching_nodes",
     "build_bidirected_dbg",
     "build_dbg",

@@ -32,6 +32,11 @@ from anvaya.graph import build_dbg
 from anvaya.incomplete_branches import find_incomplete_branch_candidates
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
+from anvaya.overlap_assembly import (
+    OverlapCorrectionEvent,
+    assemble_overlap_contigs,
+    write_overlap_correction_report,
+)
 from anvaya.paired_extension import (
     PairedExtensionSummary,
     extend_paired_unitig_paths,
@@ -336,6 +341,57 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         help="output unitig FASTA file",
+    )
+
+    overlap_parser = subparsers.add_parser(
+        "overlap-assemble",
+        help="assemble merged fragments directly by conservative overlaps",
+    )
+    overlap_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        type=Path,
+        help="merged-fragment FASTA/FASTQ input, optionally gzipped",
+    )
+    overlap_parser.add_argument(
+        "--output", "-o", required=True, type=Path,
+        help="output overlap-contig FASTA file",
+    )
+    overlap_parser.add_argument(
+        "--max-rounds",
+        type=_minimum_count,
+        default=3,
+        help="maximum extension rounds per seed (default: 3)",
+    )
+    overlap_parser.add_argument(
+        "--max-contig-iterations",
+        type=_end_window,
+        default=3,
+        help="maximum contig reindex-and-merge iterations (default: 3)",
+    )
+    overlap_parser.add_argument(
+        "--min-cluster-size",
+        type=_minimum_count,
+        default=5,
+        help="minimum independent fragments per contig (default: 5)",
+    )
+    overlap_parser.add_argument(
+        "--min-output-length",
+        type=_minimum_count,
+        default=0,
+        help="minimum emitted contig length (default: 0)",
+    )
+    overlap_parser.add_argument(
+        "--damage-end-window",
+        type=_end_window,
+        default=0,
+        help="terminal bases eligible for experimental damage polishing (default: 0)",
+    )
+    overlap_parser.add_argument(
+        "--correction-report",
+        type=Path,
+        help="optional accepted-correction audit TSV",
     )
 
     calibration_parser = subparsers.add_parser(
@@ -956,6 +1012,61 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.damage_consensus,
                 arguments.damage_consensus_report,
             )
+        if arguments.command == "overlap-assemble":
+            started = time.perf_counter()
+            _progress(f"Loading merged fragments from {arguments.input}")
+            reads = load_reads(arguments.input)
+            _progress(f"Loaded {len(reads)} fragments")
+            correction_events: list[OverlapCorrectionEvent] = []
+            contigs, summary = assemble_overlap_contigs(
+                reads,
+                maximum_rounds=arguments.max_rounds,
+                maximum_contig_iterations=arguments.max_contig_iterations,
+                minimum_cluster_size=arguments.min_cluster_size,
+                minimum_output_length=arguments.min_output_length,
+                damage_end_window=arguments.damage_end_window,
+                correction_events=correction_events,
+            )
+            if arguments.correction_report is not None:
+                write_overlap_correction_report(
+                    correction_events,
+                    arguments.correction_report,
+                )
+            write_fasta([contig.sequence for contig in contigs], arguments.output)
+            _progress(f"Completed in {time.perf_counter() - started:.2f}s")
+            print(f"reads={summary.input_reads}")
+            print(f"overlap_contigs={summary.output_contigs}")
+            print(f"overlap_clusters={summary.clusters}")
+            print(f"overlap_clustered_reads={summary.clustered_reads}")
+            print(f"overlap_extension_rounds={summary.extension_rounds}")
+            print(f"overlap_extended_contigs={summary.extended_contigs}")
+            print(f"overlap_added_bases={summary.added_bases}")
+            print(f"overlap_contig_iterations={summary.contig_iterations}")
+            print(f"overlap_contig_merges={summary.contig_merges}")
+            print(f"overlap_corrected_bases={summary.corrected_bases}")
+            print(f"overlap_correction_report={arguments.correction_report or ''}")
+            print(
+                "overlap_correction_candidates="
+                f"{summary.correction_candidates}"
+            )
+            print(
+                "overlap_correction_terminal_only="
+                f"{summary.correction_terminal_only}"
+            )
+            print(
+                "overlap_correction_insufficient_support="
+                f"{summary.correction_insufficient_support}"
+            )
+            print(
+                "overlap_correction_ambiguous="
+                f"{summary.correction_ambiguous}"
+            )
+            print(
+                "overlap_ambiguous_extensions="
+                f"{summary.ambiguous_extensions}"
+            )
+            print(f"output={arguments.output}")
+            return 0
         if arguments.command == "calibrate-events":
             summary = calibrate_event_report(
                 arguments.input,
