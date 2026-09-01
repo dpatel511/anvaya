@@ -6,7 +6,7 @@ The central idea is to retain evidence from the original DNA molecules—such as
 
 ## Current status
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, compacted unitig-graph construction, topology analysis, support-only and damage-aware conservative tip cleaning, simple-bubble detection, weak-tip-to-backbone matching, unitig-level bubble scoring, and evidence-based classification of graph alternatives.
+Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, and a separate experimental whole-fragment overlap-layout-consensus backend. The overlap backend is the active continuity research path; the DBG remains the established baseline and diagnostic framework.
 
 Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
 
@@ -73,8 +73,44 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - report-only raw-read attribution of compacted-graph dead ends;
 - report-only solid-k-mer correction-candidate auditing with explicit
   protection of terminal damage-compatible reversals.
+- separate conservative whole-fragment overlap assembly with 90% DNA and 99%
+  R/Y identity gates, independent-molecule support, iterative end extension,
+  and a second contig-overlap phase;
+- optional frozen-layout terminal-damage polishing that cannot alter contig
+  membership, order, orientation, or length, with a per-edit audit report.
 
 ## Command-line usage
+
+The active experimental overlap backend accepts pre-merged fragments:
+
+```bash
+anvaya overlap-assemble -i merged.fastq.gz \
+  --max-rounds 3 --max-contig-iterations 3 \
+  --min-cluster-size 5 --min-output-length 31 \
+  -o contigs.fasta
+```
+
+Frozen-layout damage polishing is opt-in. A zero window, the default, disables
+it. The correction report is required for causal truth auditing:
+
+```bash
+anvaya overlap-assemble -i merged.fastq.gz \
+  --damage-end-window 5 --correction-report corrections.tsv \
+  -o contigs.fasta
+```
+
+On the CarpeDeam EMN001 simulated 500k-fragment subset, direct overlap assembly
+raised N50 from the DBG baseline's 58 bp to 109 bp while reducing wall time
+from 54.97 to 34.82 seconds and peak RSS from 2.85 GB to 1.00 GB. The
+two-phase reusable-read layout recovered more sequence but reached only 104 bp
+N50. Frozen polishing preserved the exact 45,545-contig layout and zero
+misassemblies; it raised aligned length by 6,172 bp and NA50 from 102 to 103.
+Of 2,003 audited edits, 1,591 fixed a reference mismatch, five introduced one,
+and 407 were unresolved or unmapped (99.69% precision among resolved edits).
+These are positive accuracy and resource results, but not a continuity
+breakthrough: the published full-data CarpeDeam safe and unsafe assemblies have
+N50 values of 6,656 and 16,864 bp. Polishing therefore remains opt-in and the
+next work targets layout rather than additional base correction.
 
 ```bash
 anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta

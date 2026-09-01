@@ -11,8 +11,18 @@ All notable project changes will be documented in this file.
   overlap-backend decision and separated the active experiment index from the
   preserved chronological research archive.
 - Removed an unused private encoded-k-mer wrapper.
+- Moved terminal-damage correction after overlap layout so polishing operates
+  on frozen contigs and cannot change topology or length.
 
 ### Added
+
+- A separate experimental `overlap-assemble` command implementing conservative
+  whole-fragment overlap clustering, iterative extension, reusable-read layout,
+  and contig-overlap merging with DNA and R/Y identity gates.
+- Opt-in frozen-layout T-to-C/A-to-G terminal-damage polishing, accepted-edit
+  TSV reporting, a one-edit reference truth auditor, and exact reconstruction
+  of paired unpolished contigs. The EMN001 500k audit resolved 1,596 edits with
+  99.69% precision while preserving the complete contig topology.
 
 - Experimental opt-in damage-aware pre-graph read consensus using a bounded
   canonical-anchor sketch, damage-tolerant R/Y overlap identity, independent
