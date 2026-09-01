@@ -2,7 +2,7 @@
 
 import csv
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from anvaya.damage_consensus import _anchor_index, _identity, _ry, _sketch_anchors
@@ -29,6 +29,37 @@ class OverlapAssemblySummary:
     correction_terminal_only: int = 0
     correction_insufficient_support: int = 0
     correction_ambiguous: int = 0
+    candidate_offsets: int = 0
+    candidate_below_anchor_support: int = 0
+    candidate_short_overlap: int = 0
+    candidate_dna_rejected: int = 0
+    candidate_ry_rejected: int = 0
+    candidate_molecule_ambiguous: int = 0
+    candidate_alignments: int = 0
+    unavailable_anchor_hits: int = 0
+    targets_without_candidates: int = 0
+    clusters_below_minimum_size: int = 0
+    consensus_without_extension: int = 0
+    reciprocal_extension_checks: int = 0
+    reciprocal_extension_rejections: int = 0
+
+
+@dataclass(slots=True)
+class _CandidateDiagnostics:
+    offsets: int = 0
+    below_anchor_support: int = 0
+    short_overlap: int = 0
+    dna_rejected: int = 0
+    ry_rejected: int = 0
+    molecule_ambiguous: int = 0
+    alignments: int = 0
+    unavailable_anchor_hits: int = 0
+
+
+@dataclass(slots=True)
+class _ReciprocalDiagnostics:
+    checks: int = 0
+    rejections: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -104,6 +135,7 @@ def _candidate_alignments(
     minimum_ry_identity: float,
     position_bits: int,
     target_window: int,
+    diagnostics: _CandidateDiagnostics | None = None,
 ) -> list[_Alignment]:
     payload_bits = position_bits + 1
     position_mask = (1 << position_bits) - 1
@@ -121,6 +153,8 @@ def _candidate_alignments(
                 if isinstance(unavailable, set)
                 else unavailable[member_index]
             ):
+                if diagnostics is not None:
+                    diagnostics.unavailable_anchor_hits += 1
                 continue
             member_position = (packed >> 1) & position_mask
             reverse = target_reverse != bool(packed & 1)
@@ -134,7 +168,11 @@ def _candidate_alignments(
 
     by_molecule: dict[int, list[_Alignment]] = defaultdict(list)
     for (member_index, reverse, offset), support in votes.items():
+        if diagnostics is not None:
+            diagnostics.offsets += 1
         if support < minimum_anchor_matches:
+            if diagnostics is not None:
+                diagnostics.below_anchor_support += 1
             continue
         member = reads[member_index].sequence
         if reverse:
@@ -142,13 +180,19 @@ def _candidate_alignments(
         start = max(0, offset)
         stop = min(len(target), offset + len(member))
         if stop - start < minimum_overlap:
+            if diagnostics is not None:
+                diagnostics.short_overlap += 1
             continue
         member_start = start - offset
         target_overlap = target[start:stop]
         member_overlap = member[member_start : member_start + stop - start]
         if _identity(target_overlap, member_overlap) < minimum_identity:
+            if diagnostics is not None:
+                diagnostics.dna_rejected += 1
             continue
         if _identity(_ry(target_overlap), _ry(member_overlap)) < minimum_ry_identity:
+            if diagnostics is not None:
+                diagnostics.ry_rejected += 1
             continue
         by_molecule[molecule_ids[member_index]].append(
             _Alignment(member_index, member, offset, support)
@@ -160,6 +204,10 @@ def _candidate_alignments(
         best = [candidate for candidate in candidates if candidate.support == best_support]
         if len(best) == 1:
             selected.append(best[0])
+            if diagnostics is not None:
+                diagnostics.alignments += 1
+        elif diagnostics is not None:
+            diagnostics.molecule_ambiguous += 1
     return selected
 
 
@@ -173,6 +221,7 @@ def _consensus(
     correction_dominance_ratio: float = 2.0,
     damage_end_window: int = 0,
     allow_internal_consensus: bool = True,
+    minimum_internal_support: int | None = None,
 ) -> _Consensus:
     observations: dict[int, dict[str, int]] = defaultdict(
         lambda: {base: 0 for base in "ACGT"}
@@ -210,8 +259,13 @@ def _consensus(
             ):
                 accepted_extensions[position] = base
             continue
+        internal_support = (
+            minimum_extension_support
+            if minimum_internal_support is None
+            else minimum_internal_support
+        )
         if allow_internal_consensus and base != target[position] and (
-            support >= minimum_extension_support
+            support >= internal_support
             and (runner_up == 0 or support >= dominance_ratio * runner_up)
         ):
             accepted_internal[position] = base
@@ -348,6 +402,132 @@ def _unique_best_extensions(
     return list(selected.values()), contained, ambiguous
 
 
+def _filter_extension_boundary_support(
+    target: str,
+    candidates: list[_Alignment],
+    selected: list[_Alignment],
+    minimum_support: int,
+) -> list[_Alignment]:
+    """Keep extensions whose first appended base has independent support."""
+    if minimum_support <= 1:
+        return selected
+    supported: list[_Alignment] = []
+    for choice in selected:
+        position = -1 if choice.offset < 0 else len(target)
+        choice_base = choice.sequence[position - choice.offset]
+        support = sum(
+            candidate.offset <= position < candidate.offset + len(candidate.sequence)
+            and candidate.sequence[position - candidate.offset] == choice_base
+            for candidate in candidates
+        )
+        if support >= minimum_support:
+            supported.append(choice)
+    return supported
+
+
+def _filter_reciprocal_best_extensions(
+    target: str,
+    selected: list[_Alignment],
+    cluster_indices: set[int],
+    reads: list[Read],
+    molecule_ids: list[int],
+    anchors: dict[int, list[int]],
+    *,
+    anchor_k: int,
+    anchors_per_read: int,
+    maximum_anchor_occurrences: int,
+    minimum_anchor_matches: int,
+    minimum_overlap: int,
+    minimum_identity: float,
+    minimum_ry_identity: float,
+    position_bits: int,
+    target_window: int,
+    minimum_overlap_margin: int,
+    diagnostics: _ReciprocalDiagnostics,
+) -> list[_Alignment]:
+    """Keep extensions whose opposite end uniquely points to this cluster."""
+    def side_supported(
+        reciprocal_candidates: list[_Alignment],
+        side: str,
+    ) -> bool:
+        ranked: list[tuple[int, _Alignment, str]] = []
+        for candidate in reciprocal_candidates:
+            start = max(0, candidate.offset)
+            stop = min(len(choice.sequence), candidate.offset + len(candidate.sequence))
+            overlap = stop - start
+            if side == "left" and candidate.offset < 0:
+                extension = candidate.sequence[:-candidate.offset]
+            elif (
+                side == "right"
+                and candidate.offset + len(candidate.sequence) > len(choice.sequence)
+            ):
+                extension = candidate.sequence[len(choice.sequence) - candidate.offset :]
+            else:
+                continue
+            ranked.append((overlap, candidate, extension))
+        if not ranked:
+            return False
+        best_overlap = max(item[0] for item in ranked)
+        contenders = [
+            item
+            for item in ranked
+            if best_overlap - item[0] < minimum_overlap_margin
+        ]
+        cluster_extensions = [
+            extension
+            for _, candidate, extension in contenders
+            if candidate.read_index in cluster_indices
+        ]
+        for cluster_extension in cluster_extensions:
+            compatible = True
+            for _, _, extension in contenders:
+                shared = min(len(cluster_extension), len(extension))
+                if side == "left":
+                    first = cluster_extension[-shared:]
+                    second = extension[-shared:]
+                else:
+                    first = cluster_extension[:shared]
+                    second = extension[:shared]
+                if (
+                    _identity(first, second) < minimum_identity
+                    or _identity(_ry(first), _ry(second)) < minimum_ry_identity
+                ):
+                    compatible = False
+                    break
+            if compatible:
+                return True
+        return False
+
+    supported: list[_Alignment] = []
+    for choice in selected:
+        diagnostics.checks += 1
+        reciprocal_candidates = _candidate_alignments(
+            choice.sequence,
+            reads,
+            molecule_ids,
+            anchors,
+            set(),
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=target_window,
+        )
+        needs_left = choice.offset + len(choice.sequence) > len(target)
+        needs_right = choice.offset < 0
+        has_left = side_supported(reciprocal_candidates, "left")
+        has_right = side_supported(reciprocal_candidates, "right")
+        if (not needs_left or has_left) and (not needs_right or has_right):
+            supported.append(choice)
+        else:
+            diagnostics.rejections += 1
+    return supported
+
+
 def _merge_contig_pass(
     contigs: list[Read],
     *,
@@ -360,6 +540,8 @@ def _merge_contig_pass(
     minimum_ry_identity: float,
     maximum_rounds: int,
     minimum_overlap_margin: int,
+    reciprocal_best_extension: bool = False,
+    reciprocal_diagnostics: _ReciprocalDiagnostics | None = None,
 ) -> tuple[list[Read], int, int, int, int]:
     """Merge unambiguous contig overlaps while preserving every other contig."""
     if not contigs:
@@ -383,6 +565,7 @@ def _merge_contig_pass(
         if assigned[center_index]:
             continue
         assigned[center_index] = True
+        cluster_indices = {center_index}
         target = contigs[center_index].sequence
         seed_length = len(target)
         for _ in range(maximum_rounds):
@@ -408,12 +591,35 @@ def _merge_contig_pass(
                 minimum_overlap_margin=minimum_overlap_margin,
             )
             ambiguous += branch_count
+            if reciprocal_best_extension and selected:
+                if reciprocal_diagnostics is None:
+                    reciprocal_diagnostics = _ReciprocalDiagnostics()
+                selected = _filter_reciprocal_best_extensions(
+                    target,
+                    selected,
+                    cluster_indices,
+                    contigs,
+                    molecule_ids,
+                    anchors,
+                    anchor_k=anchor_k,
+                    anchors_per_read=anchors_per_read,
+                    maximum_anchor_occurrences=maximum_anchor_occurrences,
+                    minimum_anchor_matches=minimum_anchor_matches,
+                    minimum_overlap=minimum_overlap,
+                    minimum_identity=minimum_identity,
+                    minimum_ry_identity=minimum_ry_identity,
+                    position_bits=position_bits,
+                    target_window=target_window,
+                    minimum_overlap_margin=minimum_overlap_margin,
+                    diagnostics=reciprocal_diagnostics,
+                )
             for read_index in contained:
                 assigned[read_index] = True
             if not selected:
                 break
             for candidate in selected:
                 assigned[candidate.read_index] = True
+                cluster_indices.add(candidate.read_index)
             result = _consensus(
                 target,
                 selected,
@@ -539,6 +745,10 @@ def assemble_overlap_contigs(
     maximum_rounds: int = 3,
     maximum_contig_iterations: int = 3,
     minimum_overlap_margin: int = 3,
+    ranked_extension: bool = False,
+    extension_consensus: bool = False,
+    minimum_ranked_extension_support: int = 1,
+    reciprocal_best_extension: bool = False,
     minimum_output_length: int = 0,
     correction_events: list[OverlapCorrectionEvent] | None = None,
 ) -> tuple[list[Read], OverlapAssemblySummary]:
@@ -561,6 +771,10 @@ def assemble_overlap_contigs(
         raise ValueError("minimum_overlap_margin must be at least 1")
     if minimum_output_length < 0:
         raise ValueError("minimum_output_length must not be negative")
+    if extension_consensus and not ranked_extension:
+        raise ValueError("extension_consensus requires ranked_extension")
+    if minimum_ranked_extension_support < 1:
+        raise ValueError("minimum_ranked_extension_support must be at least 1")
     if anchors_per_read < minimum_anchor_matches:
         raise ValueError("anchors_per_read must cover minimum_anchor_matches")
     molecules = list(range(len(reads))) if molecule_ids is None else molecule_ids
@@ -576,8 +790,13 @@ def assemble_overlap_contigs(
     contigs: list[Read] = []
     clusters = clustered_reads = extension_rounds = 0
     extended_contigs = added_bases = corrected_bases = 0
+    ambiguous_extensions = 0
     correction_candidates = correction_terminal_only = 0
     correction_insufficient_support = correction_ambiguous = 0
+    candidate_diagnostics = _CandidateDiagnostics()
+    reciprocal_diagnostics = _ReciprocalDiagnostics()
+    targets_without_candidates = clusters_below_minimum_size = 0
+    consensus_without_extension = 0
     order = sorted(
         range(len(reads)),
         key=lambda index: (-len(reads[index].sequence), index),
@@ -608,10 +827,13 @@ def assemble_overlap_contigs(
                 minimum_ry_identity=minimum_ry_identity,
                 position_bits=position_bits,
                 target_window=target_window,
+                diagnostics=candidate_diagnostics,
             )
             if not candidates:
+                targets_without_candidates += 1
                 break
             if not members and len(candidates) + 1 < minimum_cluster_size:
+                clusters_below_minimum_size += 1
                 break
             tentative_members = members + candidates
             result = _consensus(
@@ -623,6 +845,79 @@ def assemble_overlap_contigs(
                 correction_dominance_ratio=correction_dominance_ratio,
                 damage_end_window=0,
             )
+            if ranked_extension:
+                internal = _consensus(
+                    target,
+                    tentative_members,
+                    minimum_extension_support=len(tentative_members) + 2,
+                    dominance_ratio=dominance_ratio,
+                    damage_end_window=0,
+                    minimum_internal_support=minimum_consensus_support,
+                )
+                selected, _, ambiguous = _unique_best_extensions(
+                    internal.sequence,
+                    candidates,
+                    minimum_overlap_margin=minimum_overlap_margin,
+                )
+                selected = _filter_extension_boundary_support(
+                    internal.sequence,
+                    candidates,
+                    selected,
+                    minimum_ranked_extension_support,
+                )
+                if reciprocal_best_extension and selected:
+                    selected = _filter_reciprocal_best_extensions(
+                        internal.sequence,
+                        selected,
+                        cluster_indices,
+                        reads,
+                        molecules,
+                        anchors,
+                        anchor_k=anchor_k,
+                        anchors_per_read=anchors_per_read,
+                        maximum_anchor_occurrences=maximum_anchor_occurrences,
+                        minimum_anchor_matches=minimum_anchor_matches,
+                        minimum_overlap=minimum_overlap,
+                        minimum_identity=minimum_identity,
+                        minimum_ry_identity=minimum_ry_identity,
+                        position_bits=position_bits,
+                        target_window=target_window,
+                        minimum_overlap_margin=minimum_overlap_margin,
+                        diagnostics=reciprocal_diagnostics,
+                    )
+                ambiguous_extensions += ambiguous
+                template = _consensus(
+                    internal.sequence,
+                    selected,
+                    minimum_extension_support=1,
+                    dominance_ratio=dominance_ratio,
+                    damage_end_window=0,
+                    allow_internal_consensus=False,
+                )
+                result = template
+                if extension_consensus and selected:
+                    shifted_members = tentative_members
+                    if template.left_extension:
+                        shifted_members = [
+                            replace(
+                                member,
+                                offset=member.offset + template.left_extension,
+                            )
+                            for member in tentative_members
+                        ]
+                    recalled = _consensus(
+                        template.sequence,
+                        shifted_members,
+                        minimum_extension_support=len(shifted_members) + 2,
+                        minimum_internal_support=minimum_consensus_support,
+                        dominance_ratio=dominance_ratio,
+                        damage_end_window=0,
+                    )
+                    result = replace(
+                        recalled,
+                        left_extension=template.left_extension,
+                        right_extension=template.right_extension,
+                    )
             rounds += 1
             changed = result.sequence != target
             if changed or not members:
@@ -632,6 +927,7 @@ def assemble_overlap_contigs(
                     cluster_indices.add(candidate.read_index)
                 members = tentative_members
             if not changed:
+                consensus_without_extension += 1
                 break
             if result.left_extension:
                 members = [
@@ -655,7 +951,7 @@ def assemble_overlap_contigs(
             added_bases += extension
         contigs.append(Read(f"overlap_contig_{clusters}", target))
 
-    contig_iterations = contig_merges = ambiguous_extensions = 0
+    contig_iterations = contig_merges = 0
     for _ in range(maximum_contig_iterations):
         merged, merges, rounds, added, ambiguous = _merge_contig_pass(
             contigs,
@@ -668,6 +964,8 @@ def assemble_overlap_contigs(
             minimum_ry_identity=minimum_ry_identity,
             maximum_rounds=maximum_rounds,
             minimum_overlap_margin=minimum_overlap_margin,
+            reciprocal_best_extension=reciprocal_best_extension,
+            reciprocal_diagnostics=reciprocal_diagnostics,
         )
         ambiguous_extensions += ambiguous
         if not merges:
@@ -726,4 +1024,17 @@ def assemble_overlap_contigs(
         correction_terminal_only=correction_terminal_only,
         correction_insufficient_support=correction_insufficient_support,
         correction_ambiguous=correction_ambiguous,
+        candidate_offsets=candidate_diagnostics.offsets,
+        candidate_below_anchor_support=candidate_diagnostics.below_anchor_support,
+        candidate_short_overlap=candidate_diagnostics.short_overlap,
+        candidate_dna_rejected=candidate_diagnostics.dna_rejected,
+        candidate_ry_rejected=candidate_diagnostics.ry_rejected,
+        candidate_molecule_ambiguous=candidate_diagnostics.molecule_ambiguous,
+        candidate_alignments=candidate_diagnostics.alignments,
+        unavailable_anchor_hits=candidate_diagnostics.unavailable_anchor_hits,
+        targets_without_candidates=targets_without_candidates,
+        clusters_below_minimum_size=clusters_below_minimum_size,
+        consensus_without_extension=consensus_without_extension,
+        reciprocal_extension_checks=reciprocal_diagnostics.checks,
+        reciprocal_extension_rejections=reciprocal_diagnostics.rejections,
     )

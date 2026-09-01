@@ -377,6 +377,57 @@ def build_parser() -> argparse.ArgumentParser:
         help="minimum independent fragments per contig (default: 5)",
     )
     overlap_parser.add_argument(
+        "--anchor-k",
+        type=_minimum_count,
+        default=15,
+        help="candidate-discovery anchor length (default: 15)",
+    )
+    overlap_parser.add_argument(
+        "--anchors-per-read",
+        type=_minimum_count,
+        default=8,
+        help="maximum sketched anchors per read (default: 8)",
+    )
+    overlap_parser.add_argument(
+        "--max-anchor-occurrences",
+        type=_minimum_count,
+        default=100,
+        help="ignore anchors occurring more often than this (default: 100)",
+    )
+    overlap_parser.add_argument(
+        "--min-anchor-matches",
+        type=_minimum_count,
+        default=2,
+        help="minimum agreeing anchors for an overlap candidate (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--min-overlap",
+        type=_minimum_count,
+        default=30,
+        help="minimum validated overlap length (default: 30)",
+    )
+    overlap_parser.add_argument(
+        "--ranked-extension",
+        action="store_true",
+        help="extend supported clusters with a unique best candidate",
+    )
+    overlap_parser.add_argument(
+        "--extension-consensus",
+        action="store_true",
+        help="recall supported bases after ranked extension",
+    )
+    overlap_parser.add_argument(
+        "--min-ranked-extension-support",
+        type=_minimum_count,
+        default=1,
+        help="minimum candidates agreeing on the first appended base (default: 1)",
+    )
+    overlap_parser.add_argument(
+        "--reciprocal-best-extension",
+        action="store_true",
+        help="require selected read and contig extensions to point back uniquely",
+    )
+    overlap_parser.add_argument(
         "--min-output-length",
         type=_minimum_count,
         default=0,
@@ -1020,6 +1071,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             correction_events: list[OverlapCorrectionEvent] = []
             contigs, summary = assemble_overlap_contigs(
                 reads,
+                anchor_k=arguments.anchor_k,
+                anchors_per_read=arguments.anchors_per_read,
+                maximum_anchor_occurrences=arguments.max_anchor_occurrences,
+                minimum_anchor_matches=arguments.min_anchor_matches,
+                minimum_overlap=arguments.min_overlap,
+                ranked_extension=arguments.ranked_extension,
+                extension_consensus=arguments.extension_consensus,
+                minimum_ranked_extension_support=arguments.min_ranked_extension_support,
+                reciprocal_best_extension=arguments.reciprocal_best_extension,
                 maximum_rounds=arguments.max_rounds,
                 maximum_contig_iterations=arguments.max_contig_iterations,
                 minimum_cluster_size=arguments.min_cluster_size,
@@ -1064,6 +1124,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_ambiguous_extensions="
                 f"{summary.ambiguous_extensions}"
+            )
+            print(f"overlap_candidate_offsets={summary.candidate_offsets}")
+            print(f"overlap_candidate_below_anchor_support={summary.candidate_below_anchor_support}")
+            print(f"overlap_candidate_short_overlap={summary.candidate_short_overlap}")
+            print(f"overlap_candidate_dna_rejected={summary.candidate_dna_rejected}")
+            print(f"overlap_candidate_ry_rejected={summary.candidate_ry_rejected}")
+            print(f"overlap_candidate_molecule_ambiguous={summary.candidate_molecule_ambiguous}")
+            print(f"overlap_candidate_alignments={summary.candidate_alignments}")
+            print(f"overlap_unavailable_anchor_hits={summary.unavailable_anchor_hits}")
+            print(f"overlap_targets_without_candidates={summary.targets_without_candidates}")
+            print(f"overlap_clusters_below_minimum_size={summary.clusters_below_minimum_size}")
+            print(f"overlap_consensus_without_extension={summary.consensus_without_extension}")
+            print(f"overlap_reciprocal_extension_checks={summary.reciprocal_extension_checks}")
+            print(
+                "overlap_reciprocal_extension_rejections="
+                f"{summary.reciprocal_extension_rejections}"
             )
             print(f"output={arguments.output}")
             return 0

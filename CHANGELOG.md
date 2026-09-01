@@ -6,6 +6,11 @@ All notable project changes will be documented in this file.
 
 ### Changed
 
+- Established reciprocal ranked read extension with contig merging disabled as
+  the safe overlap prototype. On EMN001 500k it improved N50 from 104 to 133,
+  NA50 from 102 to 132, and aligned length from 3.83 to 4.90 Mb with zero
+  MetaQUAST misassemblies. Contig merging remains explicit and experimental
+  after adding one 240 bp translocation for only +3 N50.
 - Corrected experiment 18's `summary.tsv` output to use tab separators.
 - Replaced stale DBG roadmap statements with the iterative whole-fragment
   overlap-backend decision and separated the active experiment index from the
@@ -16,6 +21,9 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Ranked overlap extension, supported extension consensus, candidate-rejection
+  diagnostics, configurable candidate discovery, and an opt-in reciprocal-best
+  gate that checks all fragments for incompatible near-best opposite paths.
 - A separate experimental `overlap-assemble` command implementing conservative
   whole-fragment overlap clustering, iterative extension, reusable-read layout,
   and contig-overlap merging with DNA and R/Y identity gates.

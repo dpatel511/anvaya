@@ -74,8 +74,8 @@ Correctness and scientific validation remain the priorities. The orientation-awa
 - report-only solid-k-mer correction-candidate auditing with explicit
   protection of terminal damage-compatible reversals.
 - separate conservative whole-fragment overlap assembly with 90% DNA and 99%
-  R/Y identity gates, independent-molecule support, iterative end extension,
-  and a second contig-overlap phase;
+  R/Y identity gates, independent-molecule support, ranked end extension,
+  optional extension consensus, and reciprocal-best repeat abstention;
 - optional frozen-layout terminal-damage polishing that cannot alter contig
   membership, order, orientation, or length, with a per-edit audit report.
 
@@ -85,10 +85,19 @@ The active experimental overlap backend accepts pre-merged fragments:
 
 ```bash
 anvaya overlap-assemble -i merged.fastq.gz \
-  --max-rounds 3 --max-contig-iterations 3 \
+  --max-rounds 3 --max-contig-iterations 0 \
   --min-cluster-size 5 --min-output-length 31 \
+  --ranked-extension --extension-consensus \
+  --reciprocal-best-extension \
   -o contigs.fasta
 ```
+
+This is the current safe research configuration. Reciprocal validation searches
+all fragments, including those already assigned by the greedy layout, and
+rejects a selected extension when a near-best opposite-side path has an
+incompatible DNA or R/Y extension. Contig-to-contig merging remains available
+through a positive `--max-contig-iterations`, but is experimental and is not
+part of the safe configuration.
 
 Frozen-layout damage polishing is opt-in. A zero window, the default, disables
 it. The correction report is required for causal truth auditing:
@@ -99,18 +108,18 @@ anvaya overlap-assemble -i merged.fastq.gz \
   -o contigs.fasta
 ```
 
-On the CarpeDeam EMN001 simulated 500k-fragment subset, direct overlap assembly
-raised N50 from the DBG baseline's 58 bp to 109 bp while reducing wall time
-from 54.97 to 34.82 seconds and peak RSS from 2.85 GB to 1.00 GB. The
-two-phase reusable-read layout recovered more sequence but reached only 104 bp
-N50. Frozen polishing preserved the exact 45,545-contig layout and zero
-misassemblies; it raised aligned length by 6,172 bp and NA50 from 102 to 103.
-Of 2,003 audited edits, 1,591 fixed a reference mismatch, five introduced one,
-and 407 were unresolved or unmapped (99.69% precision among resolved edits).
-These are positive accuracy and resource results, but not a continuity
-breakthrough: the published full-data CarpeDeam safe and unsafe assemblies have
-N50 values of 6,656 and 16,864 bp. Polishing therefore remains opt-in and the
-next work targets layout rather than additional base correction.
+On the CarpeDeam EMN001 simulated 500k-fragment subset, reciprocal ranked read
+extension with contig merging disabled raised N50 from the reusable-read safe
+baseline's 104 bp to 133 bp and NA50 from 102 bp to 132 bp. Total aligned length
+rose from 3.83 Mb to 4.90 Mb with zero MetaQUAST misassemblies. The run completed
+in about 95 seconds with 1.04 GB peak RSS. Enabling contig merging raised N50 by
+only three bases and NA50 by two while introducing one 240 bp translocation;
+that phase is therefore excluded from the safe configuration. On 100k
+fragments, reciprocal ranked extension retained zero misassemblies and reached
+N50/NA50 128/127, close to CarpeDeam safe's 134/133 on the same subset, although
+CarpeDeam still recovered substantially more aligned sequence. The next work
+targets statistically confident candidate ranking and read recruitment while
+holding the zero-misassembly layout fixed.
 
 ```bash
 anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta

@@ -254,21 +254,36 @@ In a ten-seed controlled validation, terminal-only candidate edges recovered 75.
 
 The DBG evidence program established that conservative cleaning, filtered-edge
 rescue, read correction, and pre-graph damage consensus do not by themselves
-resolve the public-data continuity bottleneck. Development now shifts to a
-separate iterative whole-fragment overlap backend:
+resolve the public-data continuity bottleneck. Development now centers on a
+separate iterative whole-fragment overlap backend. The validated safe prototype
+clusters fragments, recalls supported consensus bases, ranks proper extensions,
+and requires reciprocal consistency against all fragments rather than only
+those still unassigned by the greedy layout:
 
 1. preprocess or require trimmed, merged ancient-DNA fragments;
 2. cluster fragments through bounded shared-k-mer candidates;
 3. validate whole overlaps with DNA and R/Y identity;
 4. estimate sample-specific positional damage likelihoods;
 5. correct cluster centers and extend them first with raw fragments;
-6. merge corrected contigs under a stricter overlap policy;
-7. require safe left/right extension consensus and preserve abstentions;
+6. require reciprocal-best, DNA/R/Y-compatible extension evidence and preserve
+   abstentions;
+7. keep contig-to-contig merging experimental until repeat-spanning evidence
+   can validate it;
 8. compare directly with CarpeDeam, MEGAHIT, and metaSPAdes on frozen and
    empirical benchmarks.
 
 The existing DBG reports remain diagnostic comparators. They are not the
 default implementation path for new continuity features.
+
+On the EMN001 500k subset, reciprocal ranked read extension with contig merging
+disabled improved N50 from 104 to 133, NA50 from 102 to 132, and aligned length
+from 3.83 to 4.90 Mb with zero MetaQUAST misassemblies. Enabling 2,802 contig
+merges raised N50 by only three bases and introduced one 240 bp translocation.
+The same erroneous sequence survived both boundary-support and reciprocal-best
+gates, demonstrating that a sequence-compatible reciprocal overlap is not
+sufficient evidence to cross a repeat. The safe configuration therefore sets
+`--max-contig-iterations 0`; candidate-confidence scoring and read recruitment
+now take priority over further contig merging.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 
