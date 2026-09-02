@@ -34,7 +34,9 @@ from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
 from anvaya.overlap_assembly import (
     OverlapCorrectionEvent,
+    TwoTierRedundancyDiagnostics,
     assemble_overlap_contigs,
+    audit_two_tier_redundancy,
     write_overlap_correction_report,
 )
 from anvaya.paired_extension import (
@@ -465,6 +467,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=_minimum_count,
         default=2,
         help="minimum spanning molecules for a projected contig link (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--two-tier-redundancy-audit",
+        action="store_true",
+        help="audit support-three rescue after 97%/99% containment filtering",
+    )
+    overlap_parser.add_argument(
+        "--rescue-min-cluster-size",
+        type=_minimum_count,
+        default=3,
+        help="minimum cluster size for two-tier rescue candidates (default: 3)",
     )
     overlap_parser.add_argument(
         "--min-output-length",
@@ -1139,6 +1152,54 @@ def main(argv: Sequence[str] | None = None) -> int:
                 damage_end_window=arguments.damage_end_window,
                 correction_events=correction_events,
             )
+            rescue_audit = TwoTierRedundancyDiagnostics()
+            if arguments.two_tier_redundancy_audit:
+                if arguments.rescue_min_cluster_size >= arguments.min_cluster_size:
+                    parser.error(
+                        "--rescue-min-cluster-size must be smaller than "
+                        "--min-cluster-size"
+                    )
+                rescue_contigs, _ = assemble_overlap_contigs(
+                    reads,
+                    anchor_k=arguments.anchor_k,
+                    anchors_per_read=arguments.anchors_per_read,
+                    maximum_anchor_occurrences=arguments.max_anchor_occurrences,
+                    minimum_anchor_matches=arguments.min_anchor_matches,
+                    minimum_overlap=arguments.min_overlap,
+                    ranked_extension=arguments.ranked_extension,
+                    extension_consensus=arguments.extension_consensus,
+                    minimum_ranked_extension_support=(
+                        arguments.min_ranked_extension_support
+                    ),
+                    reciprocal_best_extension=(
+                        arguments.reciprocal_best_extension
+                    ),
+                    damage_aware_ranking=arguments.damage_aware_ranking,
+                    minimum_confidence_margin=(
+                        arguments.min_overlap_confidence_margin
+                    ),
+                    damage_mismatch_penalty=arguments.damage_mismatch_penalty,
+                    ranking_damage_end_window=(
+                        arguments.ranking_damage_end_window
+                    ),
+                    maximum_rounds=arguments.max_rounds,
+                    maximum_contig_iterations=(
+                        arguments.max_contig_iterations
+                    ),
+                    minimum_cluster_size=arguments.rescue_min_cluster_size,
+                    minimum_output_length=arguments.min_output_length,
+                    damage_end_window=arguments.damage_end_window,
+                )
+                rescue_audit = audit_two_tier_redundancy(
+                    contigs,
+                    rescue_contigs,
+                    anchor_k=arguments.anchor_k,
+                    anchors_per_read=arguments.anchors_per_read,
+                    maximum_anchor_occurrences=(
+                        arguments.max_anchor_occurrences
+                    ),
+                    minimum_anchor_matches=arguments.min_anchor_matches,
+                )
             if arguments.correction_report is not None:
                 write_overlap_correction_report(
                     correction_events,
@@ -1327,6 +1388,74 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_contig_link_projected_longest_contig="
                 f"{summary.contig_link_projected_longest_contig}"
+            )
+            print(
+                "overlap_two_tier_redundancy_audit="
+                f"{str(arguments.two_tier_redundancy_audit).lower()}"
+            )
+            print(
+                "overlap_rescue_min_cluster_size="
+                f"{arguments.rescue_min_cluster_size}"
+            )
+            print("overlap_rescue_min_identity=0.97")
+            print("overlap_rescue_min_ry_identity=0.99")
+            print("overlap_rescue_min_coverage=0.99")
+            print(f"overlap_rescue_contigs={rescue_audit.rescue_contigs}")
+            print(f"overlap_rescue_bases={rescue_audit.rescue_bases}")
+            print(
+                "overlap_rescue_contained_by_primary="
+                f"{rescue_audit.contained_by_primary}"
+            )
+            print(
+                "overlap_rescue_redundant_with_rescue="
+                f"{rescue_audit.redundant_with_rescue}"
+            )
+            print(
+                "overlap_rescue_extends_primary="
+                f"{rescue_audit.extends_primary}"
+            )
+            print(
+                "overlap_rescue_ambiguous_primary_extensions="
+                f"{rescue_audit.ambiguous_primary_extensions}"
+            )
+            print(
+                "overlap_rescue_replacement_contigs="
+                f"{rescue_audit.replacement_contigs}"
+            )
+            print(
+                "overlap_rescue_replacement_added_bases="
+                f"{rescue_audit.replacement_added_bases}"
+            )
+            print(
+                "overlap_rescue_replacement_projected_bases="
+                f"{rescue_audit.replacement_projected_bases}"
+            )
+            print(
+                "overlap_rescue_replacement_projected_n50="
+                f"{rescue_audit.replacement_projected_n50}"
+            )
+            print(
+                "overlap_rescue_replacement_projected_longest_contig="
+                f"{rescue_audit.replacement_projected_longest_contig}"
+            )
+            print(
+                f"overlap_rescue_novel_contigs={rescue_audit.novel_contigs}"
+            )
+            print(f"overlap_rescue_novel_bases={rescue_audit.novel_bases}")
+            print(
+                "overlap_rescue_projected_contigs="
+                f"{rescue_audit.projected_contigs}"
+            )
+            print(
+                "overlap_rescue_projected_bases="
+                f"{rescue_audit.projected_bases}"
+            )
+            print(
+                f"overlap_rescue_projected_n50={rescue_audit.projected_n50}"
+            )
+            print(
+                "overlap_rescue_projected_longest_contig="
+                f"{rescue_audit.projected_longest_contig}"
             )
             print(f"output={arguments.output}")
             return 0

@@ -151,6 +151,29 @@ class _ContigLinkDiagnostics:
 
 
 @dataclass(slots=True, frozen=True)
+class TwoTierRedundancyDiagnostics:
+    """Projected support-three rescue after conservative redundancy removal."""
+
+    rescue_contigs: int = 0
+    rescue_bases: int = 0
+    contained_by_primary: int = 0
+    redundant_with_rescue: int = 0
+    extends_primary: int = 0
+    ambiguous_primary_extensions: int = 0
+    replacement_contigs: int = 0
+    replacement_added_bases: int = 0
+    replacement_projected_bases: int = 0
+    replacement_projected_n50: int = 0
+    replacement_projected_longest_contig: int = 0
+    novel_contigs: int = 0
+    novel_bases: int = 0
+    projected_contigs: int = 0
+    projected_bases: int = 0
+    projected_n50: int = 0
+    projected_longest_contig: int = 0
+
+
+@dataclass(slots=True, frozen=True)
 class _SupportedContigLink:
     first: int
     second: int
@@ -1351,6 +1374,167 @@ def _polish_frozen_contigs(
         correction_terminal_only,
         correction_insufficient_support,
         correction_ambiguous,
+    )
+
+
+def _n50(lengths: list[int]) -> int:
+    if not lengths:
+        return 0
+    threshold = sum(lengths) / 2
+    cumulative = 0
+    for length in sorted(lengths, reverse=True):
+        cumulative += length
+        if cumulative >= threshold:
+            return length
+    return 0
+
+
+def audit_two_tier_redundancy(
+    primary_contigs: list[Read],
+    rescue_contigs: list[Read],
+    *,
+    anchor_k: int = 15,
+    anchors_per_read: int = 8,
+    maximum_anchor_occurrences: int = 100,
+    minimum_anchor_matches: int = 2,
+    minimum_identity: float = 0.97,
+    minimum_ry_identity: float = 0.99,
+    minimum_coverage: float = 0.99,
+) -> TwoTierRedundancyDiagnostics:
+    """Project novel rescue contigs without changing the primary assembly."""
+    if not rescue_contigs:
+        lengths = [len(contig.sequence) for contig in primary_contigs]
+        return TwoTierRedundancyDiagnostics(
+            replacement_projected_bases=sum(lengths),
+            replacement_projected_n50=_n50(lengths),
+            replacement_projected_longest_contig=max(lengths, default=0),
+            projected_contigs=len(primary_contigs),
+            projected_bases=sum(lengths),
+            projected_n50=_n50(lengths),
+            projected_longest_contig=max(lengths, default=0),
+        )
+    if not 0.0 <= minimum_identity <= 1.0:
+        raise ValueError("minimum_identity must be between zero and one")
+    if not 0.0 <= minimum_ry_identity <= 1.0:
+        raise ValueError("minimum_ry_identity must be between zero and one")
+    if not 0.0 < minimum_coverage <= 1.0:
+        raise ValueError("minimum_coverage must be greater than zero and at most one")
+
+    ordered_rescue = sorted(
+        rescue_contigs,
+        key=lambda contig: (-len(contig.sequence), contig.name, contig.sequence),
+    )
+    representatives = list(primary_contigs) + ordered_rescue
+    primary_count = len(primary_contigs)
+    position_bits = max(
+        1, max(len(contig.sequence) for contig in representatives).bit_length()
+    )
+    anchors = _anchor_index(
+        representatives,
+        anchor_k,
+        0,
+        anchors_per_read,
+        maximum_anchor_occurrences,
+    )
+    unavailable = [True] * len(representatives)
+    for index in range(primary_count):
+        unavailable[index] = False
+    molecule_ids = list(range(len(representatives)))
+    contained_by_primary = redundant_with_rescue = extends_primary = 0
+    ambiguous_primary_extensions = 0
+    replacements: dict[int, Read] = {}
+    novel: list[Read] = []
+
+    for rescue_offset, rescue in enumerate(ordered_rescue):
+        rescue_index = primary_count + rescue_offset
+        candidates = _candidate_alignments(
+            rescue.sequence,
+            representatives,
+            molecule_ids,
+            anchors,
+            unavailable,
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=anchor_k,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=max(len(rescue.sequence), anchor_k),
+        )
+        query_contained_by_primary = False
+        query_contained_by_rescue = False
+        extended_primary_indices: set[int] = set()
+        for candidate in candidates:
+            start = max(0, candidate.offset)
+            stop = min(
+                len(rescue.sequence),
+                candidate.offset + len(candidate.sequence),
+            )
+            overlap = max(0, stop - start)
+            query_coverage = overlap / len(rescue.sequence)
+            representative_coverage = overlap / len(candidate.sequence)
+            if query_coverage >= minimum_coverage:
+                if candidate.read_index < primary_count:
+                    query_contained_by_primary = True
+                else:
+                    query_contained_by_rescue = True
+            elif (
+                candidate.read_index < primary_count
+                and representative_coverage >= minimum_coverage
+            ):
+                extended_primary_indices.add(candidate.read_index)
+
+        if query_contained_by_primary:
+            contained_by_primary += 1
+            continue
+        if query_contained_by_rescue:
+            redundant_with_rescue += 1
+            continue
+        if extended_primary_indices:
+            extends_primary += 1
+            if len(extended_primary_indices) != 1:
+                ambiguous_primary_extensions += 1
+                continue
+            primary_index = next(iter(extended_primary_indices))
+            previous = replacements.get(primary_index)
+            if previous is None or len(rescue.sequence) > len(previous.sequence):
+                replacements[primary_index] = rescue
+            continue
+        novel.append(rescue)
+        unavailable[rescue_index] = False
+
+    projected_lengths = [
+        len(contig.sequence) for contig in primary_contigs + novel
+    ]
+    replacement_lengths = [
+        len(replacements.get(index, contig).sequence)
+        for index, contig in enumerate(primary_contigs)
+    ]
+    return TwoTierRedundancyDiagnostics(
+        rescue_contigs=len(rescue_contigs),
+        rescue_bases=sum(len(contig.sequence) for contig in rescue_contigs),
+        contained_by_primary=contained_by_primary,
+        redundant_with_rescue=redundant_with_rescue,
+        extends_primary=extends_primary,
+        ambiguous_primary_extensions=ambiguous_primary_extensions,
+        replacement_contigs=len(replacements),
+        replacement_added_bases=sum(
+            len(replacement.sequence) - len(primary_contigs[index].sequence)
+            for index, replacement in replacements.items()
+        ),
+        replacement_projected_bases=sum(replacement_lengths),
+        replacement_projected_n50=_n50(replacement_lengths),
+        replacement_projected_longest_contig=max(
+            replacement_lengths, default=0
+        ),
+        novel_contigs=len(novel),
+        novel_bases=sum(len(contig.sequence) for contig in novel),
+        projected_contigs=len(projected_lengths),
+        projected_bases=sum(projected_lengths),
+        projected_n50=_n50(projected_lengths),
+        projected_longest_contig=max(projected_lengths, default=0),
     )
 
 

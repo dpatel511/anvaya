@@ -13,12 +13,77 @@ from anvaya.overlap_assembly import (
     _overlap_confidence,
     _unique_best_extensions,
     assemble_overlap_contigs,
+    audit_two_tier_redundancy,
     write_overlap_correction_report,
 )
 from anvaya.reads import Read
 
 
 class OverlapAssemblyTests(unittest.TestCase):
+    def test_two_tier_audit_separates_redundancy_from_novel_rescue(self) -> None:
+        primary_sequence = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        novel_sequence = "TTTTCCCCAAAAGGGGTTTTCCCCAAAAGGGGTTTT"
+        primary = [Read("primary", primary_sequence)]
+        rescue = [
+            Read("extends-primary", primary_sequence + "TTGCA"),
+            Read("novel-a", novel_sequence),
+            Read("novel-b", novel_sequence),
+            Read("contained", primary_sequence[2:-2]),
+        ]
+
+        diagnostics = audit_two_tier_redundancy(
+            primary,
+            rescue,
+            anchor_k=5,
+            anchors_per_read=12,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=2,
+        )
+
+        self.assertEqual(diagnostics.rescue_contigs, 4)
+        self.assertEqual(diagnostics.contained_by_primary, 1)
+        self.assertEqual(diagnostics.redundant_with_rescue, 1)
+        self.assertEqual(diagnostics.extends_primary, 1)
+        self.assertEqual(diagnostics.ambiguous_primary_extensions, 0)
+        self.assertEqual(diagnostics.replacement_contigs, 1)
+        self.assertEqual(diagnostics.replacement_added_bases, 5)
+        self.assertEqual(
+            diagnostics.replacement_projected_longest_contig,
+            len(primary_sequence) + 5,
+        )
+        self.assertEqual(diagnostics.novel_contigs, 1)
+        self.assertEqual(
+            diagnostics.projected_bases,
+            len(primary_sequence) + len(novel_sequence),
+        )
+        self.assertEqual(
+            diagnostics.projected_longest_contig,
+            max(len(primary_sequence), len(novel_sequence)),
+        )
+
+    def test_two_tier_audit_rejects_multi_primary_extension(self) -> None:
+        sequence = (
+            "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTATTCGAGTCCGATACGTGACCTAG"
+        )
+        primary = [
+            Read("primary-left", sequence[:35]),
+            Read("primary-right", sequence[15:50]),
+        ]
+
+        diagnostics = audit_two_tier_redundancy(
+            primary,
+            [Read("ambiguous-rescue", sequence[:55])],
+            anchor_k=5,
+            anchors_per_read=16,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=2,
+        )
+
+        self.assertEqual(diagnostics.extends_primary, 1)
+        self.assertEqual(diagnostics.ambiguous_primary_extensions, 1)
+        self.assertEqual(diagnostics.replacement_contigs, 0)
+        self.assertEqual(diagnostics.replacement_added_bases, 0)
+
     def test_damage_aware_ranking_can_prefer_a_cleaner_overlap(self) -> None:
         target = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         clean = _Alignment(1, target[8:] + "TTGCA", 8, 2)
@@ -688,6 +753,38 @@ class OverlapAssemblyTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertIn(center + "TTGCA", output_path.read_text(encoding="utf-8"))
+
+    def test_two_tier_audit_preserves_primary_cli_output(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "reads.fasta"
+            baseline_path = root / "baseline.fasta"
+            audited_path = root / "audited.fasta"
+            input_path.write_text(
+                "".join(
+                    f">read-{index}\n{center}\n"
+                    for index in range(5)
+                ),
+                encoding="utf-8",
+            )
+            common = [
+                "overlap-assemble",
+                "-i", str(input_path),
+                "--anchor-k", "7",
+                "--min-overlap", "20",
+                "--max-contig-iterations", "0",
+                "--min-output-length", "1",
+            ]
+
+            self.assertEqual(main(common + ["-o", str(baseline_path)]), 0)
+            self.assertEqual(main(common + [
+                "-o", str(audited_path),
+                "--two-tier-redundancy-audit",
+                "--rescue-min-cluster-size", "3",
+            ]), 0)
+
+            self.assertEqual(audited_path.read_bytes(), baseline_path.read_bytes())
 
     def test_cli_accepts_candidate_discovery_parameters(self) -> None:
         center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
