@@ -174,10 +174,19 @@ gate because 2,094 abstentions reduced N50 from 128 to 123. The validated
 default is therefore zero: reciprocal-best filtering remains the structural
 abstention gate.
 
-This result does not materially improve continuity. The next go/no-go work is
-improved read recruitment while preserving zero misassemblies, approximately
-133 bp N50, approximately 131 bp NA50, and at least 4.91 Mb aligned length on
-the 500k checkpoint before broader validation.
+This result does not materially improve continuity. A report-only recruitment
+audit then tested both unassigned reads and reads borrowed from other clusters
+on EMN001 100k. Reciprocal validation retained 61 deferred and 73 cross-cluster
+assignments, but no frozen contig reached five-read consensus support; projected
+extension was zero bases. The output checksum was unchanged, runtime was 12.11
+seconds, and peak RSS was 234,532 kB. This closes read recruitment as the
+current bottleneck.
+
+The next go/no-go experiment is a read-supported contig-link audit. It must
+preserve the assembly checksum while reporting candidate overlaps, reciprocal
+links, independently supported linear chains, ambiguous branches, cycles, and
+projected merged bases. Only a meaningful population of unambiguous supported
+chains justifies an active join stage and MetaQUAST validation.
 
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long

@@ -292,6 +292,16 @@ mismatches from 766.79 to 753.64 per 100 kbp, and reduced indels from 1.70 to
 and recovery improvement; read recruitment now takes priority because ranking
 did not materially improve continuity.
 
+The subsequent report-only recruitment audit ruled out that hypothesis at the
+EMN001 100k gate. Deferred reads produced 186 unique end assignments and 61
+reciprocal assignments; reads borrowed from other accepted clusters produced
+208 unique and 73 reciprocal assignments. The evidence was dispersed, and no
+contig reached five-read consensus support from either source or their union.
+Projected extension was therefore zero contigs and zero bases, with a
+byte-identical assembly. Active recruitment is not implemented. The next
+layout experiment must instead require read-supported, reciprocal links between
+frozen contigs before considering any sequence join.
+
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 
 ## Reciprocal paired-read unitig extension

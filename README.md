@@ -135,6 +135,15 @@ as a modest accuracy and recovery improvement, not a continuity breakthrough.
 The next work targets improved read recruitment while holding the
 zero-misassembly layout fixed.
 
+The report-only cross-cluster recruitment audit tested that hypothesis on the
+EMN001 100k subset. Of 67,956 deferred reads and 30,008 reads assigned to an
+accepted cluster, only 61 and 73 respectively survived reciprocal placement at
+another frozen contig end. Neither source produced a contig with five-read
+consensus support, so projected extension was zero contigs and zero bases. The
+assembly checksum was unchanged. Read ownership is therefore not the current
+continuity bottleneck; the next experiment audits read-supported links between
+frozen contigs.
+
 ```bash
 anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta
 ```
