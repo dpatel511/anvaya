@@ -41,6 +41,23 @@ DOI: <https://doi.org/10.1371/journal.pcbi.1014591>
 - MEGAHIT: succinct, iterative de Bruijn graph metagenomic assembler.
 - metaSPAdes: metagenomic multi-k assembly and graph simplification.
 
+## Overlap-ranking comparators
+
+- PenguiN compares overlap error-rate distributions so overlap length
+  contributes statistical evidence rather than winning independently of the
+  mismatch rate. This motivates Anvaya's beta-posterior lower-confidence score:
+  <https://pmc.ncbi.nlm.nih.gov/articles/PMC11443906/>.
+- StrainXpress balances overlap identity and length and joins only unambiguous
+  paths after branch removal. This supports retaining Anvaya's reciprocal
+  structural gate separately from its candidate-ranking score:
+  <https://pmc.ncbi.nlm.nih.gov/articles/PMC9508831/>.
+- Anvaya's implementation is a clean-room approximation rather than a copy of
+  CarpeDeam or PenguiN. It discounts terminal C/T and G/A differences, applies
+  full penalties elsewhere, and ranks the resulting beta-posterior lower bound.
+  EMN001 testing showed that an additional 0.01 confidence margin was overly
+  conservative; zero margin improved alignment accuracy while reciprocal-best
+  filtering continued to enforce structural abstention.
+
 ## Damage-aware consensus implementation choices
 
 - CarpeDeam clusters overlapping fragments using shared k-mers, filters them at

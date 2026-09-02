@@ -38,9 +38,11 @@ The acceptance contract is:
 | Singleton filtered-edge rescue | Rejected; truth-valid edge rescue did not produce safe contig gains. |
 | Damage-aware read consensus | Retain as opt-in infrastructure; synthetic gains are strong, but rare-strain loss is 8.98% and public-data N50 remains 38 bp. |
 | Reciprocal ranked overlap assembly | Retain as the active safe prototype with contig merging disabled; on EMN001 500k it reached N50/NA50 133/132 and 4.90 Mb aligned with zero misassemblies. |
+| Damage-aware posterior overlap ranking | Retain with zero extra confidence margin; on EMN001 500k it preserved N50 133 and zero misassemblies, increased aligned length to 4.91 Mb, and reduced mismatch and indel density, with NA50 decreasing by one base to 131. |
+| Posterior confidence margin 0.01 | Rejected; 2,094 abstentions on EMN001 100k reduced N50 from 128 to 123. |
 | Contig-overlap merging | Keep experimental and disabled in the safe configuration; 2,802 merges bought only +3 N50/+2 NA50 and introduced one 240 bp translocation. |
 | Frozen-layout damage polishing | Retain opt-in; 99.69% resolved edit precision and improved aligned length with unchanged topology, but no N50 effect by design. |
-| Next architecture step | Rank safe read extensions by alignment and damage-aware mismatch confidence, then improve read recruitment without changing topology. |
+| Next architecture step | Improve read recruitment without enabling contig merging or weakening reciprocal structural checks. |
 
 Public datasets remain realism and resource checks unless suitable reference
 truth is available. Public-data N50 alone is not an acceptance signal.

@@ -6,6 +6,8 @@ All notable project changes will be documented in this file.
 
 ### Changed
 
+- Made zero the validated overlap-confidence margin. A 0.01 margin rejected
+  2,094 of 9,152 ranked sides on EMN001 100k and reduced N50 from 128 to 123.
 - Established reciprocal ranked read extension with contig merging disabled as
   the safe overlap prototype. On EMN001 500k it improved N50 from 104 to 133,
   NA50 from 102 to 132, and aligned length from 3.83 to 4.90 Mb with zero
@@ -21,6 +23,10 @@ All notable project changes will be documented in this file.
 
 ### Added
 
+- Opt-in damage-aware beta-posterior overlap ranking with terminal C/T and G/A
+  mismatch discounting and decision audit counters. On EMN001 500k it preserved
+  N50 133 and zero misassemblies, increased aligned length from 4.90 to 4.91 Mb,
+  and reduced mismatch and indel density; NA50 decreased from 132 to 131.
 - Ranked overlap extension, supported extension consensus, candidate-rejection
   diagnostics, configurable candidate discovery, and an opt-in reciprocal-best
   gate that checks all fragments for incompatible near-best opposite paths.

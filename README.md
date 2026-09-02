@@ -75,7 +75,8 @@ Correctness and scientific validation remain the priorities. The orientation-awa
   protection of terminal damage-compatible reversals.
 - separate conservative whole-fragment overlap assembly with 90% DNA and 99%
   R/Y identity gates, independent-molecule support, ranked end extension,
-  optional extension consensus, and reciprocal-best repeat abstention;
+  optional extension consensus, reciprocal-best repeat abstention, and
+  damage-aware posterior overlap ranking;
 - optional frozen-layout terminal-damage polishing that cannot alter contig
   membership, order, orientation, or length, with a per-edit audit report.
 
@@ -88,7 +89,7 @@ anvaya overlap-assemble -i merged.fastq.gz \
   --max-rounds 3 --max-contig-iterations 0 \
   --min-cluster-size 5 --min-output-length 31 \
   --ranked-extension --extension-consensus \
-  --reciprocal-best-extension \
+  --reciprocal-best-extension --damage-aware-ranking \
   -o contigs.fasta
 ```
 
@@ -98,6 +99,13 @@ rejects a selected extension when a near-best opposite-side path has an
 incompatible DNA or R/Y extension. Contig-to-contig merging remains available
 through a positive `--max-contig-iterations`, but is experimental and is not
 part of the safe configuration.
+
+Damage-aware ranking compares a conservative beta-posterior match-rate score
+instead of always preferring the longest overlap. Terminal C/T and G/A
+differences receive a fractional mismatch penalty; other mismatches retain the
+full penalty. The confidence margin defaults to zero because the posterior
+lower bound is already conservative. A tested margin of 0.01 rejected 2,094 of
+9,152 ranked sides on EMN001 100k and reduced N50 from 128 to 123.
 
 Frozen-layout damage polishing is opt-in. A zero window, the default, disables
 it. The correction report is required for causal truth auditing:
@@ -117,9 +125,15 @@ only three bases and NA50 by two while introducing one 240 bp translocation;
 that phase is therefore excluded from the safe configuration. On 100k
 fragments, reciprocal ranked extension retained zero misassemblies and reached
 N50/NA50 128/127, close to CarpeDeam safe's 134/133 on the same subset, although
-CarpeDeam still recovered substantially more aligned sequence. The next work
-targets statistically confident candidate ranking and read recruitment while
-holding the zero-misassembly layout fixed.
+CarpeDeam still recovered substantially more aligned sequence.
+
+Adding zero-margin damage-aware posterior ranking preserved N50 at 133 and
+zero misassemblies on 500k while increasing aligned length from 4,896,280 to
+4,913,114 bp. Mismatches fell from 766.79 to 753.64 and indels from 1.70 to
+1.51 per 100 kbp; NA50 decreased by one base from 132 to 131. This is accepted
+as a modest accuracy and recovery improvement, not a continuity breakthrough.
+The next work targets improved read recruitment while holding the
+zero-misassembly layout fixed.
 
 ```bash
 anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta

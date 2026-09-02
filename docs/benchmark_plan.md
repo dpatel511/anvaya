@@ -162,11 +162,22 @@ The layout checkpoint produced a safe improvement:
 
 The accepted research configuration is therefore ranked read extension with
 extension consensus, reciprocal-best filtering, and
-`--max-contig-iterations 0`. The next go/no-go work is alignment-length and
-damage-aware mismatch confidence for candidate ranking, followed by improved
-read recruitment. Each change must retain zero misassemblies, at least 132 bp
-NA50, and at least 4.90 Mb aligned length on the 500k checkpoint before broader
-validation.
+`--max-contig-iterations 0`.
+
+Damage-aware beta-posterior ranking passed as a modest accuracy and recovery
+improvement when used with no additional confidence margin. On EMN001 500k it
+changed 12,433 length-only winners while preserving N50 133 and zero
+misassemblies. Aligned length increased from 4,896,280 to 4,913,114 bp,
+mismatches fell from 766.79 to 753.64 per 100 kbp, and indels fell from 1.70 to
+1.51; NA50 decreased from 132 to 131. A 0.01 margin was rejected at the 100k
+gate because 2,094 abstentions reduced N50 from 128 to 123. The validated
+default is therefore zero: reciprocal-best filtering remains the structural
+abstention gate.
+
+This result does not materially improve continuity. The next go/no-go work is
+improved read recruitment while preserving zero misassemblies, approximately
+133 bp N50, approximately 131 bp NA50, and at least 4.91 Mb aligned length on
+the 500k checkpoint before broader validation.
 
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long
