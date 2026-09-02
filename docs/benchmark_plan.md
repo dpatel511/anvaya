@@ -188,6 +188,27 @@ links, independently supported linear chains, ambiguous branches, cycles, and
 projected merged bases. Only a meaningful population of unambiguous supported
 chains justifies an active join stage and MetaQUAST validation.
 
+The audit completed without crossing that gate. At cluster support five, only
+two of 152 reciprocal overlaps had two-read support and none had support three;
+at cluster support three, only six of 741 reciprocal overlaps had two-read
+support, two had support three, and none had support five. The support-three
+projection contained six joins and 1,063 merged bases but did not exceed a
+270 bp longest contig. Output checksums matched their respective non-audit
+assemblies. Contig linking remains report-only and further threshold tuning is
+closed.
+
+The cluster-support sweep exposed a more useful Pareto boundary. Support three
+recovered 1,312,891 aligned bases with 0.463% genome fraction and zero detected
+misassemblies, approaching CarpeDeam safe at 1,431,468 aligned bases and 0.512%,
+but reached only N50/NA50 113/112 versus 134/133. Support five retained the best
+Anvaya continuity at N50/NA50 128/127 but only 591,906 aligned bases. The next
+experiment is therefore a two-tier redundancy audit: freeze support-five
+primary contigs, generate support-three rescue candidates, and project only
+rescue representatives that are not contained by or redundant with a longer
+primary or rescue contig. It must report primary checksum, candidate and
+retained bases, containment and redundancy rejection counts, projected N50,
+and projected longest contig before any output-changing mode is considered.
+
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long
 paths and can trade strain fidelity for small local gains.

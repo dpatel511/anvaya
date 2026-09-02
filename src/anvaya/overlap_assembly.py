@@ -67,6 +67,21 @@ class OverlapAssemblySummary:
     deferred_supported_bases: int = 0
     cross_cluster_supported_contigs: int = 0
     cross_cluster_supported_bases: int = 0
+    contig_link_candidate_overlaps: int = 0
+    contig_link_unique_overlaps: int = 0
+    contig_link_reciprocal_overlaps: int = 0
+    contig_link_read_supported_overlaps: int = 0
+    contig_link_support_at_least_1: int = 0
+    contig_link_support_at_least_2: int = 0
+    contig_link_support_at_least_3: int = 0
+    contig_link_support_at_least_5: int = 0
+    contig_link_max_read_support: int = 0
+    contig_link_ambiguous_ends: int = 0
+    contig_link_cyclic_components: int = 0
+    contig_link_linear_chains: int = 0
+    contig_link_projected_joins: int = 0
+    contig_link_projected_merged_bases: int = 0
+    contig_link_projected_longest_contig: int = 0
 
 
 @dataclass(slots=True)
@@ -114,6 +129,35 @@ class _RecruitmentDiagnostics:
     deferred_supported_bases: int = 0
     cross_cluster_supported_contigs: int = 0
     cross_cluster_supported_bases: int = 0
+
+
+@dataclass(slots=True)
+class _ContigLinkDiagnostics:
+    candidate_overlaps: int = 0
+    unique_overlaps: int = 0
+    reciprocal_overlaps: int = 0
+    read_supported_overlaps: int = 0
+    support_at_least_1: int = 0
+    support_at_least_2: int = 0
+    support_at_least_3: int = 0
+    support_at_least_5: int = 0
+    max_read_support: int = 0
+    ambiguous_ends: int = 0
+    cyclic_components: int = 0
+    linear_chains: int = 0
+    projected_joins: int = 0
+    projected_merged_bases: int = 0
+    projected_longest_contig: int = 0
+
+
+@dataclass(slots=True, frozen=True)
+class _SupportedContigLink:
+    first: int
+    second: int
+    first_end: str
+    second_end: str
+    overlap: int
+    support: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -872,6 +916,247 @@ def _audit_cross_cluster_recruitment(
     return diagnostics
 
 
+def _spanning_molecule_support(
+    left: str,
+    right: str,
+    overlap: int,
+    read_indices: set[int],
+    reads: list[Read],
+    molecule_ids: list[int],
+    *,
+    minimum_identity: float,
+    minimum_ry_identity: float,
+) -> int:
+    """Count molecules spanning unique sequence on both sides of an overlap."""
+    merged = left + right[overlap:]
+    overlap_start = len(left) - overlap
+    overlap_end = len(left)
+    supporting: set[int] = set()
+    for read_index in read_indices:
+        sequence = reads[read_index].sequence
+        for oriented in (sequence, reverse_complement(sequence)):
+            first_offset = max(0, overlap_end - len(oriented) + 1)
+            last_offset = min(overlap_start - 1, len(merged) - len(oriented))
+            if first_offset > last_offset:
+                continue
+            for offset in range(first_offset, last_offset + 1):
+                target = merged[offset : offset + len(oriented)]
+                if (
+                    _identity(target, oriented) >= minimum_identity
+                    and _identity(_ry(target), _ry(oriented)) >= minimum_ry_identity
+                ):
+                    supporting.add(molecule_ids[read_index])
+                    break
+            if molecule_ids[read_index] in supporting:
+                break
+    return len(supporting)
+
+
+def _audit_read_supported_contig_links(
+    contigs: list[Read],
+    cluster_indices: list[set[int]],
+    reads: list[Read],
+    molecule_ids: list[int],
+    *,
+    anchor_k: int,
+    anchors_per_read: int,
+    maximum_anchor_occurrences: int,
+    minimum_anchor_matches: int,
+    minimum_overlap: int,
+    minimum_identity: float,
+    minimum_ry_identity: float,
+    minimum_overlap_margin: int,
+    minimum_read_support: int,
+) -> _ContigLinkDiagnostics:
+    """Project only reciprocal contig links crossed by independent molecules."""
+    diagnostics = _ContigLinkDiagnostics()
+    if len(contigs) < 2:
+        return diagnostics
+    position_bits = max(
+        1, max(len(contig.sequence) for contig in contigs).bit_length()
+    )
+    target_window = max(len(contig.sequence) for contig in contigs)
+    anchors = _anchor_index(
+        contigs,
+        anchor_k,
+        0,
+        anchors_per_read,
+        maximum_anchor_occurrences,
+    )
+    contig_ids = list(range(len(contigs)))
+    reciprocal_diagnostics = _ReciprocalDiagnostics()
+    evidenced: dict[tuple[int, str, int, str], _SupportedContigLink] = {}
+    for source_index, source in enumerate(contigs):
+        candidates = _candidate_alignments(
+            source.sequence,
+            contigs,
+            contig_ids,
+            anchors,
+            {source_index},
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=target_window,
+        )
+        proper = [
+            candidate
+            for candidate in candidates
+            if candidate.offset < 0
+            or candidate.offset + len(candidate.sequence) > len(source.sequence)
+        ]
+        diagnostics.candidate_overlaps += len(proper)
+        selected, _, ambiguous = _unique_best_extensions(
+            source.sequence,
+            proper,
+            minimum_overlap_margin=minimum_overlap_margin,
+        )
+        diagnostics.unique_overlaps += len(selected)
+        diagnostics.ambiguous_ends += ambiguous
+        reciprocal = _filter_reciprocal_best_extensions(
+            source.sequence,
+            selected,
+            {source_index},
+            contigs,
+            contig_ids,
+            anchors,
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=target_window,
+            minimum_overlap_margin=minimum_overlap_margin,
+            diagnostics=reciprocal_diagnostics,
+        )
+        diagnostics.reciprocal_overlaps += len(reciprocal)
+        for choice in reciprocal:
+            target_index = choice.read_index
+            left_extension = max(0, -choice.offset)
+            right_extension = max(
+                0,
+                choice.offset + len(choice.sequence) - len(source.sequence),
+            )
+            if bool(left_extension) == bool(right_extension):
+                continue
+            reversed_target = choice.sequence != contigs[target_index].sequence
+            if right_extension:
+                left_sequence = source.sequence
+                right_sequence = choice.sequence
+                overlap = len(source.sequence) - choice.offset
+                source_end = "right"
+                target_end = "right" if reversed_target else "left"
+            else:
+                left_sequence = choice.sequence
+                right_sequence = source.sequence
+                overlap = choice.offset + len(choice.sequence)
+                source_end = "left"
+                target_end = "left" if reversed_target else "right"
+            evidence_reads = cluster_indices[source_index] | cluster_indices[target_index]
+            support = _spanning_molecule_support(
+                left_sequence,
+                right_sequence,
+                overlap,
+                evidence_reads,
+                reads,
+                molecule_ids,
+                minimum_identity=minimum_identity,
+                minimum_ry_identity=minimum_ry_identity,
+            )
+            if source_index < target_index:
+                key = (source_index, source_end, target_index, target_end)
+                link = _SupportedContigLink(
+                    source_index,
+                    target_index,
+                    source_end,
+                    target_end,
+                    overlap,
+                    support,
+                )
+            else:
+                key = (target_index, target_end, source_index, source_end)
+                link = _SupportedContigLink(
+                    target_index,
+                    source_index,
+                    target_end,
+                    source_end,
+                    overlap,
+                    support,
+                )
+            current = evidenced.get(key)
+            if current is None or (link.support, link.overlap) > (
+                current.support,
+                current.overlap,
+            ):
+                evidenced[key] = link
+
+    support_values = [link.support for link in evidenced.values()]
+    diagnostics.support_at_least_1 = sum(value >= 1 for value in support_values)
+    diagnostics.support_at_least_2 = sum(value >= 2 for value in support_values)
+    diagnostics.support_at_least_3 = sum(value >= 3 for value in support_values)
+    diagnostics.support_at_least_5 = sum(value >= 5 for value in support_values)
+    diagnostics.max_read_support = max(support_values, default=0)
+    supported = {
+        key: link
+        for key, link in evidenced.items()
+        if link.support >= minimum_read_support
+    }
+    diagnostics.read_supported_overlaps = len(supported)
+    end_counts: dict[tuple[int, str], int] = defaultdict(int)
+    for link in supported.values():
+        end_counts[(link.first, link.first_end)] += 1
+        end_counts[(link.second, link.second_end)] += 1
+    diagnostics.ambiguous_ends += sum(count > 1 for count in end_counts.values())
+    linear_links = [
+        link
+        for link in supported.values()
+        if end_counts[(link.first, link.first_end)] == 1
+        and end_counts[(link.second, link.second_end)] == 1
+    ]
+    adjacency: dict[int, list[tuple[int, _SupportedContigLink]]] = defaultdict(list)
+    for link in linear_links:
+        adjacency[link.first].append((link.second, link))
+        adjacency[link.second].append((link.first, link))
+    visited: set[int] = set()
+    for start in adjacency:
+        if start in visited:
+            continue
+        stack = [start]
+        component: set[int] = set()
+        component_links: dict[tuple[int, str, int, str], _SupportedContigLink] = {}
+        while stack:
+            node = stack.pop()
+            if node in component:
+                continue
+            component.add(node)
+            visited.add(node)
+            for neighbor, link in adjacency[node]:
+                component_links[
+                    (link.first, link.first_end, link.second, link.second_end)
+                ] = link
+                stack.append(neighbor)
+        if len(component_links) == len(component):
+            diagnostics.cyclic_components += 1
+            continue
+        diagnostics.linear_chains += 1
+        diagnostics.projected_joins += len(component_links)
+        merged_bases = sum(len(contigs[index].sequence) for index in component)
+        merged_bases -= sum(link.overlap for link in component_links.values())
+        diagnostics.projected_merged_bases += merged_bases
+        diagnostics.projected_longest_contig = max(
+            diagnostics.projected_longest_contig,
+            merged_bases,
+        )
+    return diagnostics
+
+
 def _merge_contig_pass(
     contigs: list[Read],
     *,
@@ -1098,6 +1383,8 @@ def assemble_overlap_contigs(
     damage_mismatch_penalty: float = 0.25,
     ranking_damage_end_window: int = 5,
     cross_cluster_recruitment_audit: bool = False,
+    read_supported_contig_link_audit: bool = False,
+    minimum_contig_link_read_support: int = 2,
     minimum_output_length: int = 0,
     correction_events: list[OverlapCorrectionEvent] | None = None,
 ) -> tuple[list[Read], OverlapAssemblySummary]:
@@ -1136,6 +1423,12 @@ def assemble_overlap_contigs(
         raise ValueError(
             "cross_cluster_recruitment_audit requires maximum_contig_iterations=0"
         )
+    if read_supported_contig_link_audit and maximum_contig_iterations:
+        raise ValueError(
+            "read_supported_contig_link_audit requires maximum_contig_iterations=0"
+        )
+    if minimum_contig_link_read_support < 1:
+        raise ValueError("minimum_contig_link_read_support must be at least 1")
     if anchors_per_read < minimum_anchor_matches:
         raise ValueError("anchors_per_read must cover minimum_anchor_matches")
     molecules = list(range(len(reads))) if molecule_ids is None else molecule_ids
@@ -1350,6 +1643,24 @@ def assemble_overlap_contigs(
             ranking_damage_end_window=ranking_damage_end_window,
         )
 
+    contig_link_diagnostics = _ContigLinkDiagnostics()
+    if read_supported_contig_link_audit:
+        contig_link_diagnostics = _audit_read_supported_contig_links(
+            contigs,
+            contig_cluster_indices,
+            reads,
+            molecules,
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            minimum_overlap_margin=minimum_overlap_margin,
+            minimum_read_support=minimum_contig_link_read_support,
+        )
+
     contig_iterations = contig_merges = 0
     for _ in range(maximum_contig_iterations):
         merged, merges, rounds, added, ambiguous = _merge_contig_pass(
@@ -1480,5 +1791,26 @@ def assemble_overlap_contigs(
         ),
         cross_cluster_supported_bases=(
             recruitment_diagnostics.cross_cluster_supported_bases
+        ),
+        contig_link_candidate_overlaps=contig_link_diagnostics.candidate_overlaps,
+        contig_link_unique_overlaps=contig_link_diagnostics.unique_overlaps,
+        contig_link_reciprocal_overlaps=contig_link_diagnostics.reciprocal_overlaps,
+        contig_link_read_supported_overlaps=(
+            contig_link_diagnostics.read_supported_overlaps
+        ),
+        contig_link_support_at_least_1=contig_link_diagnostics.support_at_least_1,
+        contig_link_support_at_least_2=contig_link_diagnostics.support_at_least_2,
+        contig_link_support_at_least_3=contig_link_diagnostics.support_at_least_3,
+        contig_link_support_at_least_5=contig_link_diagnostics.support_at_least_5,
+        contig_link_max_read_support=contig_link_diagnostics.max_read_support,
+        contig_link_ambiguous_ends=contig_link_diagnostics.ambiguous_ends,
+        contig_link_cyclic_components=contig_link_diagnostics.cyclic_components,
+        contig_link_linear_chains=contig_link_diagnostics.linear_chains,
+        contig_link_projected_joins=contig_link_diagnostics.projected_joins,
+        contig_link_projected_merged_bases=(
+            contig_link_diagnostics.projected_merged_bases
+        ),
+        contig_link_projected_longest_contig=(
+            contig_link_diagnostics.projected_longest_contig
         ),
     )

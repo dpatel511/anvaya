@@ -456,6 +456,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="audit cross-cluster fragments against frozen contig ends without changing output",
     )
     overlap_parser.add_argument(
+        "--read-supported-contig-link-audit",
+        action="store_true",
+        help="audit reciprocal contig links crossed by independent reads",
+    )
+    overlap_parser.add_argument(
+        "--min-contig-link-read-support",
+        type=_minimum_count,
+        default=2,
+        help="minimum spanning molecules for a projected contig link (default: 2)",
+    )
+    overlap_parser.add_argument(
         "--min-output-length",
         type=_minimum_count,
         default=0,
@@ -1115,6 +1126,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cross_cluster_recruitment_audit=(
                     arguments.cross_cluster_recruitment_audit
                 ),
+                read_supported_contig_link_audit=(
+                    arguments.read_supported_contig_link_audit
+                ),
+                minimum_contig_link_read_support=(
+                    arguments.min_contig_link_read_support
+                ),
                 maximum_rounds=arguments.max_rounds,
                 maximum_contig_iterations=arguments.max_contig_iterations,
                 minimum_cluster_size=arguments.min_cluster_size,
@@ -1250,6 +1267,66 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_cross_cluster_supported_bases="
                 f"{summary.cross_cluster_supported_bases}"
+            )
+            print(
+                "overlap_contig_link_candidate_overlaps="
+                f"{summary.contig_link_candidate_overlaps}"
+            )
+            print(
+                "overlap_contig_link_unique_overlaps="
+                f"{summary.contig_link_unique_overlaps}"
+            )
+            print(
+                "overlap_contig_link_reciprocal_overlaps="
+                f"{summary.contig_link_reciprocal_overlaps}"
+            )
+            print(
+                "overlap_contig_link_read_supported_overlaps="
+                f"{summary.contig_link_read_supported_overlaps}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_1="
+                f"{summary.contig_link_support_at_least_1}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_2="
+                f"{summary.contig_link_support_at_least_2}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_3="
+                f"{summary.contig_link_support_at_least_3}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_5="
+                f"{summary.contig_link_support_at_least_5}"
+            )
+            print(
+                "overlap_contig_link_max_read_support="
+                f"{summary.contig_link_max_read_support}"
+            )
+            print(
+                "overlap_contig_link_ambiguous_ends="
+                f"{summary.contig_link_ambiguous_ends}"
+            )
+            print(
+                "overlap_contig_link_cyclic_components="
+                f"{summary.contig_link_cyclic_components}"
+            )
+            print(
+                "overlap_contig_link_linear_chains="
+                f"{summary.contig_link_linear_chains}"
+            )
+            print(
+                "overlap_contig_link_projected_joins="
+                f"{summary.contig_link_projected_joins}"
+            )
+            print(
+                "overlap_contig_link_projected_merged_bases="
+                f"{summary.contig_link_projected_merged_bases}"
+            )
+            print(
+                "overlap_contig_link_projected_longest_contig="
+                f"{summary.contig_link_projected_longest_contig}"
             )
             print(f"output={arguments.output}")
             return 0

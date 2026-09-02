@@ -6,6 +6,7 @@ from anvaya.cli import main
 from anvaya.damage_consensus import _anchor_index
 from anvaya.overlap_assembly import (
     _Alignment,
+    _audit_read_supported_contig_links,
     _audit_cross_cluster_recruitment,
     _consensus,
     _merge_contig_pass,
@@ -75,6 +76,13 @@ class OverlapAssemblyTests(unittest.TestCase):
             assemble_overlap_contigs(
                 [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
                 cross_cluster_recruitment_audit=True,
+            )
+
+    def test_contig_link_audit_requires_frozen_contigs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "maximum_contig_iterations=0"):
+            assemble_overlap_contigs(
+                [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
+                read_supported_contig_link_audit=True,
             )
 
     def test_layout_retains_strong_internal_consensus(self) -> None:
@@ -567,6 +575,70 @@ class OverlapAssemblyTests(unittest.TestCase):
 
         self.assertEqual(audited, baseline)
 
+    def test_audits_read_supported_reciprocal_contig_link(self) -> None:
+        left = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        extension = "TTGCAACGTCCGATA"
+        right = left[15:] + extension
+        merged = left + extension
+        reads = [
+            Read("left-bridge", merged[10:45]),
+            Read("right-bridge", merged[10:45]),
+        ]
+
+        diagnostics = _audit_read_supported_contig_links(
+            [Read("left", left), Read("right", right)],
+            [{0}, {1}],
+            reads,
+            [0, 1],
+            anchor_k=7,
+            anchors_per_read=16,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_overlap=20,
+            minimum_identity=0.90,
+            minimum_ry_identity=0.99,
+            minimum_overlap_margin=3,
+            minimum_read_support=2,
+        )
+
+        self.assertGreaterEqual(diagnostics.candidate_overlaps, 2)
+        self.assertGreaterEqual(diagnostics.reciprocal_overlaps, 1)
+        self.assertEqual(diagnostics.read_supported_overlaps, 1)
+        self.assertEqual(diagnostics.support_at_least_1, 1)
+        self.assertEqual(diagnostics.support_at_least_2, 1)
+        self.assertEqual(diagnostics.support_at_least_3, 0)
+        self.assertEqual(diagnostics.support_at_least_5, 0)
+        self.assertEqual(diagnostics.max_read_support, 2)
+        self.assertEqual(diagnostics.ambiguous_ends, 0)
+        self.assertEqual(diagnostics.cyclic_components, 0)
+        self.assertEqual(diagnostics.linear_chains, 1)
+        self.assertEqual(diagnostics.projected_joins, 1)
+        self.assertEqual(diagnostics.projected_merged_bases, len(merged))
+        self.assertEqual(diagnostics.projected_longest_contig, len(merged))
+
+    def test_contig_link_audit_does_not_change_output(self) -> None:
+        genome = (
+            "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTATTCGAGTCCGATACGTGACCTAG"
+            "GATCCGTACGATCGTACGA"
+        )
+        reads = [Read("left", genome[:35]), Read("right", genome[30:65])]
+        reads.extend(Read(f"bridge-{index}", genome[15:50]) for index in range(5))
+        parameters = {
+            "anchor_k": 7,
+            "minimum_overlap": 20,
+            "maximum_rounds": 2,
+            "maximum_contig_iterations": 0,
+        }
+
+        baseline, _ = assemble_overlap_contigs(reads, **parameters)
+        audited, _ = assemble_overlap_contigs(
+            reads,
+            read_supported_contig_link_audit=True,
+            **parameters,
+        )
+
+        self.assertEqual(audited, baseline)
+
     def test_separates_ry_inconsistent_clusters(self) -> None:
         center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         overlap = list(center[5:])
@@ -648,6 +720,8 @@ class OverlapAssemblyTests(unittest.TestCase):
                 "--ranking-damage-end-window", "5",
                 "--max-contig-iterations", "0",
                 "--cross-cluster-recruitment-audit",
+                "--read-supported-contig-link-audit",
+                "--min-contig-link-read-support", "2",
             ])
 
             self.assertEqual(result, 0)

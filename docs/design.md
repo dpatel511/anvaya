@@ -302,6 +302,19 @@ byte-identical assembly. Active recruitment is not implemented. The next
 layout experiment must instead require read-supported, reciprocal links between
 frozen contigs before considering any sequence join.
 
+That read-supported contig-link audit also failed its activation gate. With the
+validated five-read cluster threshold, 152 reciprocal contig overlaps produced
+only two links supported by two independent reads, none supported by three, and
+two projected joins totaling 462 bp. Repeating the audit at cluster support
+three increased reciprocal overlaps to 741, but only six had two-read support,
+two had three-read support, and none had five-read support. The projected six
+joins totaled 1,063 bp and the projected longest contig remained 270 bp. Both
+audits preserved byte-identical output; active contig linking is therefore not
+implemented. The support sweep instead identifies cluster acceptance as a
+recovery bottleneck and motivates a report-first, two-tier design: retain
+support-five primary contigs, admit support-three rescue candidates separately,
+then remove candidates contained by or redundant with longer representatives.
+
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 
 ## Reciprocal paired-read unitig extension
