@@ -49,6 +49,24 @@ class OverlapAssemblySummary:
     confidence_ranked_sides: int = 0
     confidence_changed_winners: int = 0
     confidence_ambiguous_extensions: int = 0
+    deferred_reads: int = 0
+    cross_cluster_reads: int = 0
+    deferred_candidate_reads: int = 0
+    cross_cluster_candidate_reads: int = 0
+    deferred_extension_candidates: int = 0
+    cross_cluster_extension_candidates: int = 0
+    deferred_ambiguous_assignments: int = 0
+    cross_cluster_ambiguous_assignments: int = 0
+    deferred_unique_assignments: int = 0
+    cross_cluster_unique_assignments: int = 0
+    deferred_reciprocal_assignments: int = 0
+    cross_cluster_reciprocal_assignments: int = 0
+    recruitment_supported_contigs: int = 0
+    recruitment_supported_bases: int = 0
+    deferred_supported_contigs: int = 0
+    deferred_supported_bases: int = 0
+    cross_cluster_supported_contigs: int = 0
+    cross_cluster_supported_bases: int = 0
 
 
 @dataclass(slots=True)
@@ -74,6 +92,28 @@ class _RankingDiagnostics:
     ranked_sides: int = 0
     changed_winners: int = 0
     ambiguous_extensions: int = 0
+
+
+@dataclass(slots=True)
+class _RecruitmentDiagnostics:
+    deferred_reads: int = 0
+    cross_cluster_reads: int = 0
+    deferred_candidate_reads: int = 0
+    cross_cluster_candidate_reads: int = 0
+    deferred_extension_candidates: int = 0
+    cross_cluster_extension_candidates: int = 0
+    deferred_ambiguous_assignments: int = 0
+    cross_cluster_ambiguous_assignments: int = 0
+    deferred_unique_assignments: int = 0
+    cross_cluster_unique_assignments: int = 0
+    deferred_reciprocal_assignments: int = 0
+    cross_cluster_reciprocal_assignments: int = 0
+    supported_contigs: int = 0
+    supported_bases: int = 0
+    deferred_supported_contigs: int = 0
+    deferred_supported_bases: int = 0
+    cross_cluster_supported_contigs: int = 0
+    cross_cluster_supported_bases: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -619,6 +659,219 @@ def _filter_reciprocal_best_extensions(
     return supported
 
 
+def _audit_cross_cluster_recruitment(
+    contigs: list[Read],
+    cluster_indices: list[set[int]],
+    reads: list[Read],
+    read_clusters: list[int | None],
+    molecule_ids: list[int],
+    anchors: dict[int, list[int]],
+    *,
+    anchor_k: int,
+    anchors_per_read: int,
+    maximum_anchor_occurrences: int,
+    minimum_anchor_matches: int,
+    minimum_overlap: int,
+    minimum_identity: float,
+    minimum_ry_identity: float,
+    position_bits: int,
+    target_window: int,
+    minimum_overlap_margin: int,
+    minimum_consensus_support: int,
+    dominance_ratio: float,
+    damage_aware_ranking: bool,
+    minimum_confidence_margin: float,
+    damage_mismatch_penalty: float,
+    ranking_damage_end_window: int,
+) -> _RecruitmentDiagnostics:
+    """Measure safe cross-cluster end recruitment without changing contigs."""
+    diagnostics = _RecruitmentDiagnostics(
+        deferred_reads=sum(cluster is None for cluster in read_clusters),
+        cross_cluster_reads=(
+            sum(cluster is not None for cluster in read_clusters)
+            if len(contigs) > 1
+            else 0
+        ),
+    )
+    deferred_candidate_reads: set[int] = set()
+    cross_cluster_candidate_reads: set[int] = set()
+    deferred_extension_reads: set[int] = set()
+    cross_cluster_extension_reads: set[int] = set()
+    placements: dict[int, list[tuple[tuple[float, int, int, int], int, _Alignment]]] = (
+        defaultdict(list)
+    )
+    for contig_index, contig in enumerate(contigs):
+        own_cluster = cluster_indices[contig_index]
+        candidates = _candidate_alignments(
+            contig.sequence,
+            reads,
+            molecule_ids,
+            anchors,
+            own_cluster,
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=target_window,
+        )
+        for candidate in candidates:
+            candidate_cluster = read_clusters[candidate.read_index]
+            candidate_read_set = (
+                deferred_candidate_reads
+                if candidate_cluster is None
+                else cross_cluster_candidate_reads
+            )
+            candidate_read_set.add(candidate.read_index)
+            start = max(0, candidate.offset)
+            stop = min(
+                len(contig.sequence),
+                candidate.offset + len(candidate.sequence),
+            )
+            overlap = stop - start
+            extension = max(
+                0,
+                -candidate.offset,
+                candidate.offset + len(candidate.sequence) - len(contig.sequence),
+            )
+            if not extension:
+                continue
+            extension_read_set = (
+                deferred_extension_reads
+                if candidate_cluster is None
+                else cross_cluster_extension_reads
+            )
+            extension_read_set.add(candidate.read_index)
+            primary_score = (
+                _overlap_confidence(
+                    contig.sequence,
+                    candidate,
+                    damage_mismatch_penalty=damage_mismatch_penalty,
+                    damage_end_window=ranking_damage_end_window,
+                )
+                if damage_aware_ranking
+                else float(overlap)
+            )
+            placements[candidate.read_index].append(
+                (
+                    (primary_score, overlap, candidate.support, extension),
+                    contig_index,
+                    candidate,
+                )
+            )
+
+    diagnostics.deferred_candidate_reads = len(deferred_candidate_reads)
+    diagnostics.cross_cluster_candidate_reads = len(cross_cluster_candidate_reads)
+    diagnostics.deferred_extension_candidates = len(deferred_extension_reads)
+    diagnostics.cross_cluster_extension_candidates = len(cross_cluster_extension_reads)
+    selected_by_contig: dict[int, list[_Alignment]] = defaultdict(list)
+    for read_placements in placements.values():
+        best_by_contig: dict[int, tuple[tuple[float, int, int, int], int, _Alignment]] = {}
+        for placement in read_placements:
+            current = best_by_contig.get(placement[1])
+            if current is None or placement[0] > current[0]:
+                best_by_contig[placement[1]] = placement
+        ranked = sorted(best_by_contig.values(), reverse=True, key=lambda item: item[0])
+        if len(ranked) > 1:
+            difference = ranked[0][0][0] - ranked[1][0][0]
+            ambiguous = (
+                difference <= minimum_confidence_margin
+                if damage_aware_ranking
+                else difference < minimum_overlap_margin
+            )
+            if ambiguous:
+                read_index = ranked[0][2].read_index
+                if read_clusters[read_index] is None:
+                    diagnostics.deferred_ambiguous_assignments += 1
+                else:
+                    diagnostics.cross_cluster_ambiguous_assignments += 1
+                continue
+        _, contig_index, candidate = ranked[0]
+        selected_by_contig[contig_index].append(candidate)
+        if read_clusters[candidate.read_index] is None:
+            diagnostics.deferred_unique_assignments += 1
+        else:
+            diagnostics.cross_cluster_unique_assignments += 1
+
+    reciprocal_diagnostics = _ReciprocalDiagnostics()
+    reciprocal_by_contig: dict[int, list[_Alignment]] = {}
+    for contig_index, selected in selected_by_contig.items():
+        reciprocal_by_contig[contig_index] = _filter_reciprocal_best_extensions(
+            contigs[contig_index].sequence,
+            selected,
+            cluster_indices[contig_index],
+            reads,
+            molecule_ids,
+            anchors,
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=target_window,
+            minimum_overlap_margin=minimum_overlap_margin,
+            diagnostics=reciprocal_diagnostics,
+        )
+    for recruited in reciprocal_by_contig.values():
+        for candidate in recruited:
+            if read_clusters[candidate.read_index] is None:
+                diagnostics.deferred_reciprocal_assignments += 1
+            else:
+                diagnostics.cross_cluster_reciprocal_assignments += 1
+
+    def record_supported_extension(
+        contig: Read,
+        recruited: list[_Alignment],
+    ) -> int:
+        if not recruited:
+            return 0
+        result = _consensus(
+            contig.sequence,
+            recruited,
+            minimum_extension_support=minimum_consensus_support,
+            dominance_ratio=dominance_ratio,
+            damage_end_window=0,
+            allow_internal_consensus=False,
+        )
+        return len(result.sequence) - len(contig.sequence)
+
+    for contig_index, recruited in reciprocal_by_contig.items():
+        contig = contigs[contig_index]
+        added = record_supported_extension(contig, recruited)
+        deferred_added = record_supported_extension(
+            contig,
+            [
+                candidate
+                for candidate in recruited
+                if read_clusters[candidate.read_index] is None
+            ],
+        )
+        cross_cluster_added = record_supported_extension(
+            contig,
+            [
+                candidate
+                for candidate in recruited
+                if read_clusters[candidate.read_index] is not None
+            ],
+        )
+        if added:
+            diagnostics.supported_contigs += 1
+            diagnostics.supported_bases += added
+        if deferred_added:
+            diagnostics.deferred_supported_contigs += 1
+            diagnostics.deferred_supported_bases += deferred_added
+        if cross_cluster_added:
+            diagnostics.cross_cluster_supported_contigs += 1
+            diagnostics.cross_cluster_supported_bases += cross_cluster_added
+    return diagnostics
+
+
 def _merge_contig_pass(
     contigs: list[Read],
     *,
@@ -844,6 +1097,7 @@ def assemble_overlap_contigs(
     minimum_confidence_margin: float = 0.0,
     damage_mismatch_penalty: float = 0.25,
     ranking_damage_end_window: int = 5,
+    cross_cluster_recruitment_audit: bool = False,
     minimum_output_length: int = 0,
     correction_events: list[OverlapCorrectionEvent] | None = None,
 ) -> tuple[list[Read], OverlapAssemblySummary]:
@@ -878,6 +1132,10 @@ def assemble_overlap_contigs(
         raise ValueError("damage_mismatch_penalty must be between zero and one")
     if ranking_damage_end_window < 0:
         raise ValueError("ranking_damage_end_window must not be negative")
+    if cross_cluster_recruitment_audit and maximum_contig_iterations:
+        raise ValueError(
+            "cross_cluster_recruitment_audit requires maximum_contig_iterations=0"
+        )
     if anchors_per_read < minimum_anchor_matches:
         raise ValueError("anchors_per_read must cover minimum_anchor_matches")
     molecules = list(range(len(reads))) if molecule_ids is None else molecule_ids
@@ -890,7 +1148,9 @@ def assemble_overlap_contigs(
         reads, anchor_k, 0, anchors_per_read, maximum_anchor_occurrences
     )
     claimed = [False] * len(reads)
+    read_clusters: list[int | None] = [None] * len(reads)
     contigs: list[Read] = []
+    contig_cluster_indices: list[set[int]] = []
     clusters = clustered_reads = extension_rounds = 0
     extended_contigs = added_bases = corrected_bases = 0
     ambiguous_extensions = 0
@@ -1059,6 +1319,36 @@ def assemble_overlap_contigs(
             extended_contigs += 1
             added_bases += extension
         contigs.append(Read(f"overlap_contig_{clusters}", target))
+        contig_cluster_indices.append(set(cluster_indices))
+        for read_index in cluster_indices:
+            read_clusters[read_index] = len(contigs) - 1
+
+    recruitment_diagnostics = _RecruitmentDiagnostics()
+    if cross_cluster_recruitment_audit:
+        recruitment_diagnostics = _audit_cross_cluster_recruitment(
+            contigs,
+            contig_cluster_indices,
+            reads,
+            read_clusters,
+            molecules,
+            anchors,
+            anchor_k=anchor_k,
+            anchors_per_read=anchors_per_read,
+            maximum_anchor_occurrences=maximum_anchor_occurrences,
+            minimum_anchor_matches=minimum_anchor_matches,
+            minimum_overlap=minimum_overlap,
+            minimum_identity=minimum_identity,
+            minimum_ry_identity=minimum_ry_identity,
+            position_bits=position_bits,
+            target_window=target_window,
+            minimum_overlap_margin=minimum_overlap_margin,
+            minimum_consensus_support=minimum_consensus_support,
+            dominance_ratio=dominance_ratio,
+            damage_aware_ranking=damage_aware_ranking,
+            minimum_confidence_margin=minimum_confidence_margin,
+            damage_mismatch_penalty=damage_mismatch_penalty,
+            ranking_damage_end_window=ranking_damage_end_window,
+        )
 
     contig_iterations = contig_merges = 0
     for _ in range(maximum_contig_iterations):
@@ -1149,4 +1439,46 @@ def assemble_overlap_contigs(
         confidence_ranked_sides=ranking_diagnostics.ranked_sides,
         confidence_changed_winners=ranking_diagnostics.changed_winners,
         confidence_ambiguous_extensions=ranking_diagnostics.ambiguous_extensions,
+        deferred_reads=recruitment_diagnostics.deferred_reads,
+        cross_cluster_reads=recruitment_diagnostics.cross_cluster_reads,
+        deferred_candidate_reads=recruitment_diagnostics.deferred_candidate_reads,
+        cross_cluster_candidate_reads=(
+            recruitment_diagnostics.cross_cluster_candidate_reads
+        ),
+        deferred_extension_candidates=(
+            recruitment_diagnostics.deferred_extension_candidates
+        ),
+        cross_cluster_extension_candidates=(
+            recruitment_diagnostics.cross_cluster_extension_candidates
+        ),
+        deferred_ambiguous_assignments=(
+            recruitment_diagnostics.deferred_ambiguous_assignments
+        ),
+        cross_cluster_ambiguous_assignments=(
+            recruitment_diagnostics.cross_cluster_ambiguous_assignments
+        ),
+        deferred_unique_assignments=(
+            recruitment_diagnostics.deferred_unique_assignments
+        ),
+        cross_cluster_unique_assignments=(
+            recruitment_diagnostics.cross_cluster_unique_assignments
+        ),
+        deferred_reciprocal_assignments=(
+            recruitment_diagnostics.deferred_reciprocal_assignments
+        ),
+        cross_cluster_reciprocal_assignments=(
+            recruitment_diagnostics.cross_cluster_reciprocal_assignments
+        ),
+        recruitment_supported_contigs=recruitment_diagnostics.supported_contigs,
+        recruitment_supported_bases=recruitment_diagnostics.supported_bases,
+        deferred_supported_contigs=(
+            recruitment_diagnostics.deferred_supported_contigs
+        ),
+        deferred_supported_bases=recruitment_diagnostics.deferred_supported_bases,
+        cross_cluster_supported_contigs=(
+            recruitment_diagnostics.cross_cluster_supported_contigs
+        ),
+        cross_cluster_supported_bases=(
+            recruitment_diagnostics.cross_cluster_supported_bases
+        ),
     )

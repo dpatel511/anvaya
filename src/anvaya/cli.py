@@ -451,6 +451,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="terminal bases eligible for damage-aware ranking (default: 5)",
     )
     overlap_parser.add_argument(
+        "--cross-cluster-recruitment-audit",
+        action="store_true",
+        help="audit cross-cluster fragments against frozen contig ends without changing output",
+    )
+    overlap_parser.add_argument(
         "--min-output-length",
         type=_minimum_count,
         default=0,
@@ -1107,6 +1112,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 minimum_confidence_margin=arguments.min_overlap_confidence_margin,
                 damage_mismatch_penalty=arguments.damage_mismatch_penalty,
                 ranking_damage_end_window=arguments.ranking_damage_end_window,
+                cross_cluster_recruitment_audit=(
+                    arguments.cross_cluster_recruitment_audit
+                ),
                 maximum_rounds=arguments.max_rounds,
                 maximum_contig_iterations=arguments.max_contig_iterations,
                 minimum_cluster_size=arguments.min_cluster_size,
@@ -1176,6 +1184,72 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_confidence_ambiguous_extensions="
                 f"{summary.confidence_ambiguous_extensions}"
+            )
+            print(f"overlap_deferred_reads={summary.deferred_reads}")
+            print(f"overlap_cross_cluster_reads={summary.cross_cluster_reads}")
+            print(
+                "overlap_deferred_candidate_reads="
+                f"{summary.deferred_candidate_reads}"
+            )
+            print(
+                "overlap_cross_cluster_candidate_reads="
+                f"{summary.cross_cluster_candidate_reads}"
+            )
+            print(
+                "overlap_deferred_extension_candidates="
+                f"{summary.deferred_extension_candidates}"
+            )
+            print(
+                "overlap_cross_cluster_extension_candidates="
+                f"{summary.cross_cluster_extension_candidates}"
+            )
+            print(
+                "overlap_deferred_ambiguous_assignments="
+                f"{summary.deferred_ambiguous_assignments}"
+            )
+            print(
+                "overlap_cross_cluster_ambiguous_assignments="
+                f"{summary.cross_cluster_ambiguous_assignments}"
+            )
+            print(
+                "overlap_deferred_unique_assignments="
+                f"{summary.deferred_unique_assignments}"
+            )
+            print(
+                "overlap_cross_cluster_unique_assignments="
+                f"{summary.cross_cluster_unique_assignments}"
+            )
+            print(
+                "overlap_deferred_reciprocal_assignments="
+                f"{summary.deferred_reciprocal_assignments}"
+            )
+            print(
+                "overlap_cross_cluster_reciprocal_assignments="
+                f"{summary.cross_cluster_reciprocal_assignments}"
+            )
+            print(
+                "overlap_recruitment_supported_contigs="
+                f"{summary.recruitment_supported_contigs}"
+            )
+            print(
+                "overlap_recruitment_supported_bases="
+                f"{summary.recruitment_supported_bases}"
+            )
+            print(
+                "overlap_deferred_supported_contigs="
+                f"{summary.deferred_supported_contigs}"
+            )
+            print(
+                "overlap_deferred_supported_bases="
+                f"{summary.deferred_supported_bases}"
+            )
+            print(
+                "overlap_cross_cluster_supported_contigs="
+                f"{summary.cross_cluster_supported_contigs}"
+            )
+            print(
+                "overlap_cross_cluster_supported_bases="
+                f"{summary.cross_cluster_supported_bases}"
             )
             print(f"output={arguments.output}")
             return 0

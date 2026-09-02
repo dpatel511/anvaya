@@ -3,8 +3,10 @@ import unittest
 from pathlib import Path
 
 from anvaya.cli import main
+from anvaya.damage_consensus import _anchor_index
 from anvaya.overlap_assembly import (
     _Alignment,
+    _audit_cross_cluster_recruitment,
     _consensus,
     _merge_contig_pass,
     _overlap_confidence,
@@ -66,6 +68,13 @@ class OverlapAssemblyTests(unittest.TestCase):
             assemble_overlap_contigs(
                 [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
                 damage_aware_ranking=True,
+            )
+
+    def test_cross_cluster_recruitment_audit_requires_frozen_contigs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "maximum_contig_iterations=0"):
+            assemble_overlap_contigs(
+                [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
+                cross_cluster_recruitment_audit=True,
             )
 
     def test_layout_retains_strong_internal_consensus(self) -> None:
@@ -452,6 +461,112 @@ class OverlapAssemblyTests(unittest.TestCase):
         self.assertEqual(summary.extension_rounds, 2)
         self.assertEqual(summary.added_bases, 10)
 
+    def test_audits_consensus_supported_deferred_end_recruitment(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        first_extension = "TTGCAACGTCCGATA"
+        first = center + first_extension
+        reads = [Read("accepted", first[10:])]
+        reads.extend(
+            Read(f"deferred-{index}", first[25:] + "GACTA")
+            for index in range(5)
+        )
+        diagnostics = _audit_cross_cluster_recruitment(
+            [Read("frozen", first)],
+            [{0}],
+            reads,
+            [0, None, None, None, None, None],
+            list(range(len(reads))),
+            _anchor_index(reads, 7, 0, 32, 100),
+            anchor_k=7,
+            anchors_per_read=32,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_overlap=25,
+            minimum_identity=0.90,
+            minimum_ry_identity=0.99,
+            position_bits=max(len(read.sequence) for read in reads).bit_length(),
+            target_window=max(len(read.sequence) for read in reads),
+            minimum_overlap_margin=3,
+            minimum_consensus_support=5,
+            dominance_ratio=4.0,
+            damage_aware_ranking=True,
+            minimum_confidence_margin=0.0,
+            damage_mismatch_penalty=0.25,
+            ranking_damage_end_window=5,
+        )
+
+        self.assertEqual(diagnostics.deferred_reads, 5)
+        self.assertEqual(diagnostics.deferred_candidate_reads, 5)
+        self.assertEqual(diagnostics.deferred_extension_candidates, 5)
+        self.assertEqual(diagnostics.deferred_ambiguous_assignments, 0)
+        self.assertEqual(diagnostics.deferred_unique_assignments, 5)
+        self.assertEqual(diagnostics.deferred_reciprocal_assignments, 5)
+        self.assertEqual(diagnostics.supported_contigs, 1)
+        self.assertEqual(diagnostics.supported_bases, 5)
+        self.assertEqual(diagnostics.deferred_supported_contigs, 1)
+        self.assertEqual(diagnostics.deferred_supported_bases, 5)
+
+    def test_audits_consensus_supported_cross_cluster_recruitment(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        first = center + "TTGCAACGTCCGATA"
+        bridge = first[25:] + "GACTA"
+        reads = [Read("target-member", first[10:])]
+        reads.extend(Read(f"bridge-{index}", bridge) for index in range(5))
+
+        diagnostics = _audit_cross_cluster_recruitment(
+            [Read("target", first), Read("source", bridge)],
+            [{0}, {1, 2, 3, 4, 5}],
+            reads,
+            [0, 1, 1, 1, 1, 1],
+            list(range(len(reads))),
+            _anchor_index(reads, 7, 0, 32, 100),
+            anchor_k=7,
+            anchors_per_read=32,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_overlap=25,
+            minimum_identity=0.90,
+            minimum_ry_identity=0.99,
+            position_bits=max(len(read.sequence) for read in reads).bit_length(),
+            target_window=max(len(read.sequence) for read in reads),
+            minimum_overlap_margin=3,
+            minimum_consensus_support=5,
+            dominance_ratio=4.0,
+            damage_aware_ranking=True,
+            minimum_confidence_margin=0.0,
+            damage_mismatch_penalty=0.25,
+            ranking_damage_end_window=5,
+        )
+
+        self.assertEqual(diagnostics.deferred_reads, 0)
+        self.assertGreaterEqual(diagnostics.cross_cluster_extension_candidates, 5)
+        self.assertGreaterEqual(diagnostics.cross_cluster_unique_assignments, 5)
+        self.assertGreaterEqual(diagnostics.cross_cluster_reciprocal_assignments, 5)
+        self.assertEqual(diagnostics.supported_bases, 5)
+        self.assertEqual(diagnostics.cross_cluster_supported_contigs, 1)
+        self.assertEqual(diagnostics.cross_cluster_supported_bases, 5)
+
+    def test_cross_cluster_recruitment_audit_does_not_change_output(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"contained-{index}", center) for index in range(4))
+        reads.append(Read("extension", center[5:] + "TTGCA"))
+        parameters = {
+            "anchor_k": 7,
+            "minimum_overlap": 20,
+            "maximum_contig_iterations": 0,
+            "ranked_extension": True,
+        }
+
+        baseline, _ = assemble_overlap_contigs(reads, **parameters)
+        audited, _ = assemble_overlap_contigs(
+            reads,
+            cross_cluster_recruitment_audit=True,
+            **parameters,
+        )
+
+        self.assertEqual(audited, baseline)
+
     def test_separates_ry_inconsistent_clusters(self) -> None:
         center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         overlap = list(center[5:])
@@ -531,6 +646,8 @@ class OverlapAssemblyTests(unittest.TestCase):
                 "--min-overlap-confidence-margin", "0.02",
                 "--damage-mismatch-penalty", "0.25",
                 "--ranking-damage-end-window", "5",
+                "--max-contig-iterations", "0",
+                "--cross-cluster-recruitment-audit",
             ])
 
             self.assertEqual(result, 0)
