@@ -34,7 +34,9 @@ from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
 from anvaya.overlap_assembly import (
     OverlapCorrectionEvent,
+    TwoTierRedundancyDiagnostics,
     assemble_overlap_contigs,
+    audit_two_tier_redundancy,
     write_overlap_correction_report,
 )
 from anvaya.paired_extension import (
@@ -449,6 +451,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=_end_window,
         default=5,
         help="terminal bases eligible for damage-aware ranking (default: 5)",
+    )
+    overlap_parser.add_argument(
+        "--cross-cluster-recruitment-audit",
+        action="store_true",
+        help="audit cross-cluster fragments against frozen contig ends without changing output",
+    )
+    overlap_parser.add_argument(
+        "--read-supported-contig-link-audit",
+        action="store_true",
+        help="audit reciprocal contig links crossed by independent reads",
+    )
+    overlap_parser.add_argument(
+        "--min-contig-link-read-support",
+        type=_minimum_count,
+        default=2,
+        help="minimum spanning molecules for a projected contig link (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--two-tier-redundancy-audit",
+        action="store_true",
+        help="audit support-three rescue after 97%/99% containment filtering",
+    )
+    overlap_parser.add_argument(
+        "--rescue-min-cluster-size",
+        type=_minimum_count,
+        default=3,
+        help="minimum cluster size for two-tier rescue candidates (default: 3)",
     )
     overlap_parser.add_argument(
         "--min-output-length",
@@ -1107,6 +1136,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 minimum_confidence_margin=arguments.min_overlap_confidence_margin,
                 damage_mismatch_penalty=arguments.damage_mismatch_penalty,
                 ranking_damage_end_window=arguments.ranking_damage_end_window,
+                cross_cluster_recruitment_audit=(
+                    arguments.cross_cluster_recruitment_audit
+                ),
+                read_supported_contig_link_audit=(
+                    arguments.read_supported_contig_link_audit
+                ),
+                minimum_contig_link_read_support=(
+                    arguments.min_contig_link_read_support
+                ),
                 maximum_rounds=arguments.max_rounds,
                 maximum_contig_iterations=arguments.max_contig_iterations,
                 minimum_cluster_size=arguments.min_cluster_size,
@@ -1114,6 +1152,54 @@ def main(argv: Sequence[str] | None = None) -> int:
                 damage_end_window=arguments.damage_end_window,
                 correction_events=correction_events,
             )
+            rescue_audit = TwoTierRedundancyDiagnostics()
+            if arguments.two_tier_redundancy_audit:
+                if arguments.rescue_min_cluster_size >= arguments.min_cluster_size:
+                    parser.error(
+                        "--rescue-min-cluster-size must be smaller than "
+                        "--min-cluster-size"
+                    )
+                rescue_contigs, _ = assemble_overlap_contigs(
+                    reads,
+                    anchor_k=arguments.anchor_k,
+                    anchors_per_read=arguments.anchors_per_read,
+                    maximum_anchor_occurrences=arguments.max_anchor_occurrences,
+                    minimum_anchor_matches=arguments.min_anchor_matches,
+                    minimum_overlap=arguments.min_overlap,
+                    ranked_extension=arguments.ranked_extension,
+                    extension_consensus=arguments.extension_consensus,
+                    minimum_ranked_extension_support=(
+                        arguments.min_ranked_extension_support
+                    ),
+                    reciprocal_best_extension=(
+                        arguments.reciprocal_best_extension
+                    ),
+                    damage_aware_ranking=arguments.damage_aware_ranking,
+                    minimum_confidence_margin=(
+                        arguments.min_overlap_confidence_margin
+                    ),
+                    damage_mismatch_penalty=arguments.damage_mismatch_penalty,
+                    ranking_damage_end_window=(
+                        arguments.ranking_damage_end_window
+                    ),
+                    maximum_rounds=arguments.max_rounds,
+                    maximum_contig_iterations=(
+                        arguments.max_contig_iterations
+                    ),
+                    minimum_cluster_size=arguments.rescue_min_cluster_size,
+                    minimum_output_length=arguments.min_output_length,
+                    damage_end_window=arguments.damage_end_window,
+                )
+                rescue_audit = audit_two_tier_redundancy(
+                    contigs,
+                    rescue_contigs,
+                    anchor_k=arguments.anchor_k,
+                    anchors_per_read=arguments.anchors_per_read,
+                    maximum_anchor_occurrences=(
+                        arguments.max_anchor_occurrences
+                    ),
+                    minimum_anchor_matches=arguments.min_anchor_matches,
+                )
             if arguments.correction_report is not None:
                 write_overlap_correction_report(
                     correction_events,
@@ -1176,6 +1262,200 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_confidence_ambiguous_extensions="
                 f"{summary.confidence_ambiguous_extensions}"
+            )
+            print(f"overlap_deferred_reads={summary.deferred_reads}")
+            print(f"overlap_cross_cluster_reads={summary.cross_cluster_reads}")
+            print(
+                "overlap_deferred_candidate_reads="
+                f"{summary.deferred_candidate_reads}"
+            )
+            print(
+                "overlap_cross_cluster_candidate_reads="
+                f"{summary.cross_cluster_candidate_reads}"
+            )
+            print(
+                "overlap_deferred_extension_candidates="
+                f"{summary.deferred_extension_candidates}"
+            )
+            print(
+                "overlap_cross_cluster_extension_candidates="
+                f"{summary.cross_cluster_extension_candidates}"
+            )
+            print(
+                "overlap_deferred_ambiguous_assignments="
+                f"{summary.deferred_ambiguous_assignments}"
+            )
+            print(
+                "overlap_cross_cluster_ambiguous_assignments="
+                f"{summary.cross_cluster_ambiguous_assignments}"
+            )
+            print(
+                "overlap_deferred_unique_assignments="
+                f"{summary.deferred_unique_assignments}"
+            )
+            print(
+                "overlap_cross_cluster_unique_assignments="
+                f"{summary.cross_cluster_unique_assignments}"
+            )
+            print(
+                "overlap_deferred_reciprocal_assignments="
+                f"{summary.deferred_reciprocal_assignments}"
+            )
+            print(
+                "overlap_cross_cluster_reciprocal_assignments="
+                f"{summary.cross_cluster_reciprocal_assignments}"
+            )
+            print(
+                "overlap_recruitment_supported_contigs="
+                f"{summary.recruitment_supported_contigs}"
+            )
+            print(
+                "overlap_recruitment_supported_bases="
+                f"{summary.recruitment_supported_bases}"
+            )
+            print(
+                "overlap_deferred_supported_contigs="
+                f"{summary.deferred_supported_contigs}"
+            )
+            print(
+                "overlap_deferred_supported_bases="
+                f"{summary.deferred_supported_bases}"
+            )
+            print(
+                "overlap_cross_cluster_supported_contigs="
+                f"{summary.cross_cluster_supported_contigs}"
+            )
+            print(
+                "overlap_cross_cluster_supported_bases="
+                f"{summary.cross_cluster_supported_bases}"
+            )
+            print(
+                "overlap_contig_link_candidate_overlaps="
+                f"{summary.contig_link_candidate_overlaps}"
+            )
+            print(
+                "overlap_contig_link_unique_overlaps="
+                f"{summary.contig_link_unique_overlaps}"
+            )
+            print(
+                "overlap_contig_link_reciprocal_overlaps="
+                f"{summary.contig_link_reciprocal_overlaps}"
+            )
+            print(
+                "overlap_contig_link_read_supported_overlaps="
+                f"{summary.contig_link_read_supported_overlaps}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_1="
+                f"{summary.contig_link_support_at_least_1}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_2="
+                f"{summary.contig_link_support_at_least_2}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_3="
+                f"{summary.contig_link_support_at_least_3}"
+            )
+            print(
+                "overlap_contig_link_support_at_least_5="
+                f"{summary.contig_link_support_at_least_5}"
+            )
+            print(
+                "overlap_contig_link_max_read_support="
+                f"{summary.contig_link_max_read_support}"
+            )
+            print(
+                "overlap_contig_link_ambiguous_ends="
+                f"{summary.contig_link_ambiguous_ends}"
+            )
+            print(
+                "overlap_contig_link_cyclic_components="
+                f"{summary.contig_link_cyclic_components}"
+            )
+            print(
+                "overlap_contig_link_linear_chains="
+                f"{summary.contig_link_linear_chains}"
+            )
+            print(
+                "overlap_contig_link_projected_joins="
+                f"{summary.contig_link_projected_joins}"
+            )
+            print(
+                "overlap_contig_link_projected_merged_bases="
+                f"{summary.contig_link_projected_merged_bases}"
+            )
+            print(
+                "overlap_contig_link_projected_longest_contig="
+                f"{summary.contig_link_projected_longest_contig}"
+            )
+            print(
+                "overlap_two_tier_redundancy_audit="
+                f"{str(arguments.two_tier_redundancy_audit).lower()}"
+            )
+            print(
+                "overlap_rescue_min_cluster_size="
+                f"{arguments.rescue_min_cluster_size}"
+            )
+            print("overlap_rescue_min_identity=0.97")
+            print("overlap_rescue_min_ry_identity=0.99")
+            print("overlap_rescue_min_coverage=0.99")
+            print(f"overlap_rescue_contigs={rescue_audit.rescue_contigs}")
+            print(f"overlap_rescue_bases={rescue_audit.rescue_bases}")
+            print(
+                "overlap_rescue_contained_by_primary="
+                f"{rescue_audit.contained_by_primary}"
+            )
+            print(
+                "overlap_rescue_redundant_with_rescue="
+                f"{rescue_audit.redundant_with_rescue}"
+            )
+            print(
+                "overlap_rescue_extends_primary="
+                f"{rescue_audit.extends_primary}"
+            )
+            print(
+                "overlap_rescue_ambiguous_primary_extensions="
+                f"{rescue_audit.ambiguous_primary_extensions}"
+            )
+            print(
+                "overlap_rescue_replacement_contigs="
+                f"{rescue_audit.replacement_contigs}"
+            )
+            print(
+                "overlap_rescue_replacement_added_bases="
+                f"{rescue_audit.replacement_added_bases}"
+            )
+            print(
+                "overlap_rescue_replacement_projected_bases="
+                f"{rescue_audit.replacement_projected_bases}"
+            )
+            print(
+                "overlap_rescue_replacement_projected_n50="
+                f"{rescue_audit.replacement_projected_n50}"
+            )
+            print(
+                "overlap_rescue_replacement_projected_longest_contig="
+                f"{rescue_audit.replacement_projected_longest_contig}"
+            )
+            print(
+                f"overlap_rescue_novel_contigs={rescue_audit.novel_contigs}"
+            )
+            print(f"overlap_rescue_novel_bases={rescue_audit.novel_bases}")
+            print(
+                "overlap_rescue_projected_contigs="
+                f"{rescue_audit.projected_contigs}"
+            )
+            print(
+                "overlap_rescue_projected_bases="
+                f"{rescue_audit.projected_bases}"
+            )
+            print(
+                f"overlap_rescue_projected_n50={rescue_audit.projected_n50}"
+            )
+            print(
+                "overlap_rescue_projected_longest_contig="
+                f"{rescue_audit.projected_longest_contig}"
             )
             print(f"output={arguments.output}")
             return 0

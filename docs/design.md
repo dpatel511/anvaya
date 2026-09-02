@@ -292,6 +292,57 @@ mismatches from 766.79 to 753.64 per 100 kbp, and reduced indels from 1.70 to
 and recovery improvement; read recruitment now takes priority because ranking
 did not materially improve continuity.
 
+The subsequent report-only recruitment audit ruled out that hypothesis at the
+EMN001 100k gate. Deferred reads produced 186 unique end assignments and 61
+reciprocal assignments; reads borrowed from other accepted clusters produced
+208 unique and 73 reciprocal assignments. The evidence was dispersed, and no
+contig reached five-read consensus support from either source or their union.
+Projected extension was therefore zero contigs and zero bases, with a
+byte-identical assembly. Active recruitment is not implemented. The next
+layout experiment must instead require read-supported, reciprocal links between
+frozen contigs before considering any sequence join.
+
+That read-supported contig-link audit also failed its activation gate. With the
+validated five-read cluster threshold, 152 reciprocal contig overlaps produced
+only two links supported by two independent reads, none supported by three, and
+two projected joins totaling 462 bp. Repeating the audit at cluster support
+three increased reciprocal overlaps to 741, but only six had two-read support,
+two had three-read support, and none had five-read support. The projected six
+joins totaled 1,063 bp and the projected longest contig remained 270 bp. Both
+audits preserved byte-identical output; active contig linking is therefore not
+implemented. The support sweep instead identifies cluster acceptance as a
+recovery bottleneck and motivates a report-first, two-tier design: retain
+support-five primary contigs, admit support-three rescue candidates separately,
+then remove candidates contained by or redundant with longer representatives.
+
+The two-tier audit used CarpeDeam's final-redundancy semantics as a conservative
+starting point: 97% nucleotide identity and 99% shorter-sequence coverage, with
+an additional 99% R/Y identity gate. Of 14,024 support-three contigs, 4,766 were
+contained by support-five primaries, 71 were redundant with a longer rescue
+representative, 259 contained and extended a primary, and 8,928 were novel.
+Adding only the novel set projected 13,891 contigs and 1,446,636 bp, approaching
+CarpeDeam's recovery, but reduced N50 from 128 to 113 and left the longest
+contig at 331 bp. The audit remained byte-identical to the primary assembly.
+
+A stricter replacement projection then required each extending rescue to
+contain at least 99% of exactly one primary. Three candidates were ambiguous;
+249 unique primaries had a longest compatible replacement, adding 9,100 bp but
+raising projected N50 by only one base, from 128 to 129, without increasing the
+331 bp longest contig. Increasing per-seed extension from three rounds to six
+raised the longest contig only to 353 bp and left N50 at 128; ten rounds produced
+the same assembly statistics and therefore demonstrated convergence. Neither
+two-tier emission nor primary replacement is activated.
+
+The remaining layout experiment is global iterative reclustering with
+conflict-aware read reuse. Extended contigs and original fragments are
+re-indexed between iterations; a fragment may provide candidate evidence to
+multiple contigs, but may drive an extension only for a unique confidence
+winner. Reciprocal-best and damage-aware ranking remain mandatory, conflicting
+assignments abstain, and 97% identity/99% coverage redundancy reduction occurs
+between iterations. The first implementation is report-only and must expose
+per-iteration added bases, reused fragments, conflicts, convergence, projected
+N50, and projected longest contig before it can change output.
+
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 
 ## Reciprocal paired-read unitig extension

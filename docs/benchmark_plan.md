@@ -174,10 +174,67 @@ gate because 2,094 abstentions reduced N50 from 128 to 123. The validated
 default is therefore zero: reciprocal-best filtering remains the structural
 abstention gate.
 
-This result does not materially improve continuity. The next go/no-go work is
-improved read recruitment while preserving zero misassemblies, approximately
-133 bp N50, approximately 131 bp NA50, and at least 4.91 Mb aligned length on
-the 500k checkpoint before broader validation.
+This result does not materially improve continuity. A report-only recruitment
+audit then tested both unassigned reads and reads borrowed from other clusters
+on EMN001 100k. Reciprocal validation retained 61 deferred and 73 cross-cluster
+assignments, but no frozen contig reached five-read consensus support; projected
+extension was zero bases. The output checksum was unchanged, runtime was 12.11
+seconds, and peak RSS was 234,532 kB. This closes read recruitment as the
+current bottleneck.
+
+The next go/no-go experiment is a read-supported contig-link audit. It must
+preserve the assembly checksum while reporting candidate overlaps, reciprocal
+links, independently supported linear chains, ambiguous branches, cycles, and
+projected merged bases. Only a meaningful population of unambiguous supported
+chains justifies an active join stage and MetaQUAST validation.
+
+The audit completed without crossing that gate. At cluster support five, only
+two of 152 reciprocal overlaps had two-read support and none had support three;
+at cluster support three, only six of 741 reciprocal overlaps had two-read
+support, two had support three, and none had support five. The support-three
+projection contained six joins and 1,063 merged bases but did not exceed a
+270 bp longest contig. Output checksums matched their respective non-audit
+assemblies. Contig linking remains report-only and further threshold tuning is
+closed.
+
+The cluster-support sweep exposed a more useful Pareto boundary. Support three
+recovered 1,312,891 aligned bases with 0.463% genome fraction and zero detected
+misassemblies, approaching CarpeDeam safe at 1,431,468 aligned bases and 0.512%,
+but reached only N50/NA50 113/112 versus 134/133. Support five retained the best
+Anvaya continuity at N50/NA50 128/127 but only 591,906 aligned bases. The next
+experiment is therefore a two-tier redundancy audit: freeze support-five
+primary contigs, generate support-three rescue candidates, and project only
+rescue representatives that are not contained by or redundant with a longer
+primary or rescue contig. It must report primary checksum, candidate and
+retained bases, containment and redundancy rejection counts, projected N50,
+and projected longest contig before any output-changing mode is considered.
+
+The two-tier audit completed and preserved the primary checksum. From 14,024
+support-three candidates totaling 1,461,605 bp, it classified 4,766 as contained
+by a primary, 71 as redundant with a longer rescue representative, 259 as
+extending a primary, and 8,928 as novel. Adding only novel candidates projected
+1,446,636 bp across 13,891 contigs, but N50 fell from 128 to 113 and the longest
+contig stayed at 331 bp. The recovery gain therefore does not pass the
+continuity gate.
+
+Unique primary replacement also failed the material-improvement gate. Of 259
+primary-extending candidates, three matched multiple primaries and abstained;
+249 primaries received a longest unique replacement. The projection added
+9,100 bp, increased N50 only from 128 to 129, and left the longest contig at
+331 bp. Output remained byte-identical, runtime was 28.58 seconds, and peak RSS
+was 276,772 kB. Replacement remains report-only.
+
+The extension-round cap was tested independently. Six rounds increased total
+length from 611,844 to 612,810 bp and the longest contig from 331 to 353 bp, but
+left N50 at 128. Ten rounds produced the same contig count, total length, N50,
+and longest-contig length as six rounds. Further round tuning is closed.
+
+The next go/no-go experiment is global iterative reclustering with controlled
+read reuse. Each iteration must report reused fragments, multi-contig conflicts,
+unique confidence assignments, added bases, redundancy removals, projected N50,
+projected longest contig, runtime, and memory. The 100k gate requires a material
+continuity improvement over N50 129 and longest contig 353 before an active mode
+or 500k/MetaQUAST evaluation is justified.
 
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long

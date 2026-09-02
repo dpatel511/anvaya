@@ -3,19 +3,87 @@ import unittest
 from pathlib import Path
 
 from anvaya.cli import main
+from anvaya.damage_consensus import _anchor_index
 from anvaya.overlap_assembly import (
     _Alignment,
+    _audit_read_supported_contig_links,
+    _audit_cross_cluster_recruitment,
     _consensus,
     _merge_contig_pass,
     _overlap_confidence,
     _unique_best_extensions,
     assemble_overlap_contigs,
+    audit_two_tier_redundancy,
     write_overlap_correction_report,
 )
 from anvaya.reads import Read
 
 
 class OverlapAssemblyTests(unittest.TestCase):
+    def test_two_tier_audit_separates_redundancy_from_novel_rescue(self) -> None:
+        primary_sequence = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        novel_sequence = "TTTTCCCCAAAAGGGGTTTTCCCCAAAAGGGGTTTT"
+        primary = [Read("primary", primary_sequence)]
+        rescue = [
+            Read("extends-primary", primary_sequence + "TTGCA"),
+            Read("novel-a", novel_sequence),
+            Read("novel-b", novel_sequence),
+            Read("contained", primary_sequence[2:-2]),
+        ]
+
+        diagnostics = audit_two_tier_redundancy(
+            primary,
+            rescue,
+            anchor_k=5,
+            anchors_per_read=12,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=2,
+        )
+
+        self.assertEqual(diagnostics.rescue_contigs, 4)
+        self.assertEqual(diagnostics.contained_by_primary, 1)
+        self.assertEqual(diagnostics.redundant_with_rescue, 1)
+        self.assertEqual(diagnostics.extends_primary, 1)
+        self.assertEqual(diagnostics.ambiguous_primary_extensions, 0)
+        self.assertEqual(diagnostics.replacement_contigs, 1)
+        self.assertEqual(diagnostics.replacement_added_bases, 5)
+        self.assertEqual(
+            diagnostics.replacement_projected_longest_contig,
+            len(primary_sequence) + 5,
+        )
+        self.assertEqual(diagnostics.novel_contigs, 1)
+        self.assertEqual(
+            diagnostics.projected_bases,
+            len(primary_sequence) + len(novel_sequence),
+        )
+        self.assertEqual(
+            diagnostics.projected_longest_contig,
+            max(len(primary_sequence), len(novel_sequence)),
+        )
+
+    def test_two_tier_audit_rejects_multi_primary_extension(self) -> None:
+        sequence = (
+            "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTATTCGAGTCCGATACGTGACCTAG"
+        )
+        primary = [
+            Read("primary-left", sequence[:35]),
+            Read("primary-right", sequence[15:50]),
+        ]
+
+        diagnostics = audit_two_tier_redundancy(
+            primary,
+            [Read("ambiguous-rescue", sequence[:55])],
+            anchor_k=5,
+            anchors_per_read=16,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=2,
+        )
+
+        self.assertEqual(diagnostics.extends_primary, 1)
+        self.assertEqual(diagnostics.ambiguous_primary_extensions, 1)
+        self.assertEqual(diagnostics.replacement_contigs, 0)
+        self.assertEqual(diagnostics.replacement_added_bases, 0)
+
     def test_damage_aware_ranking_can_prefer_a_cleaner_overlap(self) -> None:
         target = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         clean = _Alignment(1, target[8:] + "TTGCA", 8, 2)
@@ -66,6 +134,20 @@ class OverlapAssemblyTests(unittest.TestCase):
             assemble_overlap_contigs(
                 [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
                 damage_aware_ranking=True,
+            )
+
+    def test_cross_cluster_recruitment_audit_requires_frozen_contigs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "maximum_contig_iterations=0"):
+            assemble_overlap_contigs(
+                [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
+                cross_cluster_recruitment_audit=True,
+            )
+
+    def test_contig_link_audit_requires_frozen_contigs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "maximum_contig_iterations=0"):
+            assemble_overlap_contigs(
+                [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
+                read_supported_contig_link_audit=True,
             )
 
     def test_layout_retains_strong_internal_consensus(self) -> None:
@@ -452,6 +534,176 @@ class OverlapAssemblyTests(unittest.TestCase):
         self.assertEqual(summary.extension_rounds, 2)
         self.assertEqual(summary.added_bases, 10)
 
+    def test_audits_consensus_supported_deferred_end_recruitment(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        first_extension = "TTGCAACGTCCGATA"
+        first = center + first_extension
+        reads = [Read("accepted", first[10:])]
+        reads.extend(
+            Read(f"deferred-{index}", first[25:] + "GACTA")
+            for index in range(5)
+        )
+        diagnostics = _audit_cross_cluster_recruitment(
+            [Read("frozen", first)],
+            [{0}],
+            reads,
+            [0, None, None, None, None, None],
+            list(range(len(reads))),
+            _anchor_index(reads, 7, 0, 32, 100),
+            anchor_k=7,
+            anchors_per_read=32,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_overlap=25,
+            minimum_identity=0.90,
+            minimum_ry_identity=0.99,
+            position_bits=max(len(read.sequence) for read in reads).bit_length(),
+            target_window=max(len(read.sequence) for read in reads),
+            minimum_overlap_margin=3,
+            minimum_consensus_support=5,
+            dominance_ratio=4.0,
+            damage_aware_ranking=True,
+            minimum_confidence_margin=0.0,
+            damage_mismatch_penalty=0.25,
+            ranking_damage_end_window=5,
+        )
+
+        self.assertEqual(diagnostics.deferred_reads, 5)
+        self.assertEqual(diagnostics.deferred_candidate_reads, 5)
+        self.assertEqual(diagnostics.deferred_extension_candidates, 5)
+        self.assertEqual(diagnostics.deferred_ambiguous_assignments, 0)
+        self.assertEqual(diagnostics.deferred_unique_assignments, 5)
+        self.assertEqual(diagnostics.deferred_reciprocal_assignments, 5)
+        self.assertEqual(diagnostics.supported_contigs, 1)
+        self.assertEqual(diagnostics.supported_bases, 5)
+        self.assertEqual(diagnostics.deferred_supported_contigs, 1)
+        self.assertEqual(diagnostics.deferred_supported_bases, 5)
+
+    def test_audits_consensus_supported_cross_cluster_recruitment(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        first = center + "TTGCAACGTCCGATA"
+        bridge = first[25:] + "GACTA"
+        reads = [Read("target-member", first[10:])]
+        reads.extend(Read(f"bridge-{index}", bridge) for index in range(5))
+
+        diagnostics = _audit_cross_cluster_recruitment(
+            [Read("target", first), Read("source", bridge)],
+            [{0}, {1, 2, 3, 4, 5}],
+            reads,
+            [0, 1, 1, 1, 1, 1],
+            list(range(len(reads))),
+            _anchor_index(reads, 7, 0, 32, 100),
+            anchor_k=7,
+            anchors_per_read=32,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_overlap=25,
+            minimum_identity=0.90,
+            minimum_ry_identity=0.99,
+            position_bits=max(len(read.sequence) for read in reads).bit_length(),
+            target_window=max(len(read.sequence) for read in reads),
+            minimum_overlap_margin=3,
+            minimum_consensus_support=5,
+            dominance_ratio=4.0,
+            damage_aware_ranking=True,
+            minimum_confidence_margin=0.0,
+            damage_mismatch_penalty=0.25,
+            ranking_damage_end_window=5,
+        )
+
+        self.assertEqual(diagnostics.deferred_reads, 0)
+        self.assertGreaterEqual(diagnostics.cross_cluster_extension_candidates, 5)
+        self.assertGreaterEqual(diagnostics.cross_cluster_unique_assignments, 5)
+        self.assertGreaterEqual(diagnostics.cross_cluster_reciprocal_assignments, 5)
+        self.assertEqual(diagnostics.supported_bases, 5)
+        self.assertEqual(diagnostics.cross_cluster_supported_contigs, 1)
+        self.assertEqual(diagnostics.cross_cluster_supported_bases, 5)
+
+    def test_cross_cluster_recruitment_audit_does_not_change_output(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        reads = [Read("center", center)]
+        reads.extend(Read(f"contained-{index}", center) for index in range(4))
+        reads.append(Read("extension", center[5:] + "TTGCA"))
+        parameters = {
+            "anchor_k": 7,
+            "minimum_overlap": 20,
+            "maximum_contig_iterations": 0,
+            "ranked_extension": True,
+        }
+
+        baseline, _ = assemble_overlap_contigs(reads, **parameters)
+        audited, _ = assemble_overlap_contigs(
+            reads,
+            cross_cluster_recruitment_audit=True,
+            **parameters,
+        )
+
+        self.assertEqual(audited, baseline)
+
+    def test_audits_read_supported_reciprocal_contig_link(self) -> None:
+        left = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        extension = "TTGCAACGTCCGATA"
+        right = left[15:] + extension
+        merged = left + extension
+        reads = [
+            Read("left-bridge", merged[10:45]),
+            Read("right-bridge", merged[10:45]),
+        ]
+
+        diagnostics = _audit_read_supported_contig_links(
+            [Read("left", left), Read("right", right)],
+            [{0}, {1}],
+            reads,
+            [0, 1],
+            anchor_k=7,
+            anchors_per_read=16,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_overlap=20,
+            minimum_identity=0.90,
+            minimum_ry_identity=0.99,
+            minimum_overlap_margin=3,
+            minimum_read_support=2,
+        )
+
+        self.assertGreaterEqual(diagnostics.candidate_overlaps, 2)
+        self.assertGreaterEqual(diagnostics.reciprocal_overlaps, 1)
+        self.assertEqual(diagnostics.read_supported_overlaps, 1)
+        self.assertEqual(diagnostics.support_at_least_1, 1)
+        self.assertEqual(diagnostics.support_at_least_2, 1)
+        self.assertEqual(diagnostics.support_at_least_3, 0)
+        self.assertEqual(diagnostics.support_at_least_5, 0)
+        self.assertEqual(diagnostics.max_read_support, 2)
+        self.assertEqual(diagnostics.ambiguous_ends, 0)
+        self.assertEqual(diagnostics.cyclic_components, 0)
+        self.assertEqual(diagnostics.linear_chains, 1)
+        self.assertEqual(diagnostics.projected_joins, 1)
+        self.assertEqual(diagnostics.projected_merged_bases, len(merged))
+        self.assertEqual(diagnostics.projected_longest_contig, len(merged))
+
+    def test_contig_link_audit_does_not_change_output(self) -> None:
+        genome = (
+            "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTATTCGAGTCCGATACGTGACCTAG"
+            "GATCCGTACGATCGTACGA"
+        )
+        reads = [Read("left", genome[:35]), Read("right", genome[30:65])]
+        reads.extend(Read(f"bridge-{index}", genome[15:50]) for index in range(5))
+        parameters = {
+            "anchor_k": 7,
+            "minimum_overlap": 20,
+            "maximum_rounds": 2,
+            "maximum_contig_iterations": 0,
+        }
+
+        baseline, _ = assemble_overlap_contigs(reads, **parameters)
+        audited, _ = assemble_overlap_contigs(
+            reads,
+            read_supported_contig_link_audit=True,
+            **parameters,
+        )
+
+        self.assertEqual(audited, baseline)
+
     def test_separates_ry_inconsistent_clusters(self) -> None:
         center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         overlap = list(center[5:])
@@ -502,6 +754,38 @@ class OverlapAssemblyTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertIn(center + "TTGCA", output_path.read_text(encoding="utf-8"))
 
+    def test_two_tier_audit_preserves_primary_cli_output(self) -> None:
+        center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / "reads.fasta"
+            baseline_path = root / "baseline.fasta"
+            audited_path = root / "audited.fasta"
+            input_path.write_text(
+                "".join(
+                    f">read-{index}\n{center}\n"
+                    for index in range(5)
+                ),
+                encoding="utf-8",
+            )
+            common = [
+                "overlap-assemble",
+                "-i", str(input_path),
+                "--anchor-k", "7",
+                "--min-overlap", "20",
+                "--max-contig-iterations", "0",
+                "--min-output-length", "1",
+            ]
+
+            self.assertEqual(main(common + ["-o", str(baseline_path)]), 0)
+            self.assertEqual(main(common + [
+                "-o", str(audited_path),
+                "--two-tier-redundancy-audit",
+                "--rescue-min-cluster-size", "3",
+            ]), 0)
+
+            self.assertEqual(audited_path.read_bytes(), baseline_path.read_bytes())
+
     def test_cli_accepts_candidate_discovery_parameters(self) -> None:
         center = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         with tempfile.TemporaryDirectory() as directory:
@@ -531,6 +815,10 @@ class OverlapAssemblyTests(unittest.TestCase):
                 "--min-overlap-confidence-margin", "0.02",
                 "--damage-mismatch-penalty", "0.25",
                 "--ranking-damage-end-window", "5",
+                "--max-contig-iterations", "0",
+                "--cross-cluster-recruitment-audit",
+                "--read-supported-contig-link-audit",
+                "--min-contig-link-read-support", "2",
             ])
 
             self.assertEqual(result, 0)
