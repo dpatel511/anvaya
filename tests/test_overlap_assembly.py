@@ -7,6 +7,8 @@ from anvaya.overlap_assembly import (
     _Alignment,
     _consensus,
     _merge_contig_pass,
+    _overlap_confidence,
+    _unique_best_extensions,
     assemble_overlap_contigs,
     write_overlap_correction_report,
 )
@@ -14,6 +16,58 @@ from anvaya.reads import Read
 
 
 class OverlapAssemblyTests(unittest.TestCase):
+    def test_damage_aware_ranking_can_prefer_a_cleaner_overlap(self) -> None:
+        target = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        clean = _Alignment(1, target[8:] + "TTGCA", 8, 2)
+        noisy_sequence = list(target[3:] + "AACGT")
+        for position in (6, 13, 20):
+            noisy_sequence[position] = (
+                "A" if noisy_sequence[position] != "A" else "C"
+            )
+        noisy = _Alignment(2, "".join(noisy_sequence), 3, 2)
+
+        length_ranked, _, _ = _unique_best_extensions(
+            target,
+            [clean, noisy],
+            minimum_overlap_margin=3,
+        )
+        confidence_ranked, _, _ = _unique_best_extensions(
+            target,
+            [clean, noisy],
+            minimum_overlap_margin=3,
+            damage_aware_ranking=True,
+        )
+
+        self.assertEqual([item.read_index for item in length_ranked], [2])
+        self.assertEqual([item.read_index for item in confidence_ranked], [1])
+
+    def test_terminal_damage_transition_has_a_smaller_confidence_penalty(self) -> None:
+        target = "CCGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
+        damage_like = _Alignment(1, "T" + target[1:] + "A", 0, 2)
+        other = _Alignment(2, "G" + target[1:] + "A", 0, 2)
+
+        damage_confidence = _overlap_confidence(
+            target,
+            damage_like,
+            damage_mismatch_penalty=0.25,
+            damage_end_window=5,
+        )
+        other_confidence = _overlap_confidence(
+            target,
+            other,
+            damage_mismatch_penalty=0.25,
+            damage_end_window=5,
+        )
+
+        self.assertGreater(damage_confidence, other_confidence)
+
+    def test_damage_aware_ranking_requires_ranked_extension(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires ranked_extension"):
+            assemble_overlap_contigs(
+                [Read("read", "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA")],
+                damage_aware_ranking=True,
+            )
+
     def test_layout_retains_strong_internal_consensus(self) -> None:
         target = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
         alternative = target[:10] + "A" + target[11:]
@@ -471,7 +525,12 @@ class OverlapAssemblyTests(unittest.TestCase):
                 "--max-anchor-occurrences", "50",
                 "--min-anchor-matches", "2",
                 "--min-overlap", "20",
+                "--ranked-extension",
                 "--reciprocal-best-extension",
+                "--damage-aware-ranking",
+                "--min-overlap-confidence-margin", "0.02",
+                "--damage-mismatch-penalty", "0.25",
+                "--ranking-damage-end-window", "5",
             ])
 
             self.assertEqual(result, 0)

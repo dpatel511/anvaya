@@ -3,11 +3,15 @@
 import csv
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from math import sqrt
 from pathlib import Path
 
 from anvaya.damage_consensus import _anchor_index, _identity, _ry, _sketch_anchors
 from anvaya.reads import Read
 from anvaya.sequences import reverse_complement
+
+
+_DAMAGE_PAIRS = {frozenset(("C", "T")), frozenset(("G", "A"))}
 
 
 @dataclass(slots=True, frozen=True)
@@ -42,6 +46,9 @@ class OverlapAssemblySummary:
     consensus_without_extension: int = 0
     reciprocal_extension_checks: int = 0
     reciprocal_extension_rejections: int = 0
+    confidence_ranked_sides: int = 0
+    confidence_changed_winners: int = 0
+    confidence_ambiguous_extensions: int = 0
 
 
 @dataclass(slots=True)
@@ -60,6 +67,13 @@ class _CandidateDiagnostics:
 class _ReciprocalDiagnostics:
     checks: int = 0
     rejections: int = 0
+
+
+@dataclass(slots=True)
+class _RankingDiagnostics:
+    ranked_sides: int = 0
+    changed_winners: int = 0
+    ambiguous_extensions: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -359,9 +373,14 @@ def _unique_best_extensions(
     candidates: list[_Alignment],
     *,
     minimum_overlap_margin: int,
+    damage_aware_ranking: bool = False,
+    minimum_confidence_margin: float = 0.0,
+    damage_mismatch_penalty: float = 0.25,
+    ranking_damage_end_window: int = 5,
+    diagnostics: _RankingDiagnostics | None = None,
 ) -> tuple[list[_Alignment], set[int], int]:
     """Select at most one clearly best proper extension on each side."""
-    sides: dict[str, list[tuple[tuple[int, int, int], _Alignment]]] = {
+    sides: dict[str, list[tuple[tuple[float, int, int, int], _Alignment]]] = {
         "left": [],
         "right": [],
     }
@@ -377,29 +396,101 @@ def _unique_best_extensions(
         if not left_extension and not right_extension:
             contained.add(candidate.read_index)
             continue
+        confidence = None
+        if damage_aware_ranking:
+            confidence = _overlap_confidence(
+                target,
+                candidate,
+                damage_mismatch_penalty=damage_mismatch_penalty,
+                damage_end_window=ranking_damage_end_window,
+            )
         if left_extension:
-            sides["left"].append(
-                ((overlap, candidate.support, left_extension), candidate)
+            score = (
+                (confidence, overlap, candidate.support, left_extension)
+                if confidence is not None
+                else (float(overlap), candidate.support, left_extension, 0)
             )
+            sides["left"].append((score, candidate))
         if right_extension:
-            sides["right"].append(
-                ((overlap, candidate.support, right_extension), candidate)
+            score = (
+                (confidence, overlap, candidate.support, right_extension)
+                if confidence is not None
+                else (float(overlap), candidate.support, right_extension, 0)
             )
+            sides["right"].append((score, candidate))
 
     selected: dict[int, _Alignment] = {}
     ambiguous = 0
     for ranked in sides.values():
+        if damage_aware_ranking and ranked and diagnostics is not None:
+            diagnostics.ranked_sides += 1
+            legacy_best = max(
+                ranked,
+                key=lambda item: (item[0][1], item[0][2], item[0][3]),
+            )[1]
+        else:
+            legacy_best = None
         ranked.sort(key=lambda item: item[0], reverse=True)
         if not ranked:
             continue
         best_score, best = ranked[0]
+        if (
+            diagnostics is not None
+            and legacy_best is not None
+            and best.read_index != legacy_best.read_index
+        ):
+            diagnostics.changed_winners += 1
         if len(ranked) > 1:
             second_score = ranked[1][0]
-            if best_score[0] - second_score[0] < minimum_overlap_margin:
+            required_margin = (
+                minimum_confidence_margin
+                if damage_aware_ranking
+                else minimum_overlap_margin
+            )
+            if best_score[0] - second_score[0] < required_margin:
                 ambiguous += 1
+                if damage_aware_ranking and diagnostics is not None:
+                    diagnostics.ambiguous_extensions += 1
                 continue
         selected[best.read_index] = best
     return list(selected.values()), contained, ambiguous
+
+
+def _overlap_confidence(
+    target: str,
+    candidate: _Alignment,
+    *,
+    damage_mismatch_penalty: float,
+    damage_end_window: int,
+) -> float:
+    """Return a conservative posterior match-rate score for one overlap."""
+    start = max(0, candidate.offset)
+    stop = min(len(target), candidate.offset + len(candidate.sequence))
+    effective_errors = 0.0
+    for target_position in range(start, stop):
+        candidate_position = target_position - candidate.offset
+        target_base = target[target_position]
+        candidate_base = candidate.sequence[candidate_position]
+        if target_base == candidate_base:
+            continue
+        terminal = (
+            target_position < damage_end_window
+            or target_position >= len(target) - damage_end_window
+            or candidate_position < damage_end_window
+            or candidate_position >= len(candidate.sequence) - damage_end_window
+        )
+        if terminal and frozenset((target_base, candidate_base)) in _DAMAGE_PAIRS:
+            effective_errors += damage_mismatch_penalty
+        else:
+            effective_errors += 1.0
+    overlap = stop - start
+    effective_matches = overlap - effective_errors
+    alpha = effective_matches + 1.0
+    beta = effective_errors + 1.0
+    total = alpha + beta
+    mean = alpha / total
+    variance = alpha * beta / (total * total * (total + 1.0))
+    return mean - sqrt(variance)
 
 
 def _filter_extension_boundary_support(
@@ -749,6 +840,10 @@ def assemble_overlap_contigs(
     extension_consensus: bool = False,
     minimum_ranked_extension_support: int = 1,
     reciprocal_best_extension: bool = False,
+    damage_aware_ranking: bool = False,
+    minimum_confidence_margin: float = 0.0,
+    damage_mismatch_penalty: float = 0.25,
+    ranking_damage_end_window: int = 5,
     minimum_output_length: int = 0,
     correction_events: list[OverlapCorrectionEvent] | None = None,
 ) -> tuple[list[Read], OverlapAssemblySummary]:
@@ -773,8 +868,16 @@ def assemble_overlap_contigs(
         raise ValueError("minimum_output_length must not be negative")
     if extension_consensus and not ranked_extension:
         raise ValueError("extension_consensus requires ranked_extension")
+    if damage_aware_ranking and not ranked_extension:
+        raise ValueError("damage_aware_ranking requires ranked_extension")
     if minimum_ranked_extension_support < 1:
         raise ValueError("minimum_ranked_extension_support must be at least 1")
+    if minimum_confidence_margin < 0.0:
+        raise ValueError("minimum_confidence_margin must not be negative")
+    if not 0.0 <= damage_mismatch_penalty <= 1.0:
+        raise ValueError("damage_mismatch_penalty must be between zero and one")
+    if ranking_damage_end_window < 0:
+        raise ValueError("ranking_damage_end_window must not be negative")
     if anchors_per_read < minimum_anchor_matches:
         raise ValueError("anchors_per_read must cover minimum_anchor_matches")
     molecules = list(range(len(reads))) if molecule_ids is None else molecule_ids
@@ -795,6 +898,7 @@ def assemble_overlap_contigs(
     correction_insufficient_support = correction_ambiguous = 0
     candidate_diagnostics = _CandidateDiagnostics()
     reciprocal_diagnostics = _ReciprocalDiagnostics()
+    ranking_diagnostics = _RankingDiagnostics()
     targets_without_candidates = clusters_below_minimum_size = 0
     consensus_without_extension = 0
     order = sorted(
@@ -858,6 +962,11 @@ def assemble_overlap_contigs(
                     internal.sequence,
                     candidates,
                     minimum_overlap_margin=minimum_overlap_margin,
+                    damage_aware_ranking=damage_aware_ranking,
+                    minimum_confidence_margin=minimum_confidence_margin,
+                    damage_mismatch_penalty=damage_mismatch_penalty,
+                    ranking_damage_end_window=ranking_damage_end_window,
+                    diagnostics=ranking_diagnostics,
                 )
                 selected = _filter_extension_boundary_support(
                     internal.sequence,
@@ -1037,4 +1146,7 @@ def assemble_overlap_contigs(
         consensus_without_extension=consensus_without_extension,
         reciprocal_extension_checks=reciprocal_diagnostics.checks,
         reciprocal_extension_rejections=reciprocal_diagnostics.rejections,
+        confidence_ranked_sides=ranking_diagnostics.ranked_sides,
+        confidence_changed_winners=ranking_diagnostics.changed_winners,
+        confidence_ambiguous_extensions=ranking_diagnostics.ambiguous_extensions,
     )
