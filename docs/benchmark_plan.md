@@ -209,6 +209,33 @@ primary or rescue contig. It must report primary checksum, candidate and
 retained bases, containment and redundancy rejection counts, projected N50,
 and projected longest contig before any output-changing mode is considered.
 
+The two-tier audit completed and preserved the primary checksum. From 14,024
+support-three candidates totaling 1,461,605 bp, it classified 4,766 as contained
+by a primary, 71 as redundant with a longer rescue representative, 259 as
+extending a primary, and 8,928 as novel. Adding only novel candidates projected
+1,446,636 bp across 13,891 contigs, but N50 fell from 128 to 113 and the longest
+contig stayed at 331 bp. The recovery gain therefore does not pass the
+continuity gate.
+
+Unique primary replacement also failed the material-improvement gate. Of 259
+primary-extending candidates, three matched multiple primaries and abstained;
+249 primaries received a longest unique replacement. The projection added
+9,100 bp, increased N50 only from 128 to 129, and left the longest contig at
+331 bp. Output remained byte-identical, runtime was 28.58 seconds, and peak RSS
+was 276,772 kB. Replacement remains report-only.
+
+The extension-round cap was tested independently. Six rounds increased total
+length from 611,844 to 612,810 bp and the longest contig from 331 to 353 bp, but
+left N50 at 128. Ten rounds produced the same contig count, total length, N50,
+and longest-contig length as six rounds. Further round tuning is closed.
+
+The next go/no-go experiment is global iterative reclustering with controlled
+read reuse. Each iteration must report reused fragments, multi-contig conflicts,
+unique confidence assignments, added bases, redundancy removals, projected N50,
+projected longest contig, runtime, and memory. The 100k gate requires a material
+continuity improvement over N50 129 and longest contig 353 before an active mode
+or 500k/MetaQUAST evaluation is justified.
+
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long
 paths and can trade strain fidelity for small local gains.
