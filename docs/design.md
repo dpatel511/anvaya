@@ -263,7 +263,8 @@ those still unassigned by the greedy layout:
 1. preprocess or require trimmed, merged ancient-DNA fragments;
 2. cluster fragments through bounded shared-k-mer candidates;
 3. validate whole overlaps with DNA and R/Y identity;
-4. estimate sample-specific positional damage likelihoods;
+4. rank competing overlaps by posterior match confidence, discounting only
+   terminal damage-compatible mismatches;
 5. correct cluster centers and extend them first with raw fragments;
 6. require reciprocal-best, DNA/R/Y-compatible extension evidence and preserve
    abstentions;
@@ -282,8 +283,14 @@ merges raised N50 by only three bases and introduced one 240 bp translocation.
 The same erroneous sequence survived both boundary-support and reciprocal-best
 gates, demonstrating that a sequence-compatible reciprocal overlap is not
 sufficient evidence to cross a repeat. The safe configuration therefore sets
-`--max-contig-iterations 0`; candidate-confidence scoring and read recruitment
-now take priority over further contig merging.
+`--max-contig-iterations 0`.
+
+Zero-margin damage-aware posterior ranking subsequently preserved N50 at 133
+and zero misassemblies, increased aligned length from 4.90 to 4.91 Mb, reduced
+mismatches from 766.79 to 753.64 per 100 kbp, and reduced indels from 1.70 to
+1.51. NA50 decreased from 132 to 131. The ranking is retained as an accuracy
+and recovery improvement; read recruitment now takes priority because ranking
+did not materially improve continuity.
 
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 

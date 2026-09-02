@@ -428,6 +428,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="require selected read and contig extensions to point back uniquely",
     )
     overlap_parser.add_argument(
+        "--damage-aware-ranking",
+        action="store_true",
+        help="rank extensions by damage-aware overlap confidence",
+    )
+    overlap_parser.add_argument(
+        "--min-overlap-confidence-margin",
+        type=float,
+        default=0.0,
+        help="minimum confidence gap between competing extensions (default: 0)",
+    )
+    overlap_parser.add_argument(
+        "--damage-mismatch-penalty",
+        type=float,
+        default=0.25,
+        help="fractional error penalty for terminal C/T and G/A mismatches (default: 0.25)",
+    )
+    overlap_parser.add_argument(
+        "--ranking-damage-end-window",
+        type=_end_window,
+        default=5,
+        help="terminal bases eligible for damage-aware ranking (default: 5)",
+    )
+    overlap_parser.add_argument(
         "--min-output-length",
         type=_minimum_count,
         default=0,
@@ -1080,6 +1103,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 extension_consensus=arguments.extension_consensus,
                 minimum_ranked_extension_support=arguments.min_ranked_extension_support,
                 reciprocal_best_extension=arguments.reciprocal_best_extension,
+                damage_aware_ranking=arguments.damage_aware_ranking,
+                minimum_confidence_margin=arguments.min_overlap_confidence_margin,
+                damage_mismatch_penalty=arguments.damage_mismatch_penalty,
+                ranking_damage_end_window=arguments.ranking_damage_end_window,
                 maximum_rounds=arguments.max_rounds,
                 maximum_contig_iterations=arguments.max_contig_iterations,
                 minimum_cluster_size=arguments.min_cluster_size,
@@ -1140,6 +1167,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_reciprocal_extension_rejections="
                 f"{summary.reciprocal_extension_rejections}"
+            )
+            print(f"overlap_confidence_ranked_sides={summary.confidence_ranked_sides}")
+            print(
+                "overlap_confidence_changed_winners="
+                f"{summary.confidence_changed_winners}"
+            )
+            print(
+                "overlap_confidence_ambiguous_extensions="
+                f"{summary.confidence_ambiguous_extensions}"
             )
             print(f"output={arguments.output}")
             return 0
