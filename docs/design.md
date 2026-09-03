@@ -30,6 +30,35 @@ Initial evidence includes molecule count, distance from both molecule ends, read
 
 Internal damage calibration will be part of the assembler. PyDamage and similar tools are comparators, not required components.
 
+## Implementation boundaries
+
+The de Bruijn graph and overlap backends remain independent assembly paths. The
+DBG implementation is retained as a validated baseline; overlap development
+does not call into it or replace its CLI behavior.
+
+The overlap backend is divided by responsibility:
+
+- `overlap_assembly.py` owns read-overlap discovery, seed clustering, consensus,
+  ranked extension, and shared evidence primitives;
+- `overlap_reclustering.py` owns iterative fixed-pool reclustering and its report;
+- `overlap_graph.py` owns exact, raw-confirmed, and containment-aware contig
+  graph projections;
+- `cli.py` composes these stages but does not implement their algorithms.
+
+Existing imports from `anvaya.overlap_assembly` remain available through thin
+compatibility wrappers. This split is intentionally behavior-preserving: new
+algorithm work should enter through an explicit opt-in stage, retain immutable
+raw-read evidence, and pass unit, accuracy, runtime, and memory gates before it
+can replace a validated output.
+
+The refactor gate passed all 315 unit tests. Re-running the validated EMN001
+100k raw-confirmed pipeline produced byte-identical primary, reclustering,
+master-graph, raw-confirmed-graph, and reclustering-report artifacts. Peak RSS
+was effectively unchanged (526,984 versus 526,952 KiB). The single refactor
+run took 57.57 seconds versus the earlier 53.32-second baseline; this isolated
+measurement is treated as normal runtime variation rather than an optimization
+claim. Generated benchmark output remains outside version control.
+
 ## Orientation-aware graph
 
 The experimental graph stores each canonical `(k-1)`-mer once and uses oriented integer handles to traverse either strand. A physical k-mer edge therefore represents both its forward traversal and the reverse-complement traversal. Forward, reverse, and palindromic observations are retained separately, while `min_count` is applied to their combined support.

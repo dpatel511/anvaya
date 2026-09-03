@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import anvaya.overlap_assembly as overlap_assembly_compat
 from anvaya.cli import main
 from anvaya.damage_consensus import _anchor_index
 from anvaya.overlap_assembly import (
@@ -16,17 +17,39 @@ from anvaya.overlap_assembly import (
     _raw_supports_target_mismatches,
     _unique_best_extensions,
     assemble_overlap_contigs,
-    audit_iterative_reclustering,
-    audit_master_overlap_graph,
-    audit_raw_confirmed_master_overlap_graph,
-    audit_strain_safe_containment,
     audit_two_tier_redundancy,
     write_overlap_correction_report,
 )
+from anvaya.overlap_graph import (
+    audit_master_overlap_graph,
+    audit_raw_confirmed_master_overlap_graph,
+    audit_strain_safe_containment,
+)
+from anvaya.overlap_reclustering import audit_iterative_reclustering
 from anvaya.reads import Read
 
 
 class OverlapAssemblyTests(unittest.TestCase):
+    def test_legacy_overlap_module_exports_delegate_to_new_modules(self) -> None:
+        self.assertEqual(
+            overlap_assembly_compat.audit_master_overlap_graph([]),
+            audit_master_overlap_graph([]),
+        )
+        self.assertEqual(
+            overlap_assembly_compat.audit_raw_confirmed_master_overlap_graph(
+                [], []
+            ),
+            audit_raw_confirmed_master_overlap_graph([], []),
+        )
+        self.assertEqual(
+            overlap_assembly_compat.audit_strain_safe_containment([], []),
+            audit_strain_safe_containment([], []),
+        )
+        self.assertEqual(
+            overlap_assembly_compat.audit_iterative_reclustering([]),
+            audit_iterative_reclustering([]),
+        )
+
     def test_master_overlap_graph_collapses_exact_linear_path(self) -> None:
         genome = "ACGTTGCACTGATCGGACCT"
         contigs = [
