@@ -239,3 +239,41 @@ or 500k/MetaQUAST evaluation is justified.
 Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long
 paths and can trade strain fidelity for small local gains.
+
+## Global layout and master-graph checkpoint
+
+Iterative reclustering crossed its 100k gate, but immutable-evidence and
+quality-aware mismatch restrictions alone did not produce the best continuity.
+The accepted layout therefore preserves immutable raw reads as evidence and
+separates sequence generation from graph projection. An exact master overlap
+graph first removes transitive edges and spells reciprocal non-branching paths.
+A second report-only graph then permits at most one near-exact mismatch when a
+Q20 raw-molecule majority has support at least three, the competing allele has
+support below two, and the support margin is at least two. Exact edges always
+win; independently supported competing alleles abstain as strain conflicts;
+terminal C/T and G/A observations inside five bases of a raw-read end do not
+count as confirmation.
+
+The 100k raw-confirmed projection improved the exact graph from N50/NA50
+133/131 to 135/134, increased the largest alignment from 325 to 412 bp, reduced
+duplication from 1.103 to 1.077, and retained zero misassemblies. Mismatch and
+indel rates improved from 1,191.23/3.30 to 1,174.71/3.07 per 100 kbp. Genome
+fraction decreased from 0.230% to 0.228%.
+
+The result scaled at 500k. Of 6,042 near-exact candidates, 4,211 were accepted;
+181 were rejected as strain conflicts and 276 lost to an exact edge. The graph
+collapsed 8,239 inputs into 3,807 linear paths and resolved 1,760 overlap bases.
+Compared with the exact graph, contigs fell from 49,099 to 44,667, N50/NA50
+rose from 135/133 to 141/139, auNA rose from 134.8 to 142.9, and the largest
+alignment rose from 474 to 603 bp. Misassemblies remained zero, mismatch and
+indel rates fell from 824.01/1.50 to 814.60/1.38, and duplication fell from
+1.307 to 1.244. The cost was a small reduction in genome fraction from 1.169%
+to 1.157% and aligned sequence from 5,610,113 to 5,305,903 bp.
+
+This passes the safe-continuity gate and is the current balanced projection.
+The higher-continuity ranked-consensus result remains an upper bound at
+N50/NA50 158/156, but it contains one misassembly and less aligned sequence.
+The next go/no-go experiment must address the 767 ambiguous raw-confirmed graph
+ends without relaxing mismatch evidence. It should rank competing end edges
+with immutable raw molecule support, preserve exact-edge precedence and strain
+conflicts, and require zero misassemblies plus an NA50 improvement at 500k.

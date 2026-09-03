@@ -144,6 +144,25 @@ assembly checksum was unchanged. Read ownership is therefore not the current
 continuity bottleneck; the next experiment audits read-supported links between
 frozen contigs.
 
+The subsequent global-layout experiments established a stronger safe
+projection. Iterative reclustering recovers additional sequence, an exact
+master overlap graph collapses reciprocal branchless paths, and the optional
+raw-confirmed master graph admits a near-exact edge only when immutable Q20
+raw molecules resolve its sole mismatch. Exact edges retain priority, competing
+alleles are protected as strain conflicts, and terminal damage-compatible
+observations are excluded from mismatch support.
+
+On EMN001 500k, the raw-confirmed graph improved the exact master graph from
+N50/NA50 135/133 to 141/139, increased the largest alignment from 474 to
+603 bp, and retained zero MetaQUAST misassemblies. Mismatches fell from 824.01
+to 814.60 and indels from 1.50 to 1.38 per 100 kbp; duplication fell from
+1.307 to 1.244. The projection accepted 4,211 near-exact overlaps while
+rejecting 181 strain conflicts and preserving exact-overlap priority at 276
+ends. Genome fraction decreased slightly from 1.169% to 1.157%, so this is the
+accepted balanced continuity projection rather than a complete recovery
+solution. The next experiment targets the remaining 767 ambiguous graph ends
+with raw-evidence-aware best-overlap resolution.
+
 ```bash
 anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta
 ```

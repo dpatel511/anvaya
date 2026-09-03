@@ -343,6 +343,27 @@ between iterations. The first implementation is report-only and must expose
 per-iteration added bases, reused fragments, conflicts, convergence, projected
 N50, and projected longest contig before it can change output.
 
+That experiment evolved into a two-stage master graph. The first stage admits
+only exact dovetails, removes transitive edges, and spells reciprocal
+non-branching paths. The second stage reruns graph construction over the exact
+projection and supplements it with near-exact dovetails only when immutable
+Q20 raw molecules resolve every mismatch. The initial implementation allows a
+single mismatch, requires three molecules for the selected allele, treats two
+independent molecules as sufficient to protect a competing allele, and
+requires a support margin of two. Damage-compatible C/T and G/A evidence within
+five bases of a raw-read end is ignored. The selected raw-supported allele is
+stored on both orientations of an overlap edge so graph traversal cannot make
+the consensus depend on traversal direction.
+
+This design follows the common overlap-layout pattern of exact or best-overlap
+preference, transitive reduction, and branchless path spelling while adding an
+ancient-DNA-specific immutable evidence gate. It deliberately keeps exact
+edges dominant and abstains when raw alleles indicate a possible strain split.
+At EMN001 500k it accepted 4,211 near-exact edges, rejected 181 strain
+conflicts, and improved exact-graph N50/NA50 from 135/133 to 141/139 with zero
+misassemblies. The remaining 767 ambiguous ends, rather than unsupported
+containments, define the next continuity target.
+
 Every algorithmic change will be compared with the frozen baseline for genome recovery, contiguity, misassemblies, mismatch rate, low-abundance retention, runtime, and peak memory.
 
 ## Reciprocal paired-read unitig extension
