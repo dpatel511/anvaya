@@ -52,6 +52,15 @@ from anvaya.overlap_reclustering import (
     audit_iterative_reclustering,
     write_iterative_reclustering_report,
 )
+from anvaya.overlap_progressive import (
+    ProgressiveClusteringDiagnostics,
+    ProgressiveIterationDiagnostics,
+    ProgressiveRawExtensionDiagnostics,
+    ProgressiveSequencePool,
+    discover_progressive_raw_clusters,
+    extend_progressive_raw_clusters,
+    iterate_progressive_raw_extension,
+)
 from anvaya.paired_extension import (
     PairedExtensionSummary,
     extend_paired_unitig_paths,
@@ -542,6 +551,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--iterative-reclustering-projection",
         type=Path,
         help="optional projected FASTA; the primary output remains unchanged",
+    )
+    overlap_parser.add_argument(
+        "--progressive-raw-phase-audit",
+        action="store_true",
+        help="audit lifecycle-aware raw clustering and extension without changing output",
+    )
+    overlap_parser.add_argument(
+        "--progressive-raw-phase-projection",
+        type=Path,
+        help="optional first-phase progressive FASTA; primary output remains unchanged",
+    )
+    overlap_parser.add_argument(
+        "--max-progressive-raw-iterations",
+        type=_minimum_count,
+        default=3,
+        help="maximum persistent-center raw-extension rounds (default: 3)",
     )
     overlap_parser.add_argument(
         "--master-overlap-graph-audit",
@@ -1379,9 +1404,95 @@ def main(argv: Sequence[str] | None = None) -> int:
                     minimum_anchor_matches=arguments.min_anchor_matches,
                 )
             reclustering_audit = IterativeReclusteringDiagnostics()
+            progressive_clustering = ProgressiveClusteringDiagnostics()
+            progressive_extension = ProgressiveRawExtensionDiagnostics()
+            progressive_iterations = ProgressiveIterationDiagnostics()
             master_graph_audit = MasterOverlapGraphDiagnostics()
             raw_master_graph_audit = RawConfirmedMasterGraphDiagnostics()
             containment_audit = StrainSafeContainmentDiagnostics()
+            if arguments.progressive_raw_phase_audit:
+                if not (
+                    arguments.ranked_extension
+                    and arguments.reciprocal_best_extension
+                    and arguments.damage_aware_ranking
+                ):
+                    parser.error(
+                        "--progressive-raw-phase-audit requires ranked, "
+                        "reciprocal-best, and damage-aware extension"
+                    )
+                progressive_pool = ProgressiveSequencePool.from_reads(reads)
+                progressive_clusters, progressive_clustering = (
+                    discover_progressive_raw_clusters(
+                        progressive_pool,
+                        anchor_k=arguments.anchor_k,
+                        anchors_per_read=arguments.anchors_per_read,
+                        maximum_anchor_occurrences=(
+                            arguments.max_anchor_occurrences
+                        ),
+                        minimum_anchor_matches=arguments.min_anchor_matches,
+                        minimum_overlap=arguments.min_overlap,
+                        minimum_cluster_size=arguments.min_cluster_size,
+                    )
+                )
+                progressive_pool, progressive_extension = (
+                    extend_progressive_raw_clusters(
+                        progressive_pool,
+                        progressive_clusters,
+                        anchor_k=arguments.anchor_k,
+                        anchors_per_read=arguments.anchors_per_read,
+                        maximum_anchor_occurrences=(
+                            arguments.max_anchor_occurrences
+                        ),
+                        minimum_anchor_matches=arguments.min_anchor_matches,
+                        minimum_overlap=arguments.min_overlap,
+                        minimum_extension_support=(
+                            arguments.min_ranked_extension_support
+                        ),
+                        minimum_confidence_margin=(
+                            arguments.min_overlap_confidence_margin
+                        ),
+                        damage_mismatch_penalty=arguments.damage_mismatch_penalty,
+                        damage_end_window=arguments.ranking_damage_end_window,
+                        reciprocal_best_extension=True,
+                        extension_consensus=arguments.extension_consensus,
+                        maximum_rounds=arguments.max_rounds,
+                    )
+                )
+                progressive_pool, progressive_iterations = (
+                    iterate_progressive_raw_extension(
+                        progressive_pool,
+                        anchor_k=arguments.anchor_k,
+                        anchors_per_read=arguments.anchors_per_read,
+                        maximum_anchor_occurrences=(
+                            arguments.max_anchor_occurrences
+                        ),
+                        minimum_anchor_matches=arguments.min_anchor_matches,
+                        minimum_overlap=arguments.min_overlap,
+                        maximum_iterations=(
+                            arguments.max_progressive_raw_iterations
+                        ),
+                        minimum_confidence_margin=(
+                            arguments.min_overlap_confidence_margin
+                        ),
+                        damage_mismatch_penalty=arguments.damage_mismatch_penalty,
+                        damage_end_window=arguments.ranking_damage_end_window,
+                    )
+                )
+                if arguments.progressive_raw_phase_projection is not None:
+                    write_fasta(
+                        [
+                            record.current.sequence
+                            for record in progressive_pool.active_derived
+                            if len(record.current.sequence)
+                            >= arguments.min_output_length
+                        ],
+                        arguments.progressive_raw_phase_projection,
+                    )
+            elif arguments.progressive_raw_phase_projection is not None:
+                parser.error(
+                    "progressive raw-phase projection requires "
+                    "--progressive-raw-phase-audit"
+                )
             if (
                 arguments.raw_confirmed_master_graph_audit
                 and not arguments.master_overlap_graph_audit
@@ -1950,6 +2061,98 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_recluster_projected_longest_contig="
                 f"{reclustering_audit.projected_longest_contig}"
+            )
+            print(
+                "overlap_progressive_raw_phase_audit="
+                f"{str(arguments.progressive_raw_phase_audit).lower()}"
+            )
+            print(
+                "overlap_progressive_raw_phase_projection="
+                f"{arguments.progressive_raw_phase_projection or ''}"
+            )
+            print(
+                "overlap_progressive_candidate_centers="
+                f"{progressive_clustering.candidate_centers}"
+            )
+            print(
+                "overlap_progressive_clusters="
+                f"{progressive_clustering.clusters}"
+            )
+            print(
+                "overlap_progressive_clusters_below_minimum_size="
+                f"{progressive_clustering.clusters_below_minimum_size}"
+            )
+            print(
+                "overlap_progressive_clustered_reads="
+                f"{progressive_clustering.clustered_reads}"
+            )
+            print(
+                "overlap_progressive_retained_unclustered_reads="
+                f"{progressive_clustering.retained_unclustered_reads}"
+            )
+            print(
+                "overlap_progressive_extended_centers="
+                f"{progressive_extension.extended_centers}"
+            )
+            print(
+                "overlap_progressive_extension_rounds="
+                f"{progressive_extension.extension_rounds}"
+            )
+            print(
+                "overlap_progressive_recruited_reads="
+                f"{progressive_extension.recruited_reads}"
+            )
+            print(
+                "overlap_progressive_added_bases="
+                f"{progressive_extension.added_bases}"
+            )
+            print(
+                "overlap_progressive_consumed_reads="
+                f"{progressive_extension.consumed_reads}"
+            )
+            print(
+                "overlap_progressive_ambiguous_extensions="
+                f"{progressive_extension.ambiguous_extensions}"
+            )
+            print(
+                "overlap_progressive_reciprocal_checks="
+                f"{progressive_extension.reciprocal_checks}"
+            )
+            print(
+                "overlap_progressive_reciprocal_rejections="
+                f"{progressive_extension.reciprocal_rejections}"
+            )
+            print(
+                "overlap_progressive_iterations="
+                f"{progressive_iterations.iterations}"
+            )
+            print(
+                "overlap_progressive_converged="
+                f"{str(progressive_iterations.converged).lower()}"
+            )
+            print(
+                "overlap_progressive_iteration_candidates="
+                f"{progressive_iterations.candidate_alignments}"
+            )
+            print(
+                "overlap_progressive_iteration_extended_centers="
+                f"{progressive_iterations.extended_centers}"
+            )
+            print(
+                "overlap_progressive_iteration_added_bases="
+                f"{progressive_iterations.added_bases}"
+            )
+            print(
+                "overlap_progressive_iteration_consumed_reads="
+                f"{progressive_iterations.consumed_reads}"
+            )
+            print(
+                "overlap_progressive_iteration_ambiguous_extensions="
+                f"{progressive_iterations.ambiguous_extensions}"
+            )
+            print(
+                "overlap_progressive_iteration_insufficient_consensus_support="
+                f"{progressive_iterations.insufficient_consensus_support}"
             )
             print(
                 "overlap_master_graph_audit="

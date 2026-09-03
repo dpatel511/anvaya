@@ -135,14 +135,35 @@ as a modest accuracy and recovery improvement, not a continuity breakthrough.
 The next work targets improved read recruitment while holding the
 zero-misassembly layout fixed.
 
-The report-only cross-cluster recruitment audit tested that hypothesis on the
+A lifecycle-aware progressive projection now separates immutable raw evidence
+from corrected and extended representatives. Each admitted longest-first
+cluster keeps its center active for up to `--max-rounds`, reindexes the grown
+ends, recruits previously unreachable unassigned fragments, and retires its
+members only after local extension converges. Initial cluster ownership is
+preserved so a growing center cannot steal evidence already assigned to
+another cluster. The primary overlap output remains unchanged while this mode
+is enabled with `--progressive-raw-phase-audit` and written separately with
+`--progressive-raw-phase-projection`.
+
+On EMN001 100k, one-anchor discovery plus multiround local extension improved
+the earlier progressive projection from N50/NA50 130/129 to 139/137, increased
+the longest contig from 266 to 325 bp, and raised aligned length from 657,323
+to 702,018 bp with zero MetaQUAST misassemblies. It recruited 3,012 additional
+raw reads during 8,123 local rounds. Mismatches increased from 1,163.51 to
+1,272.76 and indels from 2.74 to 3.99 per 100 kbp, so this is accepted as a
+continuity-and-recovery improvement with an explicit accuracy trade-off. It
+matches the ranked-consensus N50, exceeds CarpeDeam safe's 134 bp N50 on this
+subset, but remains behind CarpeDeam in genome fraction and longest contig.
+
+The earlier report-only cross-cluster recruitment audit tested post-hoc
+recruitment against already frozen contigs on the
 EMN001 100k subset. Of 67,956 deferred reads and 30,008 reads assigned to an
 accepted cluster, only 61 and 73 respectively survived reciprocal placement at
 another frozen contig end. Neither source produced a contig with five-read
 consensus support, so projected extension was zero contigs and zero bases. The
-assembly checksum was unchanged. Read ownership is therefore not the current
-continuity bottleneck; the next experiment audits read-supported links between
-frozen contigs.
+assembly checksum was unchanged. This remains evidence against sparse post-hoc
+recruitment, but the progressive result shows that reads must instead be
+recruited while dense cluster evidence and a live center are still available.
 
 The subsequent global-layout experiments established a stronger safe
 projection. Iterative reclustering recovers additional sequence, an exact
