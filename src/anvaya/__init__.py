@@ -2,8 +2,17 @@
 
 from anvaya.assembly import assemble, assemble_file
 from anvaya.overlap_assembly import (
+    IterativeReclusteringDiagnostics,
+    IterativeReclusteringRound,
+    MasterOverlapGraphDiagnostics,
     OverlapAssemblySummary,
+    RawConfirmedMasterGraphDiagnostics,
+    StrainSafeContainmentDiagnostics,
     assemble_overlap_contigs,
+    audit_iterative_reclustering,
+    audit_master_overlap_graph,
+    audit_raw_confirmed_master_overlap_graph,
+    audit_strain_safe_containment,
 )
 from anvaya.bidirected import (
     BidirectedDeBruijnGraph,
@@ -113,6 +122,15 @@ __all__ = [
     "assemble",
     "assemble_file",
     "assemble_overlap_contigs",
+    "audit_iterative_reclustering",
+    "audit_master_overlap_graph",
+    "audit_raw_confirmed_master_overlap_graph",
+    "audit_strain_safe_containment",
+    "IterativeReclusteringDiagnostics",
+    "IterativeReclusteringRound",
+    "MasterOverlapGraphDiagnostics",
+    "RawConfirmedMasterGraphDiagnostics",
+    "StrainSafeContainmentDiagnostics",
     "OverlapAssemblySummary",
     "branching_nodes",
     "build_bidirected_dbg",
