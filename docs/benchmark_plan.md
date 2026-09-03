@@ -240,6 +240,44 @@ Further polishing, looser identity thresholds, and indiscriminate read reuse
 are not current priorities: the experiments show that they cannot create long
 paths and can trade strain fidelity for small local gains.
 
+## Progressive overlap lifecycle checkpoint
+
+The first progressive implementation corrected sequence ownership but extended
+each admitted cluster only once, consumed all of its members, and deferred
+further growth to a global unused-read pass. On EMN001 100k with one-anchor
+candidate discovery, that version emitted 5,388 contigs totaling 673,486 bp,
+with N50/NA50 130/129, a 266 bp longest contig, and 657,323 aligned bases. Its
+global pass inspected 3,436 candidates but extended zero centers; 2,197 centers
+failed the five-read consensus requirement.
+
+The accepted multiround implementation keeps each center alive, reindexes it
+after extension, recruits newly reachable unassigned raw reads, shifts retained
+member alignments after left extension, and consumes members only after local
+convergence. Cluster membership discovered for another center remains
+unavailable, preserving deterministic longest-first ownership. On the same
+100k input it recruited 3,012 additional reads across 8,123 local extension
+rounds and retained the same 5,388 output representatives while increasing:
+
+- total sequence from 673,486 to 717,381 bp;
+- aligned sequence from 657,323 to 702,018 bp;
+- N50 from 130 to 139 and NA50 from 129 to 137;
+- auNA from 129.9 to 141.6;
+- the longest contig and alignment from 266 to 325 bp; and
+- genome fraction from 0.256% to 0.272%.
+
+MetaQUAST reported zero misassemblies for both versions. Runtime increased from
+93.64 to 100.76 seconds and peak RSS from 307,628 to 307,780 kB. The trade-off
+was an increase in mismatches from 1,163.51 to 1,272.76 and indels from 2.74 to
+3.99 per 100 kbp. The primary FASTA remained byte-identical, confirming that
+the projection is isolated. The result passes the 100k continuity gate but must
+remain experimental until it scales at 500k and its error trade-off is bounded.
+
+The next go/no-go experiment starts from this multiround projection and audits
+raw-supported continuation between exhausted centers. It must preserve exact
+or reciprocal-best precedence, abstain at conflicting strain evidence, and
+beat N50/NA50 139/137 and the 325 bp longest alignment without introducing a
+misassembly or materially increasing the 1,272.76/3.99 mismatch/indel rates.
+
 ## Global layout and master-graph checkpoint
 
 Iterative reclustering crossed its 100k gate, but immutable-evidence and

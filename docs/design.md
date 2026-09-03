@@ -305,6 +305,33 @@ those still unassigned by the greedy layout:
 The existing DBG reports remain diagnostic comparators. They are not the
 default implementation path for new continuity features.
 
+### Progressive sequence lifecycle
+
+Progressive assembly uses immutable raw observations as evidence and mutable
+representatives as layout targets. A representative moves from `raw` to
+`corrected_center` or `extended_contig`; supporting representatives move to
+`consumed`, but their original reads remain available for validation. This
+prevents corrected or assembled sequence from being counted as independent
+raw support.
+
+Cluster extension is local and iterative. The longest available raw fragment
+is the center, only an admitted cluster claims initial members, and a center is
+reindexed after every accepted extension. Newly reachable unassigned reads may
+join that center in a later local round. Existing alignments are shifted when
+the center grows left, and all accepted members are retired only when the
+center stops or reaches the round cap. Members belonging to another admitted
+cluster remain unavailable throughout, which makes ownership deterministic and
+prevents processing order from duplicating evidence.
+
+This ordering fixes the initial lifecycle implementation, which consumed dense
+cluster support after one extension and then asked a sparse global remainder to
+satisfy a five-read consensus threshold. At EMN001 100k the corrected ordering
+recruited 3,012 additional reads and improved N50/NA50 from 130/129 to 139/137,
+the longest alignment from 266 to 325 bp, and aligned length from 657,323 to
+702,018 bp with zero misassemblies. Mismatch and indel density rose to
+1,272.76/3.99 per 100 kbp, so subsequent continuation must remain
+raw-evidence-gated rather than relax identity or consensus globally.
+
 On the EMN001 500k subset, reciprocal ranked read extension with contig merging
 disabled improved N50 from 104 to 133, NA50 from 102 to 132, and aligned length
 from 3.83 to 4.90 Mb with zero MetaQUAST misassemblies. Enabling 2,802 contig
