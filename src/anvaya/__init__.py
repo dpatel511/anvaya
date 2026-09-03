@@ -9,11 +9,13 @@ from anvaya.overlap_assembly import (
     RawConfirmedMasterGraphDiagnostics,
     StrainSafeContainmentDiagnostics,
     assemble_overlap_contigs,
-    audit_iterative_reclustering,
+)
+from anvaya.overlap_graph import (
     audit_master_overlap_graph,
     audit_raw_confirmed_master_overlap_graph,
     audit_strain_safe_containment,
 )
+from anvaya.overlap_reclustering import audit_iterative_reclustering
 from anvaya.bidirected import (
     BidirectedDeBruijnGraph,
     MoleculeEndLink,

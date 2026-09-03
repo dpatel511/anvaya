@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "anvaya"
 version = "0.1.0"
-description = "Damage-aware de Bruijn graph assembly research prototype"
+description = "Damage-aware ancient metagenome assembly research prototype"
 requires-python = ">=3.13"
 
 [project.scripts]

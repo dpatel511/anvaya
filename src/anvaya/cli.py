@@ -40,13 +40,17 @@ from anvaya.overlap_assembly import (
     StrainSafeContainmentDiagnostics,
     TwoTierRedundancyDiagnostics,
     assemble_overlap_contigs,
-    audit_iterative_reclustering,
+    audit_two_tier_redundancy,
+    write_overlap_correction_report,
+)
+from anvaya.overlap_graph import (
     audit_master_overlap_graph,
     audit_raw_confirmed_master_overlap_graph,
     audit_strain_safe_containment,
-    audit_two_tier_redundancy,
+)
+from anvaya.overlap_reclustering import (
+    audit_iterative_reclustering,
     write_iterative_reclustering_report,
-    write_overlap_correction_report,
 )
 from anvaya.paired_extension import (
     PairedExtensionSummary,
