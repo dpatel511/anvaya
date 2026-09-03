@@ -33,10 +33,19 @@ from anvaya.incomplete_branches import find_incomplete_branch_candidates
 from anvaya.metrics import summarize_graph
 from anvaya.output import write_fasta
 from anvaya.overlap_assembly import (
+    IterativeReclusteringDiagnostics,
+    MasterOverlapGraphDiagnostics,
     OverlapCorrectionEvent,
+    RawConfirmedMasterGraphDiagnostics,
+    StrainSafeContainmentDiagnostics,
     TwoTierRedundancyDiagnostics,
     assemble_overlap_contigs,
+    audit_iterative_reclustering,
+    audit_master_overlap_graph,
+    audit_raw_confirmed_master_overlap_graph,
+    audit_strain_safe_containment,
     audit_two_tier_redundancy,
+    write_iterative_reclustering_report,
     write_overlap_correction_report,
 )
 from anvaya.paired_extension import (
@@ -471,13 +480,178 @@ def build_parser() -> argparse.ArgumentParser:
     overlap_parser.add_argument(
         "--two-tier-redundancy-audit",
         action="store_true",
-        help="audit support-three rescue after 97%/99% containment filtering",
+        help="audit support-three rescue after 97%%/99%% containment filtering",
     )
     overlap_parser.add_argument(
         "--rescue-min-cluster-size",
         type=_minimum_count,
         default=3,
         help="minimum cluster size for two-tier rescue candidates (default: 3)",
+    )
+    overlap_parser.add_argument(
+        "--iterative-reclustering-audit",
+        action="store_true",
+        help="project fixed-pool global reclustering without changing output",
+    )
+    overlap_parser.add_argument(
+        "--max-recluster-iterations",
+        type=_minimum_count,
+        default=4,
+        help="maximum report-only global reclustering rounds (default: 4)",
+    )
+    overlap_parser.add_argument(
+        "--recluster-derived-min-identity",
+        type=float,
+        default=0.99,
+        help="minimum identity for overlaps involving derived sequences (default: 0.99)",
+    )
+    overlap_parser.add_argument(
+        "--recluster-derived-min-raw-support",
+        type=_minimum_count,
+        default=2,
+        help="minimum pristine source molecules supporting derived extension (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--recluster-mismatch-min-raw-support",
+        type=_minimum_count,
+        default=3,
+        help="minimum Q20 raw molecules confirming a derived mismatch (default: 3)",
+    )
+    overlap_parser.add_argument(
+        "--recluster-mismatch-min-raw-margin",
+        type=_minimum_count,
+        default=2,
+        help="minimum molecule advantage over a competing mismatch allele (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--recluster-mismatch-min-base-quality",
+        type=_end_window,
+        default=20,
+        help="minimum Phred score for mismatch evidence (default: 20)",
+    )
+    overlap_parser.add_argument(
+        "--iterative-reclustering-report",
+        type=Path,
+        help="optional per-round iterative reclustering TSV",
+    )
+    overlap_parser.add_argument(
+        "--iterative-reclustering-projection",
+        type=Path,
+        help="optional projected FASTA; the primary output remains unchanged",
+    )
+    overlap_parser.add_argument(
+        "--master-overlap-graph-audit",
+        action="store_true",
+        help="project exact branchless paths from iterative reclustering contigs",
+    )
+    overlap_parser.add_argument(
+        "--master-overlap-graph-projection",
+        type=Path,
+        help="optional exact string-graph FASTA; accepted outputs remain unchanged",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-graph-audit",
+        action="store_true",
+        help="supplement exact master paths with raw-confirmed near-exact overlaps",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-graph-projection",
+        type=Path,
+        help="optional raw-confirmed master-graph FASTA; prior outputs remain unchanged",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-min-identity",
+        type=_probability,
+        default=0.98,
+        help="minimum near-exact overlap identity (default: 0.98)",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-max-mismatches",
+        type=_minimum_count,
+        default=1,
+        help="maximum mismatches in a raw-confirmed overlap (default: 1)",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-primary-support",
+        type=_minimum_count,
+        default=3,
+        help="minimum Q20 raw molecules supporting the chosen allele (default: 3)",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-alternate-support",
+        type=_minimum_count,
+        default=2,
+        help="raw molecules sufficient to identify a strain conflict (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-support-margin",
+        type=_minimum_count,
+        default=2,
+        help="minimum chosen-over-competing allele support margin (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-min-base-quality",
+        type=_end_window,
+        default=20,
+        help="minimum Phred score for raw mismatch evidence (default: 20)",
+    )
+    overlap_parser.add_argument(
+        "--raw-confirmed-master-damage-end-window",
+        type=_end_window,
+        default=5,
+        help="ignore damage-like evidence this close to read ends (default: 5)",
+    )
+    overlap_parser.add_argument(
+        "--strain-safe-containment-audit",
+        action="store_true",
+        help="remove contained copies only when raw alleles do not support them",
+    )
+    overlap_parser.add_argument(
+        "--strain-safe-containment-projection",
+        type=Path,
+        help="optional strain-safe containment FASTA; prior outputs remain unchanged",
+    )
+    overlap_parser.add_argument(
+        "--containment-min-identity",
+        type=_probability,
+        default=0.99,
+        help="minimum contained-sequence identity (default: 0.99)",
+    )
+    overlap_parser.add_argument(
+        "--containment-min-coverage",
+        type=_probability,
+        default=0.99,
+        help="minimum fraction of a candidate covered (default: 0.99)",
+    )
+    overlap_parser.add_argument(
+        "--containment-primary-allele-support",
+        type=_minimum_count,
+        default=3,
+        help="minimum Q20 raw molecules supporting the retained allele (default: 3)",
+    )
+    overlap_parser.add_argument(
+        "--containment-alternate-allele-support",
+        type=_minimum_count,
+        default=2,
+        help="raw molecules sufficient to protect an alternate allele (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--containment-support-margin",
+        type=_minimum_count,
+        default=2,
+        help="minimum retained-over-alternate allele support margin (default: 2)",
+    )
+    overlap_parser.add_argument(
+        "--containment-min-base-quality",
+        type=_end_window,
+        default=20,
+        help="minimum Phred score for containment allele evidence (default: 20)",
+    )
+    overlap_parser.add_argument(
+        "--containment-damage-end-window",
+        type=_end_window,
+        default=5,
+        help="ignore damage-like alleles this close to raw-read ends (default: 5)",
     )
     overlap_parser.add_argument(
         "--min-output-length",
@@ -1200,6 +1374,238 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ),
                     minimum_anchor_matches=arguments.min_anchor_matches,
                 )
+            reclustering_audit = IterativeReclusteringDiagnostics()
+            master_graph_audit = MasterOverlapGraphDiagnostics()
+            raw_master_graph_audit = RawConfirmedMasterGraphDiagnostics()
+            containment_audit = StrainSafeContainmentDiagnostics()
+            if (
+                arguments.raw_confirmed_master_graph_audit
+                and not arguments.master_overlap_graph_audit
+            ):
+                parser.error(
+                    "--raw-confirmed-master-graph-audit requires "
+                    "--master-overlap-graph-audit"
+                )
+            if (
+                arguments.raw_confirmed_master_graph_projection is not None
+                and not arguments.raw_confirmed_master_graph_audit
+            ):
+                parser.error(
+                    "raw-confirmed master graph projection requires "
+                    "--raw-confirmed-master-graph-audit"
+                )
+            if (
+                arguments.strain_safe_containment_audit
+                and not arguments.master_overlap_graph_audit
+            ):
+                parser.error(
+                    "--strain-safe-containment-audit requires "
+                    "--master-overlap-graph-audit"
+                )
+            if (
+                arguments.strain_safe_containment_projection is not None
+                and not arguments.strain_safe_containment_audit
+            ):
+                parser.error(
+                    "strain-safe containment projection requires "
+                    "--strain-safe-containment-audit"
+                )
+            if arguments.iterative_reclustering_audit:
+                if arguments.max_contig_iterations:
+                    parser.error(
+                        "--iterative-reclustering-audit requires "
+                        "--max-contig-iterations 0"
+                    )
+                if not (
+                    arguments.ranked_extension
+                    and arguments.reciprocal_best_extension
+                    and arguments.damage_aware_ranking
+                ):
+                    parser.error(
+                        "--iterative-reclustering-audit requires ranked, "
+                        "reciprocal-best, and damage-aware extension"
+                    )
+                (
+                    reclustered_contigs,
+                    reclustering_audit,
+                ) = audit_iterative_reclustering(
+                    reads,
+                    anchor_k=arguments.anchor_k,
+                    anchors_per_read=arguments.anchors_per_read,
+                    maximum_anchor_occurrences=arguments.max_anchor_occurrences,
+                    minimum_anchor_matches=arguments.min_anchor_matches,
+                    minimum_overlap=arguments.min_overlap,
+                    minimum_cluster_size=arguments.min_cluster_size,
+                    minimum_ranked_extension_support=(
+                        arguments.min_ranked_extension_support
+                    ),
+                    reciprocal_best_extension=True,
+                    damage_aware_ranking=True,
+                    minimum_confidence_margin=(
+                        arguments.min_overlap_confidence_margin
+                    ),
+                    damage_mismatch_penalty=arguments.damage_mismatch_penalty,
+                    ranking_damage_end_window=(
+                        arguments.ranking_damage_end_window
+                    ),
+                    extension_consensus=arguments.extension_consensus,
+                    maximum_iterations=arguments.max_recluster_iterations,
+                    minimum_output_length=arguments.min_output_length,
+                    derived_minimum_identity=(
+                        arguments.recluster_derived_min_identity
+                    ),
+                    derived_minimum_raw_support=(
+                        arguments.recluster_derived_min_raw_support
+                    ),
+                    mismatch_minimum_raw_support=(
+                        arguments.recluster_mismatch_min_raw_support
+                    ),
+                    mismatch_minimum_raw_margin=(
+                        arguments.recluster_mismatch_min_raw_margin
+                    ),
+                    mismatch_minimum_base_quality=(
+                        arguments.recluster_mismatch_min_base_quality
+                    ),
+                )
+                if arguments.iterative_reclustering_report is not None:
+                    write_iterative_reclustering_report(
+                        reclustering_audit,
+                        arguments.iterative_reclustering_report,
+                    )
+                if arguments.iterative_reclustering_projection is not None:
+                    write_fasta(
+                        [contig.sequence for contig in reclustered_contigs],
+                        arguments.iterative_reclustering_projection,
+                    )
+                if arguments.master_overlap_graph_audit:
+                    master_contigs, master_graph_audit = audit_master_overlap_graph(
+                        reclustered_contigs,
+                        anchor_k=arguments.anchor_k,
+                        anchors_per_read=arguments.anchors_per_read,
+                        maximum_anchor_occurrences=(
+                            arguments.max_anchor_occurrences
+                        ),
+                        minimum_anchor_matches=arguments.min_anchor_matches,
+                        minimum_overlap=arguments.min_overlap,
+                    )
+                    if arguments.master_overlap_graph_projection is not None:
+                        write_fasta(
+                            [contig.sequence for contig in master_contigs],
+                            arguments.master_overlap_graph_projection,
+                        )
+                    if arguments.raw_confirmed_master_graph_audit:
+                        (
+                            raw_master_contigs,
+                            raw_master_graph_audit,
+                        ) = audit_raw_confirmed_master_overlap_graph(
+                            master_contigs,
+                            reads,
+                            anchor_k=arguments.anchor_k,
+                            anchors_per_read=arguments.anchors_per_read,
+                            maximum_anchor_occurrences=(
+                                arguments.max_anchor_occurrences
+                            ),
+                            minimum_anchor_matches=(
+                                arguments.min_anchor_matches
+                            ),
+                            minimum_overlap=arguments.min_overlap,
+                            minimum_identity=(
+                                arguments.raw_confirmed_master_min_identity
+                            ),
+                            maximum_mismatches=(
+                                arguments.raw_confirmed_master_max_mismatches
+                            ),
+                            minimum_primary_allele_support=(
+                                arguments.raw_confirmed_master_primary_support
+                            ),
+                            minimum_alternate_allele_support=(
+                                arguments.raw_confirmed_master_alternate_support
+                            ),
+                            minimum_support_margin=(
+                                arguments.raw_confirmed_master_support_margin
+                            ),
+                            minimum_base_quality=(
+                                arguments.raw_confirmed_master_min_base_quality
+                            ),
+                            damage_end_window=(
+                                arguments.raw_confirmed_master_damage_end_window
+                            ),
+                        )
+                        if (
+                            arguments.raw_confirmed_master_graph_projection
+                            is not None
+                        ):
+                            write_fasta(
+                                [
+                                    contig.sequence
+                                    for contig in raw_master_contigs
+                                ],
+                                arguments.raw_confirmed_master_graph_projection,
+                            )
+                    if arguments.strain_safe_containment_audit:
+                        (
+                            containment_contigs,
+                            containment_audit,
+                        ) = audit_strain_safe_containment(
+                            master_contigs,
+                            reads,
+                            anchor_k=arguments.anchor_k,
+                            anchors_per_read=arguments.anchors_per_read,
+                            maximum_anchor_occurrences=(
+                                arguments.max_anchor_occurrences
+                            ),
+                            minimum_anchor_matches=arguments.min_anchor_matches,
+                            minimum_identity=arguments.containment_min_identity,
+                            minimum_coverage=arguments.containment_min_coverage,
+                            minimum_primary_allele_support=(
+                                arguments.containment_primary_allele_support
+                            ),
+                            minimum_alternate_allele_support=(
+                                arguments.containment_alternate_allele_support
+                            ),
+                            minimum_support_margin=(
+                                arguments.containment_support_margin
+                            ),
+                            minimum_base_quality=(
+                                arguments.containment_min_base_quality
+                            ),
+                            damage_end_window=(
+                                arguments.containment_damage_end_window
+                            ),
+                        )
+                        if (
+                            arguments.strain_safe_containment_projection
+                            is not None
+                        ):
+                            write_fasta(
+                                [
+                                    contig.sequence
+                                    for contig in containment_contigs
+                                ],
+                                arguments.strain_safe_containment_projection,
+                            )
+            elif (
+                arguments.iterative_reclustering_report is not None
+                or arguments.iterative_reclustering_projection is not None
+                or arguments.master_overlap_graph_audit
+                or arguments.master_overlap_graph_projection is not None
+                or arguments.raw_confirmed_master_graph_audit
+                or arguments.raw_confirmed_master_graph_projection is not None
+                or arguments.strain_safe_containment_audit
+                or arguments.strain_safe_containment_projection is not None
+            ):
+                parser.error(
+                    "iterative reclustering and master-graph projections require "
+                    "--iterative-reclustering-audit"
+                )
+            if (
+                arguments.master_overlap_graph_projection is not None
+                and not arguments.master_overlap_graph_audit
+            ):
+                parser.error(
+                    "master overlap graph projection requires "
+                    "--master-overlap-graph-audit"
+                )
             if arguments.correction_report is not None:
                 write_overlap_correction_report(
                     correction_events,
@@ -1456,6 +1862,306 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "overlap_rescue_projected_longest_contig="
                 f"{rescue_audit.projected_longest_contig}"
+            )
+            print(
+                "overlap_iterative_reclustering_audit="
+                f"{str(arguments.iterative_reclustering_audit).lower()}"
+            )
+            print(
+                "overlap_recluster_report="
+                f"{arguments.iterative_reclustering_report or ''}"
+            )
+            print(
+                "overlap_recluster_projection="
+                f"{arguments.iterative_reclustering_projection or ''}"
+            )
+            print(f"overlap_recluster_iterations={reclustering_audit.iterations}")
+            print(
+                "overlap_recluster_converged="
+                f"{str(reclustering_audit.converged).lower()}"
+            )
+            print(
+                "overlap_recluster_rollback_rejected="
+                f"{str(reclustering_audit.rollback_rejected).lower()}"
+            )
+            print(
+                "overlap_recluster_extended_sequences="
+                f"{reclustering_audit.extended_sequences}"
+            )
+            print(
+                f"overlap_recluster_added_bases={reclustering_audit.added_bases}"
+            )
+            print(
+                "overlap_recluster_candidate_extensions="
+                f"{reclustering_audit.candidate_extensions}"
+            )
+            print(
+                "overlap_recluster_reused_candidates="
+                f"{reclustering_audit.reused_candidates}"
+            )
+            print(
+                "overlap_recluster_conflicting_candidates="
+                f"{reclustering_audit.conflicting_candidates}"
+            )
+            print(
+                "overlap_recluster_reciprocal_checks="
+                f"{reclustering_audit.reciprocal_checks}"
+            )
+            print(
+                "overlap_recluster_reciprocal_rejections="
+                f"{reclustering_audit.reciprocal_rejections}"
+            )
+            print(
+                "overlap_recluster_derived_overlap_rejections="
+                f"{reclustering_audit.derived_overlap_rejections}"
+            )
+            print(
+                "overlap_recluster_raw_confirmed_mismatch_overlaps="
+                f"{reclustering_audit.raw_confirmed_mismatch_overlaps}"
+            )
+            print(
+                "overlap_recluster_raw_support_rejections="
+                f"{reclustering_audit.raw_support_rejections}"
+            )
+            print(
+                "overlap_recluster_assembled_sequences="
+                f"{reclustering_audit.assembled_sequences}"
+            )
+            print(
+                "overlap_recluster_redundant_sequences="
+                f"{reclustering_audit.redundant_sequences}"
+            )
+            print(
+                "overlap_recluster_projected_contigs="
+                f"{reclustering_audit.projected_contigs}"
+            )
+            print(
+                "overlap_recluster_projected_bases="
+                f"{reclustering_audit.projected_bases}"
+            )
+            print(
+                "overlap_recluster_projected_n50="
+                f"{reclustering_audit.projected_n50}"
+            )
+            print(
+                "overlap_recluster_projected_longest_contig="
+                f"{reclustering_audit.projected_longest_contig}"
+            )
+            print(
+                "overlap_master_graph_audit="
+                f"{str(arguments.master_overlap_graph_audit).lower()}"
+            )
+            print(
+                "overlap_master_graph_projection="
+                f"{arguments.master_overlap_graph_projection or ''}"
+            )
+            print(
+                "overlap_master_graph_input_contigs="
+                f"{master_graph_audit.input_contigs}"
+            )
+            print(
+                "overlap_master_graph_candidate_dovetails="
+                f"{master_graph_audit.candidate_dovetails}"
+            )
+            print(
+                "overlap_master_graph_exact_dovetails="
+                f"{master_graph_audit.exact_dovetails}"
+            )
+            print(
+                "overlap_master_graph_transitive_edges_removed="
+                f"{master_graph_audit.transitive_edges_removed}"
+            )
+            print(
+                "overlap_master_graph_ambiguous_ends="
+                f"{master_graph_audit.ambiguous_ends}"
+            )
+            print(
+                "overlap_master_graph_reciprocal_edges="
+                f"{master_graph_audit.reciprocal_edges}"
+            )
+            print(
+                "overlap_master_graph_linear_paths="
+                f"{master_graph_audit.linear_paths}"
+            )
+            print(
+                "overlap_master_graph_cyclic_components="
+                f"{master_graph_audit.cyclic_components}"
+            )
+            print(
+                "overlap_master_graph_merged_contigs="
+                f"{master_graph_audit.merged_contigs}"
+            )
+            print(
+                "overlap_master_graph_added_bases="
+                f"{master_graph_audit.added_bases}"
+            )
+            print(
+                "overlap_master_graph_projected_contigs="
+                f"{master_graph_audit.projected_contigs}"
+            )
+            print(
+                "overlap_master_graph_projected_bases="
+                f"{master_graph_audit.projected_bases}"
+            )
+            print(
+                "overlap_master_graph_projected_n50="
+                f"{master_graph_audit.projected_n50}"
+            )
+            print(
+                "overlap_master_graph_projected_longest_contig="
+                f"{master_graph_audit.projected_longest_contig}"
+            )
+            print(
+                "overlap_raw_confirmed_master_graph_audit="
+                f"{str(arguments.raw_confirmed_master_graph_audit).lower()}"
+            )
+            print(
+                "overlap_raw_confirmed_master_graph_projection="
+                f"{arguments.raw_confirmed_master_graph_projection or ''}"
+            )
+            print(
+                "overlap_raw_confirmed_master_input_contigs="
+                f"{raw_master_graph_audit.input_contigs}"
+            )
+            print(
+                "overlap_raw_confirmed_master_candidate_dovetails="
+                f"{raw_master_graph_audit.candidate_dovetails}"
+            )
+            print(
+                "overlap_raw_confirmed_master_exact_dovetails="
+                f"{raw_master_graph_audit.exact_dovetails}"
+            )
+            print(
+                "overlap_raw_confirmed_master_near_exact_candidates="
+                f"{raw_master_graph_audit.near_exact_candidates}"
+            )
+            print(
+                "overlap_raw_confirmed_master_near_exact_accepted="
+                f"{raw_master_graph_audit.near_exact_accepted}"
+            )
+            print(
+                "overlap_raw_confirmed_master_mismatch_positions="
+                f"{raw_master_graph_audit.mismatch_positions}"
+            )
+            print(
+                "overlap_raw_confirmed_master_insufficient_raw_support="
+                f"{raw_master_graph_audit.insufficient_raw_support}"
+            )
+            print(
+                "overlap_raw_confirmed_master_strain_conflicts="
+                f"{raw_master_graph_audit.strain_conflicts}"
+            )
+            print(
+                "overlap_raw_confirmed_master_exact_preferred="
+                f"{raw_master_graph_audit.exact_preferred}"
+            )
+            print(
+                "overlap_raw_confirmed_master_transitive_edges_removed="
+                f"{raw_master_graph_audit.transitive_edges_removed}"
+            )
+            print(
+                "overlap_raw_confirmed_master_ambiguous_ends="
+                f"{raw_master_graph_audit.ambiguous_ends}"
+            )
+            print(
+                "overlap_raw_confirmed_master_reciprocal_edges="
+                f"{raw_master_graph_audit.reciprocal_edges}"
+            )
+            print(
+                "overlap_raw_confirmed_master_linear_paths="
+                f"{raw_master_graph_audit.linear_paths}"
+            )
+            print(
+                "overlap_raw_confirmed_master_cyclic_components="
+                f"{raw_master_graph_audit.cyclic_components}"
+            )
+            print(
+                "overlap_raw_confirmed_master_merged_contigs="
+                f"{raw_master_graph_audit.merged_contigs}"
+            )
+            print(
+                "overlap_raw_confirmed_master_corrected_overlap_bases="
+                f"{raw_master_graph_audit.corrected_overlap_bases}"
+            )
+            print(
+                "overlap_raw_confirmed_master_added_bases="
+                f"{raw_master_graph_audit.added_bases}"
+            )
+            print(
+                "overlap_raw_confirmed_master_projected_contigs="
+                f"{raw_master_graph_audit.projected_contigs}"
+            )
+            print(
+                "overlap_raw_confirmed_master_projected_bases="
+                f"{raw_master_graph_audit.projected_bases}"
+            )
+            print(
+                "overlap_raw_confirmed_master_projected_n50="
+                f"{raw_master_graph_audit.projected_n50}"
+            )
+            print(
+                "overlap_raw_confirmed_master_projected_longest_contig="
+                f"{raw_master_graph_audit.projected_longest_contig}"
+            )
+            print(
+                "overlap_strain_safe_containment_audit="
+                f"{str(arguments.strain_safe_containment_audit).lower()}"
+            )
+            print(
+                "overlap_containment_projection="
+                f"{arguments.strain_safe_containment_projection or ''}"
+            )
+            print(
+                "overlap_containment_input_contigs="
+                f"{containment_audit.input_contigs}"
+            )
+            print(
+                "overlap_containment_candidate_containments="
+                f"{containment_audit.candidate_containments}"
+            )
+            print(
+                "overlap_containment_exact_duplicates="
+                f"{containment_audit.exact_duplicates}"
+            )
+            print(
+                "overlap_containment_near_duplicate_candidates="
+                f"{containment_audit.near_duplicate_candidates}"
+            )
+            print(
+                "overlap_containment_strain_protected="
+                f"{containment_audit.strain_protected}"
+            )
+            print(
+                "overlap_containment_insufficient_evidence="
+                f"{containment_audit.insufficient_evidence}"
+            )
+            print(
+                "overlap_containment_unsupported_variants="
+                f"{containment_audit.unsupported_variants}"
+            )
+            print(
+                "overlap_containment_removed_contigs="
+                f"{containment_audit.removed_contigs}"
+            )
+            print(
+                "overlap_containment_removed_bases="
+                f"{containment_audit.removed_bases}"
+            )
+            print(
+                "overlap_containment_projected_contigs="
+                f"{containment_audit.projected_contigs}"
+            )
+            print(
+                "overlap_containment_projected_bases="
+                f"{containment_audit.projected_bases}"
+            )
+            print(
+                "overlap_containment_projected_n50="
+                f"{containment_audit.projected_n50}"
+            )
+            print(
+                "overlap_containment_projected_longest_contig="
+                f"{containment_audit.projected_longest_contig}"
             )
             print(f"output={arguments.output}")
             return 0
