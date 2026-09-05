@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
 
-from anvaya.damage_consensus import _anchor_index, _identity
+from anvaya.overlap_index import _anchor_index, _identity
 from anvaya.overlap_assembly import (
     IterativeReclusteringDiagnostics,
     IterativeReclusteringRound,

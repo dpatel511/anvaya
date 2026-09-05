@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from statistics import median
 
-from anvaya.damage_consensus import _anchor_index, _identity
+from anvaya.overlap_index import _anchor_index, _identity
 from anvaya.overlap_assembly import _candidate_alignments, _n50, _ry
 from anvaya.reads import Read
 from anvaya.sequences import canonical_sequence, reverse_complement

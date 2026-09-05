@@ -3,7 +3,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from anvaya.damage_consensus import _anchor_index, _identity
+from anvaya.overlap_index import _anchor_index, _identity
 from anvaya.overlap_assembly import (
     MasterOverlapGraphDiagnostics,
     RawConfirmedMasterGraphDiagnostics,
