@@ -1,6 +1,7 @@
 """Evidence-gated overlap graph construction and path projection."""
 
 from collections import defaultdict
+from dataclasses import dataclass
 
 from anvaya.damage_consensus import _anchor_index, _identity
 from anvaya.overlap_assembly import (
@@ -16,6 +17,91 @@ from anvaya.overlap_assembly import (
 )
 from anvaya.reads import Read
 from anvaya.sequences import reverse_complement
+
+
+@dataclass(frozen=True, slots=True)
+class _RawMismatchConfirmation:
+    winners: tuple[tuple[int, str], ...] = ()
+    supporting_molecules: frozenset[int] = frozenset()
+    strain_conflict: bool = False
+    insufficient_support: bool = False
+
+
+def _confirm_raw_mismatches(
+    source_sequence: str,
+    candidate: _Alignment,
+    mismatch_positions: list[int],
+    raw_candidates: list[_Alignment],
+    raw_reads: list[Read],
+    molecule_ids: list[int],
+    *,
+    minimum_primary_allele_support: int,
+    minimum_alternate_allele_support: int,
+    minimum_support_margin: int,
+    minimum_base_quality: int,
+    damage_end_window: int,
+) -> _RawMismatchConfirmation:
+    """Resolve overlap mismatches from independent high-quality raw molecules."""
+    winners: list[tuple[int, str]] = []
+    supporting_molecules: set[int] | None = None
+    for position in mismatch_positions:
+        source_base = source_sequence[position]
+        candidate_base = candidate.sequence[position - candidate.offset]
+        alleles = frozenset((source_base, candidate_base))
+        support: dict[str, set[int]] = defaultdict(set)
+        for raw in raw_candidates:
+            if not raw.offset <= position < raw.offset + len(raw.sequence):
+                continue
+            raw_position = position - raw.offset
+            record = raw_reads[raw.read_index]
+            quality_position = (
+                raw_position
+                if raw.sequence == record.sequence
+                else len(record.sequence) - raw_position - 1
+            )
+            if record.qualities is None:
+                continue
+            if record.qualities[quality_position] < minimum_base_quality:
+                continue
+            if alleles in _DAMAGE_PAIRS and (
+                quality_position < damage_end_window
+                or quality_position >= len(record.sequence) - damage_end_window
+            ):
+                continue
+            base = raw.sequence[raw_position]
+            if base in alleles:
+                support[base].add(molecule_ids[raw.read_index])
+        source_support = support[source_base]
+        candidate_support = support[candidate_base]
+        if (
+            len(source_support) >= minimum_alternate_allele_support
+            and len(candidate_support) >= minimum_alternate_allele_support
+        ):
+            return _RawMismatchConfirmation(strain_conflict=True)
+        if (
+            len(source_support) >= minimum_primary_allele_support
+            and len(source_support) - len(candidate_support) >= minimum_support_margin
+        ):
+            winner = source_base
+            winner_support = source_support
+        elif (
+            len(candidate_support) >= minimum_primary_allele_support
+            and len(candidate_support) - len(source_support) >= minimum_support_margin
+        ):
+            winner = candidate_base
+            winner_support = candidate_support
+        else:
+            return _RawMismatchConfirmation(insufficient_support=True)
+        winners.append((position, winner))
+        if supporting_molecules is None:
+            supporting_molecules = set(winner_support)
+        else:
+            supporting_molecules.intersection_update(winner_support)
+
+    return _RawMismatchConfirmation(
+        winners=tuple(winners),
+        supporting_molecules=frozenset(supporting_molecules or ()),
+    )
 
 
 def audit_master_overlap_graph(
@@ -550,67 +636,37 @@ def audit_raw_confirmed_master_overlap_graph(
                     position_bits=raw_bits,
                     target_window=len(source.sequence),
                 )
-            corrections: list[tuple[int, str]] = []
-            rejected = False
-            for position in mismatches:
-                source_base = source.sequence[position]
-                candidate_base = candidate.sequence[position - candidate.offset]
-                alleles = frozenset((source_base, candidate_base))
-                support: dict[str, set[int]] = defaultdict(set)
-                for raw in raw_candidates:
-                    if not raw.offset <= position < raw.offset + len(raw.sequence):
-                        continue
-                    raw_position = position - raw.offset
-                    record = raw_reads[raw.read_index]
-                    quality_position = (
-                        raw_position
-                        if raw.sequence == record.sequence
-                        else len(record.sequence) - raw_position - 1
-                    )
-                    if record.qualities is None:
-                        continue
-                    if record.qualities[quality_position] < minimum_base_quality:
-                        continue
-                    if alleles in _DAMAGE_PAIRS and (
-                        quality_position < damage_end_window
-                        or quality_position
-                        >= len(record.sequence) - damage_end_window
-                    ):
-                        continue
-                    base = raw.sequence[raw_position]
-                    if base in alleles:
-                        support[base].add(molecules[raw.read_index])
-                source_support = len(support[source_base])
-                candidate_support = len(support[candidate_base])
-                if (
-                    source_support >= minimum_alternate_allele_support
-                    and candidate_support >= minimum_alternate_allele_support
-                ):
-                    strain_conflicts += 1
-                    rejected = True
-                    break
-                if (
-                    source_support >= minimum_primary_allele_support
-                    and source_support - candidate_support >= minimum_support_margin
-                ):
-                    winner = source_base
-                elif (
-                    candidate_support >= minimum_primary_allele_support
-                    and candidate_support - source_support >= minimum_support_margin
-                ):
-                    winner = candidate_base
-                else:
-                    insufficient_support += 1
-                    rejected = True
-                    break
-                first_position = (
+            confirmation = _confirm_raw_mismatches(
+                source.sequence,
+                candidate,
+                mismatches,
+                raw_candidates,
+                raw_reads,
+                molecules,
+                minimum_primary_allele_support=minimum_primary_allele_support,
+                minimum_alternate_allele_support=(
+                    minimum_alternate_allele_support
+                ),
+                minimum_support_margin=minimum_support_margin,
+                minimum_base_quality=minimum_base_quality,
+                damage_end_window=damage_end_window,
+            )
+            if confirmation.strain_conflict:
+                strain_conflicts += 1
+                continue
+            if confirmation.insufficient_support:
+                insufficient_support += 1
+                continue
+            corrections = tuple(
+                (
                     position
                     if right_extension
-                    else position - candidate.offset
+                    else position - candidate.offset,
+                    winner,
                 )
-                corrections.append((first_position, winner))
-            if not rejected:
-                add_edge(near_edges, first, second, overlap, tuple(corrections))
+                for position, winner in confirmation.winners
+            )
+            add_edge(near_edges, first, second, overlap, corrections)
 
     exact_outgoing = {edge.source for edge in exact_edges.values()}
     exact_incoming = {edge.target for edge in exact_edges.values()}

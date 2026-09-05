@@ -315,3 +315,43 @@ The next go/no-go experiment must address the 767 ambiguous raw-confirmed graph
 ends without relaxing mismatch evidence. It should rank competing end edges
 with immutable raw molecule support, preserve exact-edge precedence and strain
 conflicts, and require zero misassemblies plus an NA50 improvement at 500k.
+
+## Evidence-gated recovery checkpoint
+
+Progressive extension, raw-supported link audits, adaptive and selective rescue,
+paired-read merging and scaffolding, and exact or raw-confirmed graph projections
+are implemented as isolated projections: the primary overlap FASTA remains
+unchanged unless a projected output is explicitly requested. Ambiguous ends,
+competing molecule assignments, strain conflicts, insufficient base quality,
+and non-reciprocal links abstain rather than forcing a join.
+
+On the EMN001 100k input, the high-confidence support-two rescue is the current
+recovery-oriented projection. It produced 16,137 contigs and 1,567,417 bases,
+with N50/NA50 106/105, 1,320,332 aligned bases, 0.478% genome fraction, and zero
+MetaQUAST misassemblies. The CarpeDeam safe comparator produced 12,491 contigs,
+N50/NA50 134/133, 1,431,468 aligned bases, and 0.512% genome fraction. Anvaya
+had fewer indels (2.80 versus 3.21 per 100 kbp), but more mismatches (988.31
+versus 873.79), 2.57 times as much unaligned sequence, and substantially greater
+fragmentation. Exact graph projection of the support-two output improved the
+longest contig from 325 to 439 bp but only changed N50 from 106 to 107, so it is
+not the selected recovery output.
+
+The 100k support-two rerun reproduced the primary SHA-256 checksum and all
+reported progressive and support-two assembly statistics. The full test suite
+passed 353 tests after the implementation was assembled on this branch.
+
+TAF016 R1 and R2 were also run independently through the single-input CLI as a
+mate-ablation execution check. Both completed, but this is not a genuine
+single-end benchmark: the files are mates from a paired-end library, and
+discarding the other mate changes the available evidence. Progressive clustering
+recruited only 2,916 R1 reads and 661 R2 reads from 100,000 inputs; support-two
+N50 remained 76 bp. An anchor-length reduction from 15 to 11 on R1 increased
+candidate offsets but reduced validated alignments from 331,088 to 89,786 and
+clustered reads from 2,916 to 1,753. The shorter anchor is rejected, and these
+mate-ablation measurements must not be presented as biological single-end
+validation.
+
+The next validation step is a genuine single-end ancient library or a directly
+simulated single-end truth set, followed by the 500k support-two scaling run.
+No further overlap-threshold or graph-link tuning is justified until those tests
+separate insufficient sampling depth from candidate-discovery failure.

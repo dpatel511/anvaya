@@ -1617,7 +1617,7 @@ def _n50(lengths: list[int]) -> int:
     return 0
 
 
-def audit_two_tier_redundancy(
+def project_two_tier_rescue(
     primary_contigs: list[Read],
     rescue_contigs: list[Read],
     *,
@@ -1628,18 +1628,21 @@ def audit_two_tier_redundancy(
     minimum_identity: float = 0.97,
     minimum_ry_identity: float = 0.99,
     minimum_coverage: float = 0.99,
-) -> TwoTierRedundancyDiagnostics:
-    """Project novel rescue contigs without changing the primary assembly."""
+) -> tuple[list[Read], TwoTierRedundancyDiagnostics]:
+    """Return primary plus novel rescue contigs and projection diagnostics."""
     if not rescue_contigs:
         lengths = [len(contig.sequence) for contig in primary_contigs]
-        return TwoTierRedundancyDiagnostics(
-            replacement_projected_bases=sum(lengths),
-            replacement_projected_n50=_n50(lengths),
-            replacement_projected_longest_contig=max(lengths, default=0),
-            projected_contigs=len(primary_contigs),
-            projected_bases=sum(lengths),
-            projected_n50=_n50(lengths),
-            projected_longest_contig=max(lengths, default=0),
+        return (
+            list(primary_contigs),
+            TwoTierRedundancyDiagnostics(
+                replacement_projected_bases=sum(lengths),
+                replacement_projected_n50=_n50(lengths),
+                replacement_projected_longest_contig=max(lengths, default=0),
+                projected_contigs=len(primary_contigs),
+                projected_bases=sum(lengths),
+                projected_n50=_n50(lengths),
+                projected_longest_contig=max(lengths, default=0),
+            ),
         )
     if not 0.0 <= minimum_identity <= 1.0:
         raise ValueError("minimum_identity must be between zero and one")
@@ -1733,37 +1736,66 @@ def audit_two_tier_redundancy(
         novel.append(rescue)
         unavailable[rescue_index] = False
 
-    projected_lengths = [
-        len(contig.sequence) for contig in primary_contigs + novel
-    ]
+    projected = primary_contigs + novel
+    projected_lengths = [len(contig.sequence) for contig in projected]
     replacement_lengths = [
         len(replacements.get(index, contig).sequence)
         for index, contig in enumerate(primary_contigs)
     ]
-    return TwoTierRedundancyDiagnostics(
-        rescue_contigs=len(rescue_contigs),
-        rescue_bases=sum(len(contig.sequence) for contig in rescue_contigs),
-        contained_by_primary=contained_by_primary,
-        redundant_with_rescue=redundant_with_rescue,
-        extends_primary=extends_primary,
-        ambiguous_primary_extensions=ambiguous_primary_extensions,
-        replacement_contigs=len(replacements),
-        replacement_added_bases=sum(
-            len(replacement.sequence) - len(primary_contigs[index].sequence)
-            for index, replacement in replacements.items()
+    return (
+        projected,
+        TwoTierRedundancyDiagnostics(
+            rescue_contigs=len(rescue_contigs),
+            rescue_bases=sum(len(contig.sequence) for contig in rescue_contigs),
+            contained_by_primary=contained_by_primary,
+            redundant_with_rescue=redundant_with_rescue,
+            extends_primary=extends_primary,
+            ambiguous_primary_extensions=ambiguous_primary_extensions,
+            replacement_contigs=len(replacements),
+            replacement_added_bases=sum(
+                len(replacement.sequence)
+                - len(primary_contigs[index].sequence)
+                for index, replacement in replacements.items()
+            ),
+            replacement_projected_bases=sum(replacement_lengths),
+            replacement_projected_n50=_n50(replacement_lengths),
+            replacement_projected_longest_contig=max(
+                replacement_lengths, default=0
+            ),
+            novel_contigs=len(novel),
+            novel_bases=sum(len(contig.sequence) for contig in novel),
+            projected_contigs=len(projected_lengths),
+            projected_bases=sum(projected_lengths),
+            projected_n50=_n50(projected_lengths),
+            projected_longest_contig=max(projected_lengths, default=0),
         ),
-        replacement_projected_bases=sum(replacement_lengths),
-        replacement_projected_n50=_n50(replacement_lengths),
-        replacement_projected_longest_contig=max(
-            replacement_lengths, default=0
-        ),
-        novel_contigs=len(novel),
-        novel_bases=sum(len(contig.sequence) for contig in novel),
-        projected_contigs=len(projected_lengths),
-        projected_bases=sum(projected_lengths),
-        projected_n50=_n50(projected_lengths),
-        projected_longest_contig=max(projected_lengths, default=0),
     )
+
+
+def audit_two_tier_redundancy(
+    primary_contigs: list[Read],
+    rescue_contigs: list[Read],
+    *,
+    anchor_k: int = 15,
+    anchors_per_read: int = 8,
+    maximum_anchor_occurrences: int = 100,
+    minimum_anchor_matches: int = 2,
+    minimum_identity: float = 0.97,
+    minimum_ry_identity: float = 0.99,
+    minimum_coverage: float = 0.99,
+) -> TwoTierRedundancyDiagnostics:
+    """Audit novel rescue contigs without changing the primary assembly."""
+    return project_two_tier_rescue(
+        primary_contigs,
+        rescue_contigs,
+        anchor_k=anchor_k,
+        anchors_per_read=anchors_per_read,
+        maximum_anchor_occurrences=maximum_anchor_occurrences,
+        minimum_anchor_matches=minimum_anchor_matches,
+        minimum_identity=minimum_identity,
+        minimum_ry_identity=minimum_ry_identity,
+        minimum_coverage=minimum_coverage,
+    )[1]
 
 
 def _filter_redundant_projection(

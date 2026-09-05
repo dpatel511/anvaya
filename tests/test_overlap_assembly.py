@@ -18,6 +18,7 @@ from anvaya.overlap_assembly import (
     _unique_best_extensions,
     assemble_overlap_contigs,
     audit_two_tier_redundancy,
+    project_two_tier_rescue,
     write_overlap_correction_report,
 )
 from anvaya.overlap_graph import (
@@ -463,6 +464,30 @@ class OverlapAssemblyTests(unittest.TestCase):
         self.assertEqual(diagnostics.ambiguous_primary_extensions, 1)
         self.assertEqual(diagnostics.replacement_contigs, 0)
         self.assertEqual(diagnostics.replacement_added_bases, 0)
+
+    def test_exact_two_tier_projection_preserves_a_strain_variant(self) -> None:
+        primary_sequence = "ACGTTGCACTGATCGGACCT"
+        contained = primary_sequence[2:-2]
+        variant = contained[:7] + "A" + contained[8:]
+
+        projected, diagnostics = project_two_tier_rescue(
+            [Read("primary", primary_sequence)],
+            [Read("contained", contained), Read("variant", variant)],
+            anchor_k=3,
+            anchors_per_read=16,
+            maximum_anchor_occurrences=100,
+            minimum_anchor_matches=1,
+            minimum_identity=1.0,
+            minimum_ry_identity=1.0,
+            minimum_coverage=1.0,
+        )
+
+        self.assertEqual(
+            [contig.sequence for contig in projected],
+            [primary_sequence, variant],
+        )
+        self.assertEqual(diagnostics.contained_by_primary, 1)
+        self.assertEqual(diagnostics.novel_contigs, 1)
 
     def test_damage_aware_ranking_can_prefer_a_cleaner_overlap(self) -> None:
         target = "ACGTTGCACTGATCGATGCTAGCTACGATGGCCTA"
