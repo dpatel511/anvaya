@@ -42,7 +42,10 @@ The acceptance contract is:
 | Posterior confidence margin 0.01 | Rejected; 2,094 abstentions on EMN001 100k reduced N50 from 128 to 123. |
 | Contig-overlap merging | Keep experimental and disabled in the safe configuration; 2,802 merges bought only +3 N50/+2 NA50 and introduced one 240 bp translocation. |
 | Frozen-layout damage polishing | Retain opt-in; 99.69% resolved edit precision and improved aligned length with unchanged topology, but no N50 effect by design. |
-| Next architecture step | Improve read recruitment without enabling contig merging or weakening reciprocal structural checks. |
+| Evidence-gated support-two rescue | Retain as the recovery-oriented projection. On EMN001 100k it reached 0.478% genome fraction and 1.32 Mb aligned with zero misassemblies, but remained more fragmented and less precise than CarpeDeam safe. |
+| TAF016 mate-ablation runs | Record only as single-input execution checks. R1-only and R2-only inputs are paired-library mates, not genuine single-end biological benchmarks. |
+| Anchor length 11 | Rejected on TAF016 R1: more proposed offsets yielded fewer validated alignments and 40% fewer clustered reads than anchor length 15. |
+| Next validation step | Test the current recovery path on genuine or directly simulated single-end data, then perform the 500k support-two scaling run before further threshold tuning. |
 
 Public datasets remain realism and resource checks unless suitable reference
 truth is available. Public-data N50 alone is not an acceptance signal.
