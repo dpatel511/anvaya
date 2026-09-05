@@ -1,16 +1,16 @@
 # Research question
 
-Can a reference-free, evidence-annotated assembler distinguish
-postmortem-damage-induced differences and repeat-induced overlaps from genuine
-biological variation during de novo assembly of ancient bacterial and archaeal
-metagenomes, improving continuity and genome recovery without introducing
-misassemblies or collapsing low-abundance strains?
+Can a reference-free overlap assembler distinguish postmortem damage and
+repeat-induced overlaps from genuine biological variation, improving ancient
+bacterial and archaeal metagenome recovery without false joins or loss of
+low-abundance strains?
 
-## Hypothesis
+Damage-compatible substitutions near physical molecule ends should receive
+different support from ordinary errors and alleles observed across independent
+fragments. Original sequencing qualities and molecular positions should remain
+available after layout and correction.
 
-Damage-derived paths should be supported mainly by damage-compatible substitutions near molecule ends. Genuine variation should receive support across molecule positions, orientations, and independent fragments.
-
-Anvaya retains this evidence in both its established de Bruijn graph diagnostics
-and its active whole-fragment overlap backend. Competing paths are treated as
-damage-derived, likely genuine, repeat-ambiguous, or unresolved; ambiguous paths
-are preserved rather than joined or corrected aggressively.
+The current implementation explores this with bounded overlap discovery,
+fixed-penalty damage-aware ranking, count-based consensus and experimental
+recovery projections. Calibrated damage inference integrated into overlap
+decisions and general biological validation remain research goals.

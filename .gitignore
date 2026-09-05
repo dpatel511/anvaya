@@ -6,6 +6,12 @@ data/
 build/
 *.egg-info/
 
+# Local notes and generated analysis caches
+/docs/handover.md
+.pytest_cache/
+graphify-out/
+/quast_results/
+
 # Generated experiment data
 /results/
 experiments/**/generated/
