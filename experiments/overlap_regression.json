@@ -1,0 +1,23 @@
+{
+  "reference_length": 5000,
+  "read_length": 100,
+  "coverage": 20.0,
+  "seeds": [2401, 2402, 2403, 2404, 2405],
+  "damage_profile": [0.30, 0.18, 0.10, 0.05, 0.02],
+  "sequencing_error_rate": 0.005,
+  "rare_strain_coverage": 5.0,
+  "contamination_coverage": 5.0,
+  "scenarios": ["clean", "damage", "sequencing_error", "damage_error", "rare_strain", "contamination"],
+  "assembly_args": [
+    "--min-cluster-size", "5", "--max-rounds", "3",
+    "--min-anchor-matches", "1", "--min-output-length", "31",
+    "--ranked-extension", "--damage-aware-ranking",
+    "--min-overlap-confidence-margin", "0",
+    "--reciprocal-best-extension", "--max-contig-iterations", "0",
+    "--progressive-raw-phase-audit", "--max-progressive-raw-iterations", "3",
+    "--selective-support-rescue-audit", "--adaptive-rescue-min-support", "3",
+    "--high-confidence-support-two-rescue-audit",
+    "--raw-confirmed-master-min-base-quality", "20",
+    "--raw-confirmed-master-damage-end-window", "5"
+  ]
+}

@@ -11,7 +11,7 @@ def write_fasta(
     path: str | Path,
     line_width: int = 80,
 ) -> None:
-    """Write sequences to a FASTA file with deterministic unitig names."""
+    """Write contigs using legacy unitig identifiers for output compatibility."""
     if not isinstance(line_width, int) or isinstance(line_width, bool):
         raise TypeError("line_width must be an integer")
     if line_width < 1:

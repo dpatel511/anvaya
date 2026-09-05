@@ -4,7 +4,7 @@ from pathlib import Path
 
 import anvaya.overlap_assembly as overlap_assembly_compat
 from anvaya.cli import main
-from anvaya.damage_consensus import _anchor_index
+from anvaya.overlap_index import _anchor_index
 from anvaya.overlap_assembly import (
     _Alignment,
     _audit_read_supported_contig_links,

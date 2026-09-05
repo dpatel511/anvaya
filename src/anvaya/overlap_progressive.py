@@ -3,7 +3,7 @@
 from dataclasses import dataclass, replace
 from enum import Enum
 
-from anvaya.damage_consensus import _anchor_index
+from anvaya.overlap_index import _anchor_index
 from anvaya.overlap_assembly import (
     _Alignment,
     _RankingDiagnostics,

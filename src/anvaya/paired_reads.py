@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from anvaya.damage_consensus import _identity
+from anvaya.overlap_index import _identity
 from anvaya.overlap_assembly import _ry
 from anvaya.reads import Read
 from anvaya.sequences import reverse_complement

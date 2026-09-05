@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from math import sqrt
 from pathlib import Path
 
-from anvaya.damage_consensus import _anchor_index, _identity, _ry, _sketch_anchors
+from anvaya.overlap_index import _anchor_index, _identity, _ry, _sketch_anchors
 from anvaya.reads import Read
 from anvaya.sequences import reverse_complement
 

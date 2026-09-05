@@ -1,88 +1,26 @@
 # Anvaya
 
-Anvaya is a research project exploring damage-aware de Bruijn graph assembly for ancient bacterial and archaeal metagenomes.
+Anvaya is a reference-free, damage-aware overlap assembly research prototype
+for ancient bacterial and archaeal metagenomes. It retains raw fragment evidence
+while exploring conservative overlap clustering, extension, and consensus.
 
-The central idea is to retain evidence from the original DNA molecules—such as position within the fragment, orientation, and base quality—and use it to distinguish postmortem-damage-induced graph paths from genuine biological variation.
+The supported research scope starts with untreated double-stranded libraries
+and merged fragments. Paired merging and scaffolding are experimental. General
+single-end biological validation and overall superiority to CarpeDeam have not
+been demonstrated.
 
-## Current status
+## Installation
 
-Early Python prototype. Anvaya supports sequence-file input, directed and experimental orientation-aware de Bruijn graph assembly, and a separate experimental whole-fragment overlap-layout-consensus backend. The overlap backend is the active continuity research path; the DBG remains the established baseline and diagnostic framework.
+Python 3.13 or later is required. The runtime uses the Python standard library.
 
-Correctness and scientific validation remain the priorities. The orientation-aware graph now uses a compact pure-Python representation that preserves the validated assembly while reducing runtime and memory.
+```bash
+python3 -m pip install -e .
+anvaya --help
+```
 
-## Initial scope
+## Assembly
 
-- ancient bacterial and archaeal metagenomes;
-- Illumina short reads;
-- untreated double-stranded libraries initially;
-- reference-free assembly;
-- no damage profile required as input.
-
-## Implemented
-
-- plain and gzipped FASTA/FASTQ input with Phred scores;
-- DNA validation, reverse complements, and canonical sequences;
-- overlapping k-mer extraction with ambiguous k-mers excluded;
-- directed de Bruijn graph construction and edge multiplicity;
-- experimental orientation-aware graph construction using canonical nodes and oriented handles;
-- rolling 2-bit canonical k-mer encoding and compact integer graph arrays;
-- combined forward and reverse-complement k-mer support;
-- optional minimum k-mer support filtering;
-- experimental conservative tip cleaning for short, weak dead-end paths;
-- experimental damage-aware tip cleaning that removes only one-sided
-  error-like tips and protects damage-like, variation-like, ambiguous,
-  unmatched, or bidirectionally supported alternatives;
-- non-destructive detection of bounded, simple graph bubbles;
-- compact read-end evidence collected during orientation-aware graph construction;
-- side-specific base qualities retained for molecule-linked terminal observations;
-- report-only Phred-derived sequencing-error log likelihoods with explicit missing-quality counts;
-- deterministic five-fold held-out damage profiles for matched weak-tip loci;
-- report-only damage/error/variation likelihood rankings with explicit model scope and margins;
-- report-only damage-projection candidates that require concordant classification,
-  held-out likelihood, variation contrast, and complete quality evidence;
-- fragment-level event-ascertainment conditioning with auditable per-model conditioning probabilities;
-- conservative ambiguity for high-quality singleton alternatives that cannot be separated from genuine rare variation;
-- report-only graph-context features and held-out separation summaries for topology, path multiplicity, local coverage, fragment support, and terminal evidence;
-- direct dominant-path likelihood comparison for equal-length bubble alternatives;
-- ordinary-substitution likelihood scoring without inventing a damage channel;
-- targeted whole-read molecule and base-quality recovery for ordinary
-  substitutions, without retaining observations for every graph edge;
-- physical-fragment identities shared by paired reads, with conflicting allele evidence excluded;
-- optional report-only conformal confidence calibration with multiple-testing correction and conservative protection decisions;
-- sequence-level TSV reports for weak tips and bubble paths;
-- damage-compatible C→T/G→A annotation for simple bubble alternatives;
-- non-destructive weak-tip matching to equal-length local backbone paths with DNA identity, RY identity, relative coverage, substitutions, and damage compatibility;
-- explainable weak-tip evidence scores and conservative damage-like, error-like, variation-like, or ambiguous labels;
-- non-destructive detection, backbone matching, and classification of bounded weak branches not represented as standard tips or bubbles;
-- linear-time node degree calculation;
-- source, sink, and branch identification;
-- maximal non-branching unitig extraction;
-- oriented unitig-level graph links with aggregate coverage and terminal evidence;
-- optional reciprocal paired-read unitig extension with strong-winner and
-  bounded-work ambiguity guards;
-- optional direct read-thread extension with molecule-level strong-winner,
-  reciprocal-orientation, and local repeat-coverage guards;
-- bounded unitig-level bubble detection with local coverage and sequence-similarity scores;
-- labelled unitig-bubble validation across clean, error, damage, and rare-strain simulations;
-- unitig-path terminal/internal evidence, terminal enrichment, and strand-balance scores;
-- explainable `error-like`, `damage-like`, `variation-like`, and `ambiguous` unitig-path labels;
-- graph topology and support summaries;
-- `anvaya assemble` command-line workflow and FASTA output;
-- deterministic test-only simulation helpers;
-- unit tests for assembler primitives.
-- report-only raw-read attribution of compacted-graph dead ends;
-- report-only solid-k-mer correction-candidate auditing with explicit
-  protection of terminal damage-compatible reversals.
-- separate conservative whole-fragment overlap assembly with 90% DNA and 99%
-  R/Y identity gates, independent-molecule support, ranked end extension,
-  optional extension consensus, reciprocal-best repeat abstention, and
-  damage-aware posterior overlap ranking;
-- optional frozen-layout terminal-damage polishing that cannot alter contig
-  membership, order, orientation, or length, with a per-edit audit report.
-
-## Command-line usage
-
-The active experimental overlap backend accepts pre-merged fragments:
+Use the explicit conservative research configuration:
 
 ```bash
 anvaya overlap-assemble -i merged.fastq.gz \
@@ -93,352 +31,74 @@ anvaya overlap-assemble -i merged.fastq.gz \
   -o contigs.fasta
 ```
 
-This is the current safe research configuration. Reciprocal validation searches
-all fragments, including those already assigned by the greedy layout, and
-rejects a selected extension when a near-best opposite-side path has an
-incompatible DNA or R/Y extension. Contig-to-contig merging remains available
-through a positive `--max-contig-iterations`, but is experimental and is not
-part of the safe configuration.
+FASTA and FASTQ inputs may be gzipped. Progress goes to stderr and diagnostics
+to stdout. Existing overlap options and defaults are unchanged by the structural
+cleanup: a bare invocation is not the conservative recipe above. In particular,
+contig merging remains experimental and must be disabled explicitly with
+`--max-contig-iterations 0` for this configuration.
 
-Damage-aware ranking compares a conservative beta-posterior match-rate score
-instead of always preferring the longest overlap. Terminal C/T and G/A
-differences receive a fractional mismatch penalty; other mismatches retain the
-full penalty. The confidence margin defaults to zero because the posterior
-lower bound is already conservative. A tested margin of 0.01 rejected 2,094 of
-9,152 ranked sides on EMN001 100k and reduced N50 from 128 to 123.
+Damage-aware ranking currently uses fixed terminal mismatch penalties; it is
+not a calibrated probability of assembly correctness. Frozen-layout terminal
+polishing is opt-in via `--damage-end-window`; zero disables it. See
+`anvaya overlap-assemble --help` for projection and audit options.
 
-Frozen-layout damage polishing is opt-in. A zero window, the default, disables
-it. The correction report is required for causal truth auditing:
+For experimental paired input, use `-1 reads_1.fastq.gz -2 reads_2.fastq.gz`
+instead of `-i`, optionally with `--merge-overlapping-pairs`. Inputs must already
+be synchronized. The current loader checks equal record counts but not matching
+read IDs. Unmerged mates do not necessarily expose both physical molecule ends.
+
+## Progressive recovery
+
+The recovery checkpoint uses separate projections and leaves the primary
+`contigs.fasta` independent of those outputs. The versioned fixture configuration
+in `experiments/overlap_regression.json` records its options. An example matching
+the recorded 100k recovery configuration is:
 
 ```bash
 anvaya overlap-assemble -i merged.fastq.gz \
-  --damage-end-window 5 --correction-report corrections.tsv \
-  -o contigs.fasta
+  --min-cluster-size 5 --max-rounds 3 --min-anchor-matches 1 \
+  --min-output-length 31 --max-contig-iterations 0 \
+  --ranked-extension --damage-aware-ranking --min-overlap-confidence-margin 0 \
+  --reciprocal-best-extension \
+  --progressive-raw-phase-audit --max-progressive-raw-iterations 3 \
+  --progressive-raw-phase-projection progressive-contigs.fasta \
+  --selective-support-rescue-audit --adaptive-rescue-min-support 3 \
+  --selective-support-rescue-projection selective-rescue-contigs.fasta \
+  --high-confidence-support-two-rescue-audit \
+  --high-confidence-support-two-rescue-projection support-two-contigs.fasta \
+  --raw-confirmed-master-min-base-quality 20 \
+  --raw-confirmed-master-damage-end-window 5 -o contigs.fasta
 ```
 
-On the CarpeDeam EMN001 simulated 500k-fragment subset, reciprocal ranked read
-extension with contig merging disabled raised N50 from the reusable-read safe
-baseline's 104 bp to 133 bp and NA50 from 102 bp to 132 bp. Total aligned length
-rose from 3.83 Mb to 4.90 Mb with zero MetaQUAST misassemblies. The run completed
-in about 95 seconds with 1.04 GB peak RSS. Enabling contig merging raised N50 by
-only three bases and NA50 by two while introducing one 240 bp translocation;
-that phase is therefore excluded from the safe configuration. On 100k
-fragments, reciprocal ranked extension retained zero misassemblies and reached
-N50/NA50 128/127, close to CarpeDeam safe's 134/133 on the same subset, although
-CarpeDeam still recovered substantially more aligned sequence.
+Support-two remains experimental: seed admission checks do not yet enforce
+quality on later recruits or all retained seed flanks. The structural cleanup
+preserves that behavior so correctness changes can be evaluated separately.
 
-Adding zero-margin damage-aware posterior ranking preserved N50 at 133 and
-zero misassemblies on 500k while increasing aligned length from 4,896,280 to
-4,913,114 bp. Mismatches fell from 766.79 to 753.64 and indels from 1.70 to
-1.51 per 100 kbp; NA50 decreased by one base from 132 to 131. This is accepted
-as a modest accuracy and recovery improvement, not a continuity breakthrough.
-The next work targets improved read recruitment while holding the
-zero-misassembly layout fixed.
-
-A lifecycle-aware progressive projection now separates immutable raw evidence
-from corrected and extended representatives. Each admitted longest-first
-cluster keeps its center active for up to `--max-rounds`, reindexes the grown
-ends, recruits previously unreachable unassigned fragments, and retires its
-members only after local extension converges. Initial cluster ownership is
-preserved so a growing center cannot steal evidence already assigned to
-another cluster. The primary overlap output remains unchanged while this mode
-is enabled with `--progressive-raw-phase-audit` and written separately with
-`--progressive-raw-phase-projection`.
-
-On EMN001 100k, one-anchor discovery plus multiround local extension improved
-the earlier progressive projection from N50/NA50 130/129 to 139/137, increased
-the longest contig from 266 to 325 bp, and raised aligned length from 657,323
-to 702,018 bp with zero MetaQUAST misassemblies. It recruited 3,012 additional
-raw reads during 8,123 local rounds. Mismatches increased from 1,163.51 to
-1,272.76 and indels from 2.74 to 3.99 per 100 kbp, so this is accepted as a
-continuity-and-recovery improvement with an explicit accuracy trade-off. It
-matches the ranked-consensus N50, exceeds CarpeDeam safe's 134 bp N50 on this
-subset, but remains behind CarpeDeam in genome fraction and longest contig.
-
-The earlier report-only cross-cluster recruitment audit tested post-hoc
-recruitment against already frozen contigs on the
-EMN001 100k subset. Of 67,956 deferred reads and 30,008 reads assigned to an
-accepted cluster, only 61 and 73 respectively survived reciprocal placement at
-another frozen contig end. Neither source produced a contig with five-read
-consensus support, so projected extension was zero contigs and zero bases. The
-assembly checksum was unchanged. This remains evidence against sparse post-hoc
-recruitment, but the progressive result shows that reads must instead be
-recruited while dense cluster evidence and a live center are still available.
-
-The subsequent global-layout experiments established a stronger safe
-projection. Iterative reclustering recovers additional sequence, an exact
-master overlap graph collapses reciprocal branchless paths, and the optional
-raw-confirmed master graph admits a near-exact edge only when immutable Q20
-raw molecules resolve its sole mismatch. Exact edges retain priority, competing
-alleles are protected as strain conflicts, and terminal damage-compatible
-observations are excluded from mismatch support.
-
-On EMN001 500k, the raw-confirmed graph improved the exact master graph from
-N50/NA50 135/133 to 141/139, increased the largest alignment from 474 to
-603 bp, and retained zero MetaQUAST misassemblies. Mismatches fell from 824.01
-to 814.60 and indels from 1.50 to 1.38 per 100 kbp; duplication fell from
-1.307 to 1.244. The projection accepted 4,211 near-exact overlaps while
-rejecting 181 strain conflicts and preserving exact-overlap priority at 276
-ends. Genome fraction decreased slightly from 1.169% to 1.157%, so this is the
-accepted balanced continuity projection rather than a complete recovery
-solution. The next experiment targets the remaining 767 ambiguous graph ends
-with raw-evidence-aware best-overlap resolution.
+## Testing and regression
 
 ```bash
-anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 -o contigs.fasta
+PYTHONPATH=src python3 -m unittest discover -s tests -v -b
+PYTHONPATH=src python3 experiments/overlap_regression.py \
+  --output-dir results/overlap-baseline
+PYTHONPATH=src python3 experiments/overlap_regression.py \
+  --output-dir results/overlap-recheck \
+  --compare results/overlap-baseline/manifest.json
 ```
 
-`--min-count` defaults to `1`, which preserves all observed k-mers. Progress is written to stderr and the final assembly summary to stdout.
+Each regression output directory must be new. Five seeds and six scenarios
+exercise the primary, progressive, selective, and support-two FASTAs. Input and
+output checksums must match between structural revisions. These small synthetic
+fixtures verify reproducibility, not biological accuracy or strain preservation.
 
-The orientation-aware implementation can be tested explicitly:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware -o contigs.fasta
-```
-
-This mode prevents forward and reverse-complement paths from being assembled separately. It remains experimental while graph-cleaning and damage-aware decisions are developed and validated.
-
-Compacted-graph boundaries can be attributed without changing the FASTA:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --fragmentation-report fragmentation.tsv \
-  -o contigs.fasta
-```
-
-The TSV contains one row per physical unitig end and labels its retained graph
-topology as `dead_end`, `unique_continuation`, or `ambiguous_branch`, together
-with candidate handles and unitig support. It also labels each physical unitig
-as `isolated`, `one_sided`, or `connected`, making disconnected sequence easy
-to distinguish from branch-limited sequence. These labels describe the
-retained graph only; they do not claim that a missing edge was caused by
-filtering, damage, or insufficient coverage.
-
-Raw reads can be rescanned to attribute those dead ends without changing the
-graph or FASTA:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --dead-end-report dead-ends.tsv \
-  -o contigs.fasta
-```
-
-The P1 report distinguishes read boundaries, apparent coverage gaps, unique
-continuations removed by support filtering, conflicting filtered
-continuations, and retained contexts observed elsewhere. It also records
-terminal, low-quality, and missing-quality evidence for each raw extension.
-
-P2 audits conservative solid-k-mer substitution candidates:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --correction-report corrections.tsv \
-  --correction-max-quality 20 --correction-max-reads 20000 \
-  -o contigs.fasta
-```
-
-Only low-quality positions are considered. A candidate is marked
-`would_correct` only when one substitution uniquely restores every overlapping
-k-mer to solid support. Terminal T-to-C and A-to-G reversals compatible with
-ancient-DNA damage are protected, and ambiguous or incomplete rescues are
-reported separately. Both reports are diagnostic: they do not edit reads,
-graph topology, unitigs, or output contigs.
-
-Damage-aware read consensus can be enabled as an experimental pre-graph stage:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --end-window 5 --damage-consensus \
-  --damage-consensus-report damage-consensus.tsv \
-  -o contigs.fasta
-```
-
-The initial safe policy considers only 5′ T-to-C and 3′ A-to-G reversals. A
-bounded sketch retains at most eight canonical internal anchors per read;
-candidate overlaps must pass at least 90% DNA identity and 99% R/Y identity.
-Three independent high-quality nonterminal molecules and 4:1 consensus
-dominance are required. Repetitive, tied, terminal-only, missing-quality, or
-weakly supported overlaps abstain. Graph construction uses corrected sequences,
-while downstream evidence reports retain the original read observations.
-
-This option is research-only. It recovered strong synthetic damage continuity,
-but lost 8.98% rare-strain recovery in the frozen ladder and did not improve
-N50 on `SRR32866683` (`38` before and after). The public-data run corrected 157
-bases, completed in 8:16 with 6.38 GiB peak RSS, and produced a 476 MB full
-audit report. Do not enable it for strain mixtures or routine production
-assembly; omit `--damage-consensus-report` on large exploratory runs unless a
-per-candidate audit is required.
-
-Tip cleaning can be enabled for controlled comparisons:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --clean-tips -o contigs.fasta
-```
-
-The support-only cleaner is useful as a comparison policy but can erase genuine
-low-abundance alternatives. The damage-aware policy adds read-end classification
-and bidirectional-support gates:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --end-window 5 --damage-aware-clean-tips \
-  -o contigs.fasta
-```
-
-The two cleaning modes are mutually exclusive and remain opt-in. In a 20-seed
-controlled selection matrix, the damage-aware gate selected 82 simulated error
-tips and no simulated damage or rare-strain tips. Four reference-backed clean
-assemblies at 5× and 20× introduced no misassemblies, mismatches, indels, or
-genome-fraction loss. This establishes conservative behavior in those tests,
-not universal biological accuracy.
-
-Paired-end reads can optionally resolve a conservative subset of compacted-graph
-junctions after damage-aware cleaning:
-
-```bash
-anvaya assemble -1 left.fastq.gz -2 right.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --end-window 5 --damage-aware-clean-tips \
-  --paired-unitig-extension -o contigs.fasta
-```
-
-The default rule requires five independent pairs, 3:1 winner-to-runner-up
-dominance, reciprocal orientation agreement, and at most 1,000 searched graph
-states per junction. Work-limited or ambiguous junctions are left unresolved.
-These defaults are deliberately stricter than the initial 3-pair/2:1 prototype:
-on a clean 20× reference-backed validation the initial rule introduced small
-base-level errors, while the strict rule increased N50 from 4,665 to 4,733 bp
-and genome fraction from 92.952% to 93.014% with zero QUAST misassemblies,
-mismatches, or indels. On the unlabeled `SRR32866683` library, paired extension
-made only 17 joins at `k=21` and did not change its 32 bp N50, so this remains
-an experimental repeat resolver rather than a general continuity solution.
-
-Source reads can instead be threaded directly across compacted-graph junctions:
-
-```bash
-anvaya assemble -1 left.fastq.gz -2 right.fastq.gz --k 31 --min-count 2 \
-  --orientation-aware --end-window 5 --damage-aware-clean-tips \
-  --read-thread-extension --read-thread-report read-threads.tsv \
-  -o contigs.fasta
-```
-
-The default policy requires five independent molecules, 3:1 dominance, and
-reciprocal orientation agreement. It also breaks the weaker of two adjacent
-joins when their internal unitig has at least twice the mean edge support of
-both flanks, a local copy-number signal controlled by
-`--thread-repeat-coverage-ratio`. The report-only form can be used without
-`--read-thread-extension` and does not change the FASTA.
-
-On the clean 20× `GCF_000007145.1` reference-backed dataset, direct threading
-reduced 6,342 unitigs to 3,942 contigs, increased N50 from 4,856 to 18,021 bp,
-increased the largest contig from 20,336 to 81,176 bp, and recovered 97.260% of
-the reference. QUAST reported zero misassemblies, mismatches, and indels. The
-coverage guard rejected one repeat-like join that otherwise introduced a 7 bp
-indel, without reducing N50. A 20-run short-fragment, damage, sequencing-error,
-related-strain, and contamination matrix accepted 6,989 links with 100% R/Y
-damage-tolerant topology precision and no increase in false contigs.
-
-On public `SRR32866683`, threading at `k=31` joined 32,663 links, reduced
-639,369 unitigs to 606,706 contigs, increased N50 from 38 to 40 bp, and raised
-the largest contig from 366 to 435 bp. The coverage guard rejected only six of
-32,669 reciprocal candidates and preserved the v20 continuity metrics. This
-library lacks assembly truth, so those numbers establish execution and
-reference-free topology changes—not biological correctness. Read threading
-therefore remains experimental and opt-in.
-
-Simple bubbles can be reported without changing the graph or output unitigs:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
-  --orientation-aware --clean-tips --detect-bubbles \
-  -o contigs.fasta
-```
-
-Initial controlled tests found that rare-strain SNPs and sequencing errors can both form simple bubbles, while terminal damage primarily formed tips and incomplete branches. Bubble detection is therefore an analysis primitive, not yet a graph-cleaning or damage-classification rule.
-
-Read-end evidence and event sequences can be reported before cleaning:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
-  --orientation-aware --end-window 5 \
-  --clean-tips --detect-bubbles --event-report events.tsv \
-  --damage-profile-report damage-profile.json \
-  -o contigs.fasta
-```
-
-Evidence reporting is non-destructive. Weak tips and bounded incomplete branches are matched to an equal-length locally competing linear backbone when one is available; equal-length bubble alternatives are compared directly with the locally dominant bubble path. The report includes DNA and RY identity, relative coverage, substitutions, oriented terminal evidence, physical-fragment linkage across substitutions, retained base-quality summaries, a Phred-derived sequencing-error log likelihood, three heuristic scores, and an auditable classification. Paired mates retain separate read indices but share one fragment identifier, and a fragment with contradictory allele observations is excluded from both support counts. The error likelihood assumes equiprobable wrong nucleotides, `P(observed alternative | sequencing error) = 10^(-Q/10) / 3`, and is omitted rather than imputed when qualities are unavailable. Damage, error, and variation likelihoods are conditioned on the graph event containing at least one consistent alternative fragment and one consistent reference fragment; the report records the conditioning scope and probability for every model. When a damage-profile report is requested, exact C→T/5′ and G→A/3′ events receive all three likelihoods; ordinary substitutions receive error-versus-variation scoring without a damage explanation. Weak-tip loci use deterministic five-fold damage profiles fitted without the fold containing the event; incomplete branches and bubble paths use the tip-derived profile and are therefore independent of its training loci. The variation explanation fits one constant local alternative frequency up to 0.5 and receives a one-parameter BIC penalty. A high-quality alternative seen in only one physical fragment is reported as ambiguous when error otherwise ranks first, because the observations cannot distinguish it from genuine rare variation. A `would_project` report row additionally requires all of the damage-like classification, held-out likelihood, variation contrast, and base-quality gates; it is an audit signal only and does not alter graph topology or FASTA output. Rankings and margins are diagnostic—not posterior probabilities, classifier inputs, or removal decisions.
-
-Ordinary substitutions are no longer limited to the configured damage window.
-After event matching, reporting rescans the loaded reads for only the changed
-alternative and reference edges, retains one best-quality observation per
-physical molecule, and applies the error-versus-variation models to that
-whole-read evidence. This targeted second pass avoids an all-edge occurrence
-index, but it is intentionally accuracy-first: on the 1,409,072-read public
-dataset it increased report time from 171.65 to 547.07 seconds and the complete
-run from 504.61 to 853.12 seconds. Assembly without `--event-report` does not
-pay this cost.
-
-Classification accuracy is assessed at three distinct levels. Controlled simulations provide exact generating-process labels for damage, independent errors, systematic terminal errors, and rare-strain variants; calibration and validation references use disjoint seeds. Public-data reruns test deterministic non-regression by requiring identical contigs, damage profiles, event counts, and evidence funnels. They do not provide biological ground truth. Claims of real-library damage accuracy therefore remain deferred until independently characterized untreated, partial-UDG, and full-UDG libraries reproduce the expected protocol-specific damage behavior.
-
-The optional JSON damage profile compares damage-compatible alternative and backbone observations by the exact changed-base cycle at unique matched weak-tip loci; incomplete branches remain excluded from fitting pending separate profile validation. Schema version 6 retains the schema-5 candidate-conditioned beta-binomial geometric fit and records cross-fit status, fold count, assignment, and scoring scope. The fitted amplitude is not a calibrated whole-library damage rate. Linkage strengthens only multi-substitution evidence; neither linkage nor the fitted profile alone establishes biochemical causality. Reporting does not remove or retain paths automatically and does not require a supplied damage profile.
-
-Likelihood reports can be calibrated separately using a model trained on independently simulated or validated samples:
-
-```bash
-anvaya calibrate-events \
-  --input events.tsv \
-  --model event-calibration.json \
-  --alpha 0.01 \
-  --output events-calibrated.tsv
-```
-
-The calibrator uses class-conditional conformal p-values, propagates the spread across cross-fit damage curves, and applies Benjamini–Hochberg correction before rejecting the damage and variation explanations. `eligible_error` requires both protective explanations to be rejected, at least two alternative molecules, at least five reference molecules, and stable damage evidence. Damage-like, variation-like, systematic-error-like, and unresolved events are protected or left insufficient. A calibration model is intentionally not bundled: its samples must match the intended library protocol, damage range, coverage, and error processes. The command only appends report fields and never edits the graph or contigs.
-
-Compacted-graph bubble paths can be scored for threshold validation:
-
-```bash
-anvaya assemble -i reads.fastq.gz --k 21 --min-count 2 \
-  --orientation-aware --clean-tips \
-  --unitig-bubble-report unitig_bubbles.tsv \
-  -o contigs.fasta
-```
-
-This report records path support, local coverage, sequence similarity, substitutions, and an evidence-based classification with auditable reasons. Classification is conservative and does not simplify the graph or change the output assembly.
-
-## Testing
-
-```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-```
-
-The frozen P0 validation ladder runs deterministic truth-labelled controls for
-clean reads, terminal damage, sequencing error, combined damage and error,
-rare-strain mixtures, and contamination. It records contig continuity,
-reference recovery, false contigs, damage-event counts, runtime provenance, and
-the exact benchmark configuration:
-
-```bash
-PYTHONPATH=src:tests python3 experiments/18_validation_ladder.py \
-  --output-dir experiments/validation/generated/ladder
-```
-
-Use `--dry-run` to inspect the frozen matrix without generating data. The
-versioned configuration is `experiments/benchmark_ladder.json`; generated
-summaries and manifests remain ignored. This ladder is the acceptance baseline
-for future assembly changes. Public data remains a realism/performance check,
-not exact biological truth.
-
-The active experiment index records the current acceptance gates and decisions.
-The archived chronological notebook retains commands and negative results from
-experiments `01` through `17` without presenting superseded work as the current
-roadmap. Generated candidate and threshold tables remain ignored by Git.
+The retired `assemble` and `calibrate-events` commands and graph-specific Python
+APIs are removed. Existing FASTA `unitig_N` identifiers remain for byte-level
+compatibility with saved overlap outputs and correction reports.
 
 ## Documentation
 
 - [Research question](docs/research_question.md)
-- [Initial design](docs/design.md)
-- [Benchmark plan](docs/benchmark_plan.md)
+- [Overlap architecture](docs/design.md)
+- [Benchmark plan and results](docs/benchmark_plan.md)
+- [Experiment entry points](experiments/README.md)
+- [Research history](experiments/archive.md)
 - [Literature notes](notes/literature.md)
-- [Active experiments](experiments/README.md)
-- [Historical experiment notebook](experiments/archive.md)

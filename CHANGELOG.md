@@ -6,6 +6,22 @@ All notable project changes will be documented in this file.
 
 ### Changed
 
+- Retired the directed/bidirected DBG implementation, graph-only diagnostics,
+  public APIs, CLI commands and experiment runners. The project is overlap-only.
+- Moved active anchor and identity helpers into `overlap_index.py`, preserving
+  overlap selection, thresholds and FASTA serialization.
+- Replaced the graph-only validation entry point with a versioned overlap
+  structural regression runner covering primary and recovery projections.
+- Rewrote current documentation around overlap assembly and condensed retired
+  research conclusions; the original implementation remains in Git history.
+
+## Research history through d411b31
+
+The entries below describe the implementation before the overlap-only cleanup;
+retired capabilities are not part of the current API.
+
+### Changed
+
 - Made zero the validated overlap-confidence margin. A 0.01 margin rejected
   2,094 of 9,152 ranked sides on EMN001 100k and reduced N50 from 128 to 123.
 - Established reciprocal ranked read extension with contig merging disabled as
