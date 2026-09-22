@@ -1,11 +1,13 @@
 """Sequence lifecycle primitives for progressive overlap assembly."""
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
+from collections import Counter
 from enum import Enum
 
 from anvaya.overlap_index import _anchor_index
 from anvaya.overlap_assembly import (
     _Alignment,
+    _CandidateDiagnostics,
     _RankingDiagnostics,
     _ReciprocalDiagnostics,
     _candidate_alignments,
@@ -15,6 +17,7 @@ from anvaya.overlap_assembly import (
     _unique_best_extensions,
 )
 from anvaya.reads import Read
+from anvaya.raw_consensus import RawPlacement
 from anvaya.sequences import reverse_complement
 
 
@@ -41,6 +44,11 @@ class SequenceRecord:
     state: SequenceState = SequenceState.RAW
     generation: int = 0
     contributing_molecules: frozenset[int] = frozenset()
+    # Known retained raw-seed interval, 0-based half-open; None if not tracked.
+    seed_interval: tuple[int, int] | None = None
+    # Current contig position = original seed position + seed_offset.
+    seed_offset: int = 0
+    raw_placements: tuple[RawPlacement, ...] | None = None
 
     def corrected(self, read: Read) -> "SequenceRecord":
         """Return a corrected center without altering its raw observation."""
@@ -51,6 +59,9 @@ class SequenceRecord:
             current=read,
             state=SequenceState.CORRECTED_CENTER,
             generation=self.generation + 1,
+            seed_interval=None,
+            seed_offset=0,
+            raw_placements=None,
         )
 
     def extended(
@@ -66,6 +77,9 @@ class SequenceRecord:
             current=read,
             state=SequenceState.EXTENDED_CONTIG,
             generation=self.generation + 1,
+            seed_interval=None,
+            seed_offset=0,
+            raw_placements=None,
             contributing_molecules=(
                 self.contributing_molecules | contributing_molecules
             ),
@@ -172,6 +186,13 @@ class ProgressiveRawExtensionDiagnostics:
     ambiguous_extensions: int = 0
     reciprocal_checks: int = 0
     reciprocal_rejections: int = 0
+    recruit_quality_rejections: int = 0
+    recruit_quality_rejected_overhang_bases: int = 0
+    seed_trimmed_contigs: int = 0
+    seed_trimmed_left_bases: int = 0
+    seed_trimmed_right_bases: int = 0
+    round_outcomes: tuple[tuple[str, int], ...] = ()
+    recruit_search: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +202,7 @@ class ProgressiveIterationDiagnostics:
     iterations: int = 0
     converged: bool = False
     candidate_alignments: int = 0
+    recruit_search: tuple[tuple[str, int], ...] = ()
     extended_centers: int = 0
     added_bases: int = 0
     consumed_reads: int = 0
@@ -247,6 +269,87 @@ def _oriented_quality(read: Read, sequence: str, position: int) -> int | None:
     if sequence == reverse_complement(read.sequence):
         return read.qualities[len(read.sequence) - position - 1]
     return None
+
+
+def _extension_quality_passes(
+    target: str, alignment: _Alignment, read: Read, minimum_base_quality: int,
+) -> bool:
+    """Check candidate bases outside the target (0-based sequence offsets)."""
+    for position in range(len(alignment.sequence)):
+        if 0 <= alignment.offset + position < len(target):
+            continue
+        quality = _oriented_quality(read, alignment.sequence, position)
+        if quality is None or quality < minimum_base_quality:
+            return False
+    return True
+
+
+def _raw_placement(alignment: _Alignment, read: Read) -> RawPlacement:
+    reverse = alignment.reverse
+    if reverse is None:
+        forward = alignment.sequence == read.sequence
+        backward = alignment.sequence == reverse_complement(read.sequence)
+        if forward == backward:
+            raise ValueError("raw placement orientation is missing or ambiguous")
+        reverse = backward
+    oriented = reverse_complement(read.sequence) if reverse else read.sequence
+    if oriented != alignment.sequence:
+        raise ValueError("raw placement sequence does not match its original read")
+    return RawPlacement(alignment.read_index, alignment.offset, reverse, 0, len(read.sequence))
+
+
+def _clip_raw_placement(placement: RawPlacement, read_length: int, contig_length: int) -> RawPlacement | None:
+    if placement.reverse:
+        start = max(placement.read_start, read_length + placement.offset - contig_length)
+        stop = min(placement.read_stop, read_length + placement.offset)
+    else:
+        start = max(placement.read_start, -placement.offset)
+        stop = min(placement.read_stop, contig_length - placement.offset)
+    if start >= stop:
+        return None
+    return replace(placement, read_start=start, read_stop=stop)
+
+
+def _seed_trim_bounds(
+    seed: Read,
+    contig_length: int,
+    seed_offset: int,
+    members: list[_Alignment],
+    molecules: list[int],
+    seed_molecule: int,
+    minimum_base_quality: int,
+) -> tuple[int, int]:
+    """Return retained contig bounds (0-based, half-open) after terminal trimming.
+
+    Only exposed original-seed tails are eligible. Scan to the first supporting
+    independent read or Q-threshold base from each end; never cut through either.
+    Extremal overlap bounds suffice because interior gaps cannot be reached.
+    """
+    seed_length = len(seed.sequence)
+    support_start, support_stop = seed_length, 0
+    for member in members:
+        if molecules[member.read_index] == seed_molecule:
+            continue
+        start = max(0, member.offset - seed_offset)
+        stop = min(seed_length, member.offset + len(member.sequence) - seed_offset)
+        if start < stop:
+            support_start = min(support_start, start)
+            support_stop = max(support_stop, stop)
+    left, right = 0, contig_length
+    if support_start >= support_stop:
+        return left, right
+    if seed_offset == 0:
+        while left < support_start:
+            if seed.qualities is not None and seed.qualities[left] >= minimum_base_quality:
+                break
+            left += 1
+    if seed_offset + seed_length == contig_length:
+        while right > seed_offset + support_stop:
+            position = right - seed_offset - 1
+            if seed.qualities is not None and seed.qualities[position] >= minimum_base_quality:
+                break
+            right -= 1
+    return left, right
 
 
 def _n50(lengths: list[int]) -> int:
@@ -575,8 +678,19 @@ def extend_progressive_raw_clusters(
     reciprocal_best_extension: bool = True,
     extension_consensus: bool = True,
     maximum_rounds: int = 3,
+    minimum_extension_base_quality: int | None = None,
+    trim_seed_min_base_quality: int | None = None,
+    untrimmed_sequences: dict[int, str] | None = None,
+    track_raw_placements: bool = False,
+    low_quality_ry_rescue: bool = False,
 ) -> tuple[ProgressiveSequencePool, ProgressiveRawExtensionDiagnostics]:
-    """Iteratively extend admitted centers using immutable raw evidence."""
+    """Extend admitted centers; the optional quality gate applies to later recruits.
+
+    Initial cluster alignments must be validated by the caller. Quality rejection
+    diagnostics count candidate evaluations, including repeated read evaluations.
+    If supplied, untrimmed_sequences captures pre-trim strings by center index
+    for the fixed-membership audit without repeating assembly.
+    """
     if len(pool.active_raw) != len(pool.records):
         raise ValueError("raw extension requires a pristine raw sequence pool")
     if minimum_consensus_support < 2:
@@ -585,6 +699,10 @@ def extend_progressive_raw_clusters(
         raise ValueError("minimum_correction_support must be at least 2")
     if maximum_rounds < 1:
         raise ValueError("maximum_rounds must be at least 1")
+    if minimum_extension_base_quality is not None and minimum_extension_base_quality < 0:
+        raise ValueError("minimum_extension_base_quality must not be negative")
+    if trim_seed_min_base_quality is not None and trim_seed_min_base_quality < 0:
+        raise ValueError("trim_seed_min_base_quality must not be negative")
 
     reads = list(pool.raw_evidence)
     molecules = [record.molecule_id for record in pool.records]
@@ -600,9 +718,13 @@ def extend_progressive_raw_clusters(
     updated = pool
     corrected_centers = extended_centers = extension_rounds = 0
     recruited_reads = added_bases = consumed_reads = 0
+    recruit_quality_rejections = recruit_quality_rejected_overhang_bases = 0
+    seed_trimmed_contigs = seed_trimmed_left_bases = seed_trimmed_right_bases = 0
     ambiguous_extensions = 0
     reciprocal = _ReciprocalDiagnostics()
     ranking = _RankingDiagnostics()
+    outcomes = Counter()
+    recruit_search = _CandidateDiagnostics()
 
     claimed = {
         member_index
@@ -614,6 +736,7 @@ def extend_progressive_raw_clusters(
         center = updated.records[cluster.center_index]
         target = center.current.sequence
         seed = target
+        seed_offset = 0
         members = list(cluster.alignments)
         cluster_indices = set(cluster.member_indices)
 
@@ -636,8 +759,27 @@ def extend_progressive_raw_clusters(
                     minimum_ry_identity=minimum_ry_identity,
                     position_bits=position_bits,
                     target_window=target_window,
+                    diagnostics=recruit_search,
+                    low_quality_ry_rescue=low_quality_ry_rescue,
                 )
+            had_candidates = bool(candidates)
+            if round_index > 0 and minimum_extension_base_quality is not None:
+                accepted = []
+                for candidate in candidates:
+                    if _extension_quality_passes(
+                        target, candidate, reads[candidate.read_index],
+                        minimum_extension_base_quality,
+                    ):
+                        accepted.append(candidate)
+                    else:
+                        recruit_quality_rejections += 1
+                        recruit_quality_rejected_overhang_bases += (
+                            max(0, -candidate.offset)
+                            + max(0, candidate.offset + len(candidate.sequence) - len(target))
+                        )
+                candidates = accepted
             if not candidates:
+                outcomes["quality_filtered" if had_candidates else "no_candidates"] += 1
                 break
 
             tentative_members = members if round_index == 0 else members + candidates
@@ -661,12 +803,19 @@ def extend_progressive_raw_clusters(
                 ranking_damage_end_window=damage_end_window,
                 diagnostics=ranking,
             )
+            outcome = "no_growth"
+            if not selected:
+                outcome = ("ranking_rejected" if any(c.offset < 0 or c.offset + len(c.sequence) > len(target)
+                                                    for c in candidates) else "no_dovetail")
+            before_boundary = bool(selected)
             selected = _filter_extension_boundary_support(
                 internal.sequence,
                 candidates,
                 selected,
                 minimum_extension_support,
             )
+            if before_boundary and not selected:
+                outcome = "boundary_support_rejected"
             if reciprocal_best_extension and selected:
                 selected = _filter_reciprocal_best_extensions(
                     internal.sequence,
@@ -687,6 +836,8 @@ def extend_progressive_raw_clusters(
                     minimum_overlap_margin=minimum_overlap_margin,
                     diagnostics=reciprocal,
                 )
+                if not selected:
+                    outcome = "reciprocal_rejected"
             template = _consensus(
                 internal.sequence,
                 selected,
@@ -721,6 +872,7 @@ def extend_progressive_raw_clusters(
                 )
 
             extension_rounds += 1
+            outcomes["grew" if result.left_extension or result.right_extension else outcome] += 1
             ambiguous_extensions += ambiguous
             changed = result.sequence != target
             if round_index > 0 and changed:
@@ -732,6 +884,7 @@ def extend_progressive_raw_clusters(
             if not changed:
                 break
             if result.left_extension:
+                seed_offset += result.left_extension
                 members = [
                     replace(
                         member,
@@ -741,9 +894,21 @@ def extend_progressive_raw_clusters(
                 ]
             target = result.sequence
 
+        untrimmed_length = len(target)
+        if untrimmed_sequences is not None:
+            untrimmed_sequences[cluster.center_index] = target
+        left, right = 0, untrimmed_length
+        if trim_seed_min_base_quality is not None:
+            left, right = _seed_trim_bounds(
+                center.raw, untrimmed_length, seed_offset, members, molecules,
+                center.molecule_id, trim_seed_min_base_quality,
+            )
+            seed_trimmed_contigs += left > 0 or right < untrimmed_length
+            seed_trimmed_left_bases += left
+            seed_trimmed_right_bases += untrimmed_length - right
         current = Read(
             f"progressive_contig_{cluster.center_index + 1}",
-            target,
+            target[left:right],
         )
         contributing = frozenset(
             molecules[index] for index in cluster_indices
@@ -755,6 +920,22 @@ def extend_progressive_raw_clusters(
         else:
             updated_center = center.corrected(current)
             corrected_centers += target != seed
+        updated_center = replace(
+            updated_center,
+            seed_interval=(max(0, left - seed_offset), min(len(seed), right - seed_offset)),
+            seed_offset=seed_offset - left,
+        )
+        if track_raw_placements:
+            placements = [RawPlacement(center.index, seed_offset, False, 0, len(seed))]
+            placements.extend(_raw_placement(member, reads[member.read_index]) for member in members)
+            clipped = (
+                _clip_raw_placement(replace(placement, offset=placement.offset - left),
+                                    len(reads[placement.read_index].sequence), right - left)
+                for placement in placements
+            )
+            updated_center = replace(updated_center, raw_placements=tuple(dict.fromkeys(
+                placement for placement in clipped if placement is not None
+            )))
         updated = updated.replace_record(updated_center)
         for member_index in cluster_indices:
             if member_index == cluster.center_index:
@@ -775,6 +956,13 @@ def extend_progressive_raw_clusters(
             ambiguous_extensions=ambiguous_extensions,
             reciprocal_checks=reciprocal.checks,
             reciprocal_rejections=reciprocal.rejections,
+            recruit_quality_rejections=recruit_quality_rejections,
+            recruit_quality_rejected_overhang_bases=recruit_quality_rejected_overhang_bases,
+            seed_trimmed_contigs=seed_trimmed_contigs,
+            seed_trimmed_left_bases=seed_trimmed_left_bases,
+            seed_trimmed_right_bases=seed_trimmed_right_bases,
+            round_outcomes=tuple(sorted(outcomes.items())),
+            recruit_search=tuple(asdict(recruit_search).items()),
         ),
     )
 
@@ -800,8 +988,15 @@ def iterate_progressive_raw_extension(
     audit_rejected_extensions: bool = False,
     audit_minimum_base_quality: int = 20,
     require_strict_boundary_evidence: bool = False,
+    low_quality_ry_rescue: bool = False,
+    reuse_raw_evidence: bool = False,
 ) -> tuple[ProgressiveSequencePool, ProgressiveIterationDiagnostics]:
-    """Extend persistent derived centers using only unused raw fragments."""
+    """Extend derived centers; optionally reuse immutable raw evidence experimentally.
+
+    Reuse does not transfer ownership or retire other centers. Molecules are
+    deduplicated by candidate search within each center, not across centers.
+    Overlapping output contigs can therefore retain redundant sequence.
+    """
     if maximum_iterations < 1:
         raise ValueError("maximum_iterations must be at least 1")
     if minimum_consensus_support < 2:
@@ -812,11 +1007,12 @@ def iterate_progressive_raw_extension(
     consumed_reads = ambiguous_extensions = insufficient_support = 0
     priority_sweeps = priority_reordered = priority_claim_conflicts = 0
     rejected = _RejectedExtensionDiagnostics()
+    recruit_search = _CandidateDiagnostics()
     strict_accepted = strict_conflicts = strict_quality = 0
     converged = False
 
     for iteration in range(1, maximum_iterations + 1):
-        raw_records = updated.active_raw
+        raw_records = updated.records if reuse_raw_evidence else updated.active_raw
         derived_records = updated.active_derived
         if not raw_records or not derived_records:
             converged = True
@@ -859,6 +1055,8 @@ def iterate_progressive_raw_extension(
                     minimum_ry_identity=minimum_ry_identity,
                     position_bits=position_bits,
                     target_window=target_window,
+                    diagnostics=recruit_search,
+                    low_quality_ry_rescue=low_quality_ry_rescue,
                 )
             order = sorted(
                 derived_records,
@@ -901,6 +1099,8 @@ def iterate_progressive_raw_extension(
                     minimum_ry_identity=minimum_ry_identity,
                     position_bits=position_bits,
                     target_window=target_window,
+                    diagnostics=recruit_search,
+                    low_quality_ry_rescue=low_quality_ry_rescue,
                 )
             candidate_alignments += len(candidates)
             if not candidates:
@@ -998,26 +1198,45 @@ def iterate_progressive_raw_extension(
                 raw_global_indices[index] for index in supporting
             }
             current = Read(center.current.name, result.sequence)
-            updated = updated.replace_record(
-                center.extended(
+            updated_center = center.extended(
                     current,
                     frozenset(
                         updated.records[index].molecule_id
                         for index in global_supporters
                     ),
                 )
-            )
-            for local_index in supporting:
-                claimed_local.add(local_index)
-            for global_index in global_supporters:
-                updated = updated.replace_record(
-                    updated.records[global_index].consumed()
+            if center.raw_placements is not None:
+                placements = [replace(placement, offset=placement.offset + result.left_extension)
+                              for placement in center.raw_placements]
+                # All candidates contributed to the internal consensus, even if
+                # only boundary supporters were claimed for extension ownership.
+                placements.extend(
+                    replace(_raw_placement(candidate, raw_reads[candidate.read_index]),
+                            read_index=raw_global_indices[candidate.read_index],
+                            offset=candidate.offset + result.left_extension)
+                    for candidate in candidates
                 )
+                clipped = (_clip_raw_placement(placement, len(updated.records[placement.read_index].raw.sequence),
+                                               len(current.sequence)) for placement in placements)
+                updated_center = replace(updated_center, raw_placements=tuple(dict.fromkeys(
+                    placement for placement in clipped if placement is not None
+                )))
+            updated_center = replace(updated_center, seed_interval=center.seed_interval,
+                                     seed_offset=center.seed_offset + result.left_extension)
+            updated = updated.replace_record(updated_center)
+            if not reuse_raw_evidence:
+                for local_index in supporting:
+                    claimed_local.add(local_index)
+                for global_index in global_supporters:
+                    updated = updated.replace_record(
+                        updated.records[global_index].consumed()
+                    )
             extension = len(result.sequence) - len(target)
             extended_centers += 1
             extended_this_round += 1
             added_bases += extension
-            consumed_reads += len(global_supporters)
+            if not reuse_raw_evidence:
+                consumed_reads += len(global_supporters)
 
         iterations = iteration
         if not extended_this_round:
@@ -1033,6 +1252,7 @@ def iterate_progressive_raw_extension(
             iterations=iterations,
             converged=converged,
             candidate_alignments=candidate_alignments,
+            recruit_search=tuple(asdict(recruit_search).items()),
             extended_centers=extended_centers,
             added_bases=added_bases,
             consumed_reads=consumed_reads,

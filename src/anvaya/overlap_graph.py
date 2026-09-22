@@ -320,12 +320,45 @@ def _project_master_edges(
     edges: dict[tuple[tuple[int, bool], tuple[int, bool]], _MasterOverlapEdge],
     *,
     name_prefix: str,
+    path_layouts: dict[str, tuple[tuple[int, bool, int], ...]] | None = None,
+    verify_transitive_alleles: bool = False,
+    excluded_contigs: set[int] | None = None,
+    reduced_graph_audit=None,
 ) -> tuple[list[Read], _MasterGraphProjection]:
     """Reduce a bidirected overlap graph and spell reciprocal linear paths."""
 
     def oriented_sequence(node: tuple[int, bool]) -> str:
         sequence = contigs[node[0]].sequence
         return reverse_complement(sequence) if node[1] else sequence
+
+    def compatible_transitive_alleles(
+        direct: _MasterOverlapEdge,
+        first: _MasterOverlapEdge,
+        second: _MasterOverlapEdge,
+    ) -> bool:
+        def spell(path: tuple[_MasterOverlapEdge, ...]) -> str | None:
+            sequence = list(oriented_sequence(path[0].source))
+            current = path[0].source
+            for edge in path:
+                if edge.source != current:
+                    return None
+                source = oriented_sequence(edge.source)
+                source_start = len(sequence) - len(source)
+                if source_start < 0:
+                    return None
+                for position, base in edge.corrections:
+                    assembled_position = source_start + position
+                    if not 0 <= assembled_position < len(sequence):
+                        return None
+                    sequence[assembled_position] = base
+                target = oriented_sequence(edge.target)
+                if source_start + edge.shift != len(sequence) - edge.overlap:
+                    return None
+                sequence.extend(target[edge.overlap:])
+                current = edge.target
+            return "".join(sequence)
+
+        return spell((direct,)) == spell((first, second))
 
     outgoing: dict[tuple[int, bool], list[_MasterOverlapEdge]] = defaultdict(list)
     for edge in edges.values():
@@ -339,6 +372,10 @@ def _project_master_edges(
                 if (
                     second.target == edge.target
                     and first.shift + second.shift == edge.shift
+                    and (
+                        not verify_transitive_alleles
+                        or compatible_transitive_alleles(edge, first, second)
+                    )
                 ):
                     transitive.add((edge.source, edge.target))
                     break
@@ -347,6 +384,8 @@ def _project_master_edges(
     reduced = {
         key: edge for key, edge in edges.items() if key not in transitive
     }
+    if reduced_graph_audit is not None:
+        reduced_graph_audit(contigs, reduced, excluded_contigs or set())
 
     outgoing = defaultdict(list)
     incoming: dict[tuple[int, bool], list[_MasterOverlapEdge]] = defaultdict(list)
@@ -367,6 +406,25 @@ def _project_master_edges(
     linear_in = {edge.target: edge for edge in reciprocal.values()}
 
     projected_paths: dict[str, tuple[str, set[int], int]] = {}
+    layouts: dict[str, tuple[tuple[int, bool, int], ...]] = {}
+
+    def orient_layout(
+        layout: tuple[tuple[int, bool, int], ...],
+        assembled: str,
+        destination_sequence: str,
+    ) -> tuple[tuple[int, bool, int], ...]:
+        if assembled == destination_sequence:
+            return layout
+        if reverse_complement(assembled) != destination_sequence:
+            raise ValueError("canonical path sequences disagree")
+        return tuple(
+            (
+                index,
+                not reverse,
+                len(assembled) - offset - len(contigs[index].sequence),
+            )
+            for index, reverse, offset in reversed(layout)
+        )
     visited_edges: set[tuple[tuple[int, bool], tuple[int, bool]]] = set()
     starts = sorted(node for node in linear_out if node not in linear_in)
     for start in starts:
@@ -383,10 +441,12 @@ def _project_master_edges(
         if len(path) < 2:
             continue
         sequence = list(oriented_sequence(path[0]))
+        layout = [(path[0][0], path[0][1], 0)]
         corrected = 0
         for node in path[1:]:
             edge = linear_in[node]
             source_start = len(sequence) - len(oriented_sequence(edge.source))
+            layout.append((node[0], node[1], source_start + edge.shift))
             for position, base in edge.corrections:
                 assembled_position = source_start + position
                 if sequence[assembled_position] != base:
@@ -395,10 +455,21 @@ def _project_master_edges(
             sequence.extend(oriented_sequence(node)[edge.overlap:])
         assembled = "".join(sequence)
         canonical = min(assembled, reverse_complement(assembled))
-        projected_paths.setdefault(
-            canonical,
-            (assembled, {path_node[0] for path_node in path}, corrected),
-        )
+        physical_nodes = {path_node[0] for path_node in path}
+        if canonical not in projected_paths:
+            projected_paths[canonical] = (assembled, physical_nodes, corrected)
+            layouts[canonical] = tuple(layout)
+        else:
+            prior_sequence, prior_nodes, prior_corrected = projected_paths[canonical]
+            compatible_layout = orient_layout(tuple(layout), assembled, prior_sequence)
+            layouts[canonical] = tuple(
+                dict.fromkeys((*layouts[canonical], *compatible_layout))
+            )
+            projected_paths[canonical] = (
+                prior_sequence,
+                prior_nodes | physical_nodes,
+                max(prior_corrected, corrected),
+            )
 
     cyclic_components: set[frozenset[int]] = set()
     for edge in reciprocal.values():
@@ -421,20 +492,31 @@ def _project_master_edges(
     merged: list[Read] = []
     merged_indices: set[int] = set()
     corrected_bases = extension_bases = 0
-    for index, (_, (sequence, physical_nodes, corrected)) in enumerate(
+    for index, (canonical, (sequence, physical_nodes, corrected)) in enumerate(
         sorted(projected_paths.items()),
         start=1,
     ):
         merged.append(Read(f"{name_prefix}_{index}", sequence))
+        if path_layouts is not None:
+            path_layouts[merged[-1].name] = layouts[canonical]
         merged_indices.update(physical_nodes)
         corrected_bases += corrected
         extension_bases += len(sequence) - max(
             len(contigs[node].sequence) for node in physical_nodes
         )
+    excluded = excluded_contigs or set()
     projection = merged + [
-        contig for index, contig in enumerate(contigs) if index not in merged_indices
+        contig for index, contig in enumerate(contigs)
+        if index not in merged_indices and index not in excluded
     ]
+    if path_layouts is not None:
+        for index, contig in enumerate(contigs):
+            if index not in merged_indices and index not in excluded:
+                path_layouts[contig.name] = ((index, False, 0),)
     return projection, _MasterGraphProjection(
+        input_physical_edges=len(edges) // 2,
+        reduced_physical_edges=len(reduced) // 2,
+        branch_rejected_physical_edges=(len(reduced) - len(reciprocal)) // 2,
         transitive_edges_removed=len(transitive) // 2,
         ambiguous_ends=len(ambiguous_nodes) // 2,
         reciprocal_edges=len(reciprocal) // 2,

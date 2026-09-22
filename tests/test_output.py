@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from anvaya.output import write_fasta
+from anvaya.output import write_fasta, write_named_fasta
 
 
 class WriteFastaTests(unittest.TestCase):
@@ -23,6 +23,17 @@ class WriteFastaTests(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 write_fasta(["ACGT"], path, line_width=0)
+
+    def test_writes_stable_caller_supplied_identifiers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "selected.fasta"
+            write_named_fasta(
+                [("unitig_2", "AAAA"), ("unitig_7", "CC")], path,
+            )
+            self.assertEqual(
+                path.read_text(encoding="utf-8"),
+                ">unitig_2 length=4\nAAAA\n>unitig_7 length=2\nCC\n",
+            )
 
 
 if __name__ == "__main__":

@@ -23,9 +23,11 @@ from anvaya.damage_likelihood import (
 from anvaya.output import write_fasta
 from anvaya.reads import Read, load_reads
 from anvaya.sequences import canonical_sequence, normalize_dna, reverse_complement
+from anvaya.carpedeam_backend import InputScan, run_carpedeam_safe, scan_sequence_input
 
 __all__ = [
     "CandidateDamageFit",
+    "InputScan",
     "Read",
     "ParameterEstimate",
     "assemble_overlap_contigs",
@@ -43,6 +45,8 @@ __all__ = [
     "fit_candidate_damage_model",
     "load_reads",
     "normalize_dna",
+    "run_carpedeam_safe",
+    "scan_sequence_input",
     "reverse_complement",
     "write_fasta",
 ]

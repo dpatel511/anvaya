@@ -1,7 +1,7 @@
 """Low-support rescue constrained by trusted contigs and raw evidence."""
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from anvaya.overlap_index import _anchor_index
 from anvaya.overlap_assembly import (
@@ -15,6 +15,7 @@ from anvaya.overlap_graph import _confirm_raw_mismatches, _project_master_edges
 from anvaya.overlap_progressive import (
     ProgressiveRawCluster,
     ProgressiveSequencePool,
+    _extension_quality_passes,
     _oriented_quality,
     discover_progressive_raw_clusters,
     extend_progressive_raw_clusters,
@@ -90,6 +91,17 @@ class SupportTwoRescueDiagnostics:
     ordinary_mismatch_rejections: int = 0
     internal_damage_rejections: int = 0
     boundary_quality_rejections: int = 0
+    seed_quality_rejections: int = 0
+    seed_quality_rejected_bases: int = 0
+    recruit_quality_rejections: int = 0
+    recruit_quality_rejected_overhang_bases: int = 0
+    seed_trimmed_contigs: int = 0
+    seed_trimmed_left_bases: int = 0
+    seed_trimmed_right_bases: int = 0
+    trimmed_short_contigs: int = 0
+    primary_extension_exclusions: int = 0
+    ambiguous_primary_extension_exclusions: int = 0
+    fixed_membership_short_exclusions: int = 0
     rescue_contigs: int = 0
     contained_by_primary: int = 0
     redundant_with_rescue: int = 0
@@ -339,14 +351,18 @@ def _support_two_cluster_rejection(
     *,
     minimum_base_quality: int,
     damage_end_window: int,
+    filter_seed_quality: bool = True,
 ) -> str | None:
-    center = pool.records[cluster.center_index].current.sequence
+    center_read = pool.records[cluster.center_index].current
+    center = center_read.sequence
+    covered = bytearray(len(center))
     for alignment in cluster.alignments:
         candidate = alignment.sequence
         start = max(0, alignment.offset)
         stop = min(len(center), alignment.offset + len(candidate))
         candidate_start = start - alignment.offset
         for position in range(start, stop):
+            covered[position] = 1
             candidate_position = candidate_start + position - start
             left = center[position]
             right = candidate[candidate_position]
@@ -363,16 +379,14 @@ def _support_two_cluster_rejection(
             if not terminal:
                 return "internal_damage"
 
-        extension_positions = range(0, candidate_start)
-        if stop - alignment.offset < len(candidate):
-            extension_positions = tuple(extension_positions) + tuple(
-                range(stop - alignment.offset, len(candidate))
-            )
         read = pool.records[alignment.read_index].current
-        for position in extension_positions:
-            quality = _oriented_quality(read, candidate, position)
+        if not _extension_quality_passes(center, alignment, read, minimum_base_quality):
+            return "boundary_quality"
+    for position, supported in enumerate(covered):
+        if filter_seed_quality and not supported:
+            quality = _oriented_quality(center_read, center, position)
             if quality is None or quality < minimum_base_quality:
-                return "boundary_quality"
+                return "seed_quality"
     return None
 
 
@@ -387,14 +401,35 @@ def project_high_confidence_support_two_rescue(
     minimum_overlap: int = 30,
     minimum_base_quality: int = 20,
     damage_end_window: int = 5,
+    filter_seed_quality: bool = False,
+    filter_recruit_quality: bool = True,
+    trim_seed_tails: bool = False,
+    minimum_output_length: int = 1,
+    fixed_membership_before: list[Read] | None = None,
 ) -> tuple[list[Read], SupportTwoRescueDiagnostics]:
-    """Project a strictly filtered two-molecule rescue tier."""
+    """Project a filtered two-molecule rescue tier.
+
+    Supplying an empty fixed_membership_before list enables the paired audit:
+    fill it with selected untrimmed records and return their trimmed counterparts.
+    Both outputs exclude selected records that become shorter than the minimum.
+    """
     if minimum_anchor_matches < 2:
         raise ValueError("support-two rescue requires at least two anchor matches")
     if minimum_base_quality < 0:
         raise ValueError("support-two rescue base quality must not be negative")
+    if filter_seed_quality and trim_seed_tails:
+        raise ValueError("support-two seed rejection and trimming cannot be combined")
+    if minimum_output_length < 1:
+        raise ValueError("minimum_output_length must be positive")
+    if fixed_membership_before is not None:
+        if not trim_seed_tails:
+            raise ValueError("fixed-membership comparison requires seed trimming")
+        if fixed_membership_before:
+            raise ValueError("fixed_membership_before must be empty")
     raw_records = list(pool.active_raw)
     if not raw_records:
+        if fixed_membership_before is not None:
+            fixed_membership_before.extend(primary)
         return list(primary), SupportTwoRescueDiagnostics(
             projected_contigs=len(primary),
             projected_bases=sum(len(contig.sequence) for contig in primary),
@@ -419,12 +454,14 @@ def project_high_confidence_support_two_rescue(
     )
     admitted: list[ProgressiveRawCluster] = []
     ordinary = internal_damage = boundary_quality = 0
+    seed_quality = seed_quality_bases = 0
     for cluster in clusters:
         rejection = _support_two_cluster_rejection(
             rescue_pool,
             cluster,
             minimum_base_quality=minimum_base_quality,
             damage_end_window=damage_end_window,
+            filter_seed_quality=filter_seed_quality,
         )
         if rejection == "ordinary_mismatch":
             ordinary += 1
@@ -432,10 +469,15 @@ def project_high_confidence_support_two_rescue(
             internal_damage += 1
         elif rejection == "boundary_quality":
             boundary_quality += 1
+        elif rejection == "seed_quality":
+            boundary_quality += 1
+            seed_quality += 1
+            seed_quality_bases += len(rescue_pool.records[cluster.center_index].current.sequence)
         else:
             admitted.append(cluster)
 
-    rescue_pool, _ = extend_progressive_raw_clusters(
+    untrimmed = {} if fixed_membership_before is not None else None
+    rescue_pool, extension_diagnostics = extend_progressive_raw_clusters(
         rescue_pool,
         tuple(admitted),
         anchor_k=anchor_k,
@@ -447,10 +489,21 @@ def project_high_confidence_support_two_rescue(
         minimum_correction_support=2,
         minimum_extension_support=1,
         reciprocal_best_extension=True,
+        minimum_extension_base_quality=minimum_base_quality if filter_recruit_quality else None,
+        trim_seed_min_base_quality=minimum_base_quality if trim_seed_tails else None,
+        untrimmed_sequences=untrimmed,
     )
+    derived = rescue_pool.active_derived
+    trimmed_short = sum(
+        len(record.current.sequence) < minimum_output_length for record in derived
+    ) if trim_seed_tails else 0
     rescue = [
-        Read(f"support_two_rescue_{index + 1}", record.current.sequence)
-        for index, record in enumerate(rescue_pool.active_derived)
+        Read(
+            f"support_two_rescue_{index + 1}",
+            record.current.sequence if untrimmed is None else untrimmed[record.index],
+        )
+        for index, record in enumerate(derived)
+        if untrimmed is not None or not trim_seed_tails or len(record.current.sequence) >= minimum_output_length
     ]
     projected, redundancy = project_two_tier_rescue(
         primary,
@@ -463,6 +516,33 @@ def project_high_confidence_support_two_rescue(
         minimum_ry_identity=1.0,
         minimum_coverage=1.0,
     )
+    fixed_short = 0
+    if fixed_membership_before is not None:
+        # Selection and order come exclusively from the untrimmed projection.
+        trimmed_by_name = {
+            f"support_two_rescue_{index + 1}": record.current.sequence
+            for index, record in enumerate(derived)
+        }
+        paired_after = list(primary)
+        fixed_membership_before.extend(primary)
+        for original in projected[len(primary):]:
+            sequence = trimmed_by_name[original.name]
+            if len(sequence) < minimum_output_length:
+                fixed_short += 1
+                continue
+            fixed_membership_before.append(original)
+            paired_after.append(Read(original.name, sequence))
+        projected = paired_after
+        lengths = [len(read.sequence) for read in projected]
+        redundancy = replace(
+            redundancy,
+            novel_contigs=len(projected) - len(primary),
+            novel_bases=sum(lengths[len(primary):]),
+            projected_contigs=len(projected),
+            projected_bases=sum(lengths),
+            projected_n50=_n50(lengths),
+            projected_longest_contig=max(lengths, default=0),
+        )
     return projected, SupportTwoRescueDiagnostics(
         eligible_raw_reads=len(raw_records),
         candidate_clusters=len(clusters),
@@ -470,6 +550,17 @@ def project_high_confidence_support_two_rescue(
         ordinary_mismatch_rejections=ordinary,
         internal_damage_rejections=internal_damage,
         boundary_quality_rejections=boundary_quality,
+        seed_quality_rejections=seed_quality,
+        seed_quality_rejected_bases=seed_quality_bases,
+        recruit_quality_rejections=extension_diagnostics.recruit_quality_rejections,
+        recruit_quality_rejected_overhang_bases=extension_diagnostics.recruit_quality_rejected_overhang_bases,
+        seed_trimmed_contigs=extension_diagnostics.seed_trimmed_contigs,
+        seed_trimmed_left_bases=extension_diagnostics.seed_trimmed_left_bases,
+        seed_trimmed_right_bases=extension_diagnostics.seed_trimmed_right_bases,
+        trimmed_short_contigs=trimmed_short,
+        primary_extension_exclusions=redundancy.extends_primary,
+        ambiguous_primary_extension_exclusions=redundancy.ambiguous_primary_extensions,
+        fixed_membership_short_exclusions=fixed_short,
         rescue_contigs=len(rescue),
         contained_by_primary=redundancy.contained_by_primary,
         redundant_with_rescue=redundancy.redundant_with_rescue,

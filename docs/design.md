@@ -64,8 +64,12 @@ conversions must be explicit in any new evaluator.
 
 ## Current limitations
 
-- Quality checks on support-two seed admission do not cover later recruited
-  overhangs or every retained seed boundary.
+- Support-two checks initial partner and later-recruit overhang quality by default.
+  Whole-seed rejection is opt-in. Optional output-stage seed-tail trimming preserves
+  raw reads and tracks retained seed intervals and offsets; trimmed ends are never
+  used for overlap scoring. These mappings identify read ends, not physical ends.
+  Overlapping evidence still uses count-based consensus;
+  later recruits do not repeat the seed admission mismatch checks.
 - Flat contributing-molecule sets do not replace per-base raw-read placements.
 - A read end or derived contig end is not necessarily a physical molecule end.
 - Greedy read ownership and limited anchors may lose valid overlaps; their

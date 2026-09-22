@@ -1,12 +1,16 @@
 """Command-line interface for Anvaya."""
 
 import argparse
+import json
 import sys
 import time
+from contextlib import ExitStack
+from dataclasses import asdict
 from collections.abc import Sequence
 from pathlib import Path
 
-from anvaya.output import write_fasta
+from anvaya.output import write_fasta, write_named_fasta
+from anvaya.raw_consensus import DamageProfile, project_raw_consensus
 from anvaya.overlap_assembly import (
     IterativeReclusteringDiagnostics,
     MasterOverlapGraphDiagnostics,
@@ -32,6 +36,7 @@ from anvaya.overlap_progressive import (
     ProgressiveIterationDiagnostics,
     ProgressiveRawExtensionDiagnostics,
     ProgressiveSequencePool,
+    SequenceState,
     discover_progressive_raw_clusters,
     extend_progressive_raw_clusters,
     iterate_progressive_raw_extension,
@@ -54,6 +59,8 @@ from anvaya.overlap_scaffolding import (
 )
 from anvaya.paired_reads import PairedMergeDiagnostics, merge_overlapping_pairs
 from anvaya.reads import load_reads
+from anvaya.damage_string_graph import assemble as assemble_damage_string_graph
+from anvaya.carpedeam_backend import run_carpedeam_safe
 
 
 def _minimum_count(value: str) -> int:
@@ -113,6 +120,49 @@ def build_parser() -> argparse.ArgumentParser:
         description="Damage-aware overlap assembly research prototype",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    damage_parser = subparsers.add_parser(
+        "damage-assemble",
+        help="assemble merged ancient-DNA fragments with the damage-aware string graph",
+    )
+    damage_parser.add_argument("--input", "-i", required=True, type=Path)
+    damage_parser.add_argument("--profile-prefix", required=True, type=Path)
+    damage_parser.add_argument("--output-before", required=True, type=Path)
+    damage_parser.add_argument("--output-consensus", required=True, type=Path)
+    damage_parser.add_argument(
+        "--output-assembled", type=Path,
+        help="optional consensus FASTA with at least two uniquely placed molecules",
+    )
+    damage_parser.add_argument(
+        "--output-unresolved", type=Path,
+        help="optional consensus FASTA with fewer than two uniquely placed molecules",
+    )
+    damage_parser.add_argument("--diagnostics", required=True, type=Path)
+    damage_parser.add_argument("--placements-report", type=Path)
+    damage_parser.add_argument("--consensus-report", type=Path)
+    damage_parser.add_argument(
+        "--max-reads", type=_minimum_count, default=1000,
+        help="maximum input fragments for this experimental command (default: 1000)",
+    )
+
+    carpedeam_parser = subparsers.add_parser(
+        "carpedeam-assemble",
+        help="run CarpeDeam safe mode as a pinned external benchmark comparator",
+    )
+    carpedeam_parser.add_argument("--input", "-i", required=True, type=Path)
+    carpedeam_parser.add_argument("--profile-prefix", required=True, type=Path)
+    carpedeam_parser.add_argument("--output", "-o", required=True, type=Path)
+    carpedeam_parser.add_argument("--temporary-directory", required=True, type=Path)
+    carpedeam_parser.add_argument("--diagnostics", required=True, type=Path)
+    carpedeam_parser.add_argument("--executable", default="carpedeam")
+    carpedeam_parser.add_argument("--threads", type=_minimum_count, default=2)
+    carpedeam_parser.add_argument(
+        "--min-contig-length", type=_minimum_count, default=31,
+    )
+    damage_parser.add_argument(
+        "--min-output-length", type=_minimum_count, default=31,
+        help="minimum emitted contig length (default: 31)",
+    )
 
     overlap_parser = subparsers.add_parser(
         "overlap-assemble",
@@ -333,6 +383,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional first-phase progressive FASTA; primary output remains unchanged",
     )
     overlap_parser.add_argument(
+        "--raw-consensus-profile-prefix", type=Path,
+        help="opt-in fixed-layout consensus for merged double-stranded fragments; reads PREFIX5p.prof and PREFIX3p.prof",
+    )
+    overlap_parser.add_argument("--raw-consensus-projection", type=Path, help="damage-aware consensus FASTA from the progressive layout")
+    overlap_parser.add_argument("--raw-consensus-quality-control", type=Path, help="same layout and quality model with damage rates set to zero")
+    overlap_parser.add_argument("--raw-consensus-report", type=Path, help="TSV of consensus decisions at 0-based positions")
+    overlap_parser.add_argument("--raw-consensus-placements", type=Path, help="TSV of original raw-read intervals and contig offsets")
+    overlap_parser.add_argument("--raw-consensus-mixture-report", type=Path, help="diagnostic single versus two-allele evidence TSV; does not change calls")
+    overlap_parser.add_argument("--raw-consensus-linkage-report", type=Path, help="diagnostic molecule-level neighbouring allele counts TSV")
+    overlap_parser.add_argument("--raw-consensus-linked-allele-guard", action="store_true", help="experimental guard against substitutions contradicting linked allele groups")
+    overlap_parser.add_argument("--progressive-low-quality-ry-rescue", action="store_true", help="experimental recruitment allowance for one RY mismatch with raw base quality <=15; requires progressive raw audit")
+    overlap_parser.add_argument(
         "--max-progressive-raw-iterations",
         type=_minimum_count,
         default=3,
@@ -403,6 +465,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--high-confidence-support-two-rescue-projection",
         type=Path,
         help="optional support-two rescue FASTA; prior outputs remain unchanged",
+    )
+    overlap_parser.add_argument(
+        "--support-two-seed-quality-filter",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="experimental whole-cluster rejection for unsupported low-quality seed bases (default: disabled)",
+    )
+    overlap_parser.add_argument(
+        "--support-two-trim-seed-tails",
+        action="store_true",
+        help="trim exposed unsupported low-quality seed tails after extension; incompatible with seed rejection",
+    )
+    overlap_parser.add_argument(
+        "--support-two-fixed-membership-before",
+        type=Path,
+        help="write matched untrimmed FASTA and hold rescue membership fixed; requires seed trimming",
+    )
+    overlap_parser.add_argument(
+        "--support-two-recruit-quality-filter",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="experimental quality gate on later support-two recruit overhangs (default: enabled)",
     )
     overlap_parser.add_argument(
         "--support-two-master-graph-audit",
@@ -647,7 +731,192 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     try:
+        if arguments.command == "carpedeam-assemble":
+            _progress("Running audited CarpeDeam safe-mode comparator")
+            result = run_carpedeam_safe(
+                arguments.input,
+                arguments.profile_prefix,
+                arguments.output,
+                arguments.temporary_directory,
+                arguments.diagnostics,
+                executable=arguments.executable,
+                threads=arguments.threads,
+                minimum_contig_length=arguments.min_contig_length,
+            )
+            _progress(f"Completed CarpeDeam safe mode in {result['elapsed_seconds']:.2f}s")
+            print(f"reads={result['input_scan']['reads']}")
+            print(f"contigs={result['output_contigs']}")
+            print(f"output={arguments.output}")
+            print(f"diagnostics={arguments.diagnostics}")
+            return 0
+
+        if arguments.command == "damage-assemble":
+            if (arguments.output_assembled is None) != (arguments.output_unresolved is None):
+                parser.error("assembled and unresolved outputs must be requested together")
+            paths = [
+                arguments.input,
+                arguments.output_before,
+                arguments.output_consensus,
+                arguments.output_assembled,
+                arguments.output_unresolved,
+                arguments.diagnostics,
+                arguments.placements_report,
+                arguments.consensus_report,
+                Path(f"{arguments.profile_prefix}5p.prof"),
+                Path(f"{arguments.profile_prefix}3p.prof"),
+            ]
+            resolved = [path.resolve() for path in paths if path is not None]
+            if len(resolved) != len(set(resolved)):
+                parser.error("damage assembly inputs, profiles and outputs must be distinct")
+            started = time.perf_counter()
+            _progress(f"Loading fragments from {arguments.input}")
+            reads = load_reads(arguments.input, maximum_reads=arguments.max_reads)
+            if any(read.qualities is None for read in reads):
+                parser.error("damage assembly requires FASTQ base qualities")
+            profile = DamageProfile.from_prefix(arguments.profile_prefix)
+            _progress(f"Building damage-aware graph from {len(reads)} fragments")
+            graph_timings = {}
+            pool, graph = assemble_damage_string_graph(
+                reads,
+                damage_profile=profile,
+                maximum_reads=arguments.max_reads,
+                stage_timings=graph_timings,
+            )
+            layout_contigs = len(pool.active_derived)
+            retained_pool = ProgressiveSequencePool(tuple(
+                record.consumed()
+                if (
+                    record.state in {
+                        SequenceState.CORRECTED_CENTER,
+                        SequenceState.EXTENDED_CONTIG,
+                    }
+                    and len(record.current.sequence) < arguments.min_output_length
+                )
+                else record
+                for record in pool.records
+            ))
+            with ExitStack() as stack:
+                report = (
+                    stack.enter_context(arguments.consensus_report.open("w", encoding="utf-8"))
+                    if arguments.consensus_report else None
+                )
+                placements = (
+                    stack.enter_context(arguments.placements_report.open("w", encoding="utf-8"))
+                    if arguments.placements_report else None
+                )
+                consensus_started = time.perf_counter()
+                polished, consensus = project_raw_consensus(
+                    retained_pool, profile, report=report, placements_report=placements
+                )
+                consensus_seconds = time.perf_counter() - consensus_started
+            before = [
+                record.current.sequence for record in retained_pool.active_derived
+            ]
+            after = [read.sequence for read in polished]
+            write_fasta(before, arguments.output_before)
+            write_fasta(after, arguments.output_consensus)
+            assembled = []
+            unresolved = []
+            if arguments.output_assembled is not None:
+                for index, (record, read) in enumerate(zip(
+                    retained_pool.active_derived, polished, strict=True,
+                ), start=1):
+                    mappings = {}
+                    for placement in record.raw_placements or ():
+                        mappings.setdefault(placement.read_index, set()).add(
+                            (placement.offset, placement.reverse)
+                        )
+                    ambiguous_molecules = {
+                        retained_pool.records[read_index].molecule_id
+                        for read_index, positions in mappings.items()
+                        if len(positions) > 1
+                    }
+                    eligible_molecules = {
+                        retained_pool.records[placement.read_index].molecule_id
+                        for placement in record.raw_placements or ()
+                        if retained_pool.records[placement.read_index].molecule_id
+                        not in ambiguous_molecules
+                    }
+                    destination = assembled if len(eligible_molecules) >= 2 else unresolved
+                    destination.append((f"unitig_{index}", read.sequence))
+                write_named_fasta(assembled, arguments.output_assembled)
+                write_named_fasta(unresolved, arguments.output_unresolved)
+            elapsed = time.perf_counter() - started
+            arguments.diagnostics.write_text(
+                json.dumps(
+                    {
+                        "input_reads": len(reads),
+                        "input_bases": sum(len(read.sequence) for read in reads),
+                        "layout_contigs": layout_contigs,
+                        "filtered_short_contigs": layout_contigs - len(before),
+                        "emitted_contigs": len(before),
+                        "emitted_bases_before": sum(map(len, before)),
+                        "emitted_bases_consensus": sum(map(len, after)),
+                        "assembled_minimum_distinct_molecules": 2,
+                        "assembled_contigs": len(assembled),
+                        "assembled_bases": sum(len(sequence) for _, sequence in assembled),
+                        "unresolved_contigs": len(unresolved),
+                        "unresolved_bases": sum(len(sequence) for _, sequence in unresolved),
+                        "minimum_output_length": arguments.min_output_length,
+                        "graph": graph,
+                        "consensus": asdict(consensus),
+                        "stage_seconds": {
+                            **graph_timings,
+                            "consensus": consensus_seconds,
+                        },
+                        "elapsed_seconds": elapsed,
+                    },
+                    indent=2,
+                ) + "\n",
+                encoding="utf-8",
+            )
+            _progress(f"Completed damage-aware graph in {elapsed:.2f}s")
+            print(f"reads={len(reads)}")
+            print(f"contigs={len(before)}")
+            print(f"output_before={arguments.output_before}")
+            print(f"output_consensus={arguments.output_consensus}")
+            if arguments.output_assembled is not None:
+                print(f"output_assembled={arguments.output_assembled}")
+                print(f"output_unresolved={arguments.output_unresolved}")
+            print(f"diagnostics={arguments.diagnostics}")
+            return 0
+
         if arguments.command == "overlap-assemble":
+            if arguments.progressive_low_quality_ry_rescue and not arguments.progressive_raw_phase_audit:
+                parser.error("low-quality RY rescue requires --progressive-raw-phase-audit")
+            consensus_profile = None
+            consensus_outputs = [arguments.raw_consensus_projection, arguments.raw_consensus_quality_control,
+                                 arguments.raw_consensus_report, arguments.raw_consensus_placements,
+                                 arguments.raw_consensus_mixture_report, arguments.raw_consensus_linkage_report]
+            if arguments.raw_consensus_profile_prefix is not None:
+                if not arguments.progressive_raw_phase_audit or arguments.raw_consensus_projection is None:
+                    parser.error("raw consensus requires progressive raw audit and a consensus projection")
+                if arguments.input is None:
+                    parser.error("raw consensus currently requires a single input of merged double-stranded fragments")
+                consensus_profile = DamageProfile.from_prefix(arguments.raw_consensus_profile_prefix)
+                paths = [path.resolve() for path in consensus_outputs if path is not None]
+                reserved = {path.resolve() for path in (arguments.input, arguments.output,
+                    arguments.progressive_raw_phase_projection, arguments.selective_support_rescue_projection,
+                    arguments.high_confidence_support_two_rescue_projection,
+                    arguments.support_two_fixed_membership_before) if path is not None}
+                reserved.update(Path(f"{arguments.raw_consensus_profile_prefix}{end}.prof").resolve() for end in ("5p", "3p"))
+                if len(set(paths)) != len(paths) or set(paths) & reserved:
+                    parser.error("raw consensus outputs must be distinct from each other and existing inputs/projections")
+            elif any(path is not None for path in consensus_outputs) or arguments.raw_consensus_linked_allele_guard:
+                parser.error("raw consensus outputs require --raw-consensus-profile-prefix")
+            if arguments.support_two_fixed_membership_before is not None:
+                if not arguments.support_two_trim_seed_tails:
+                    parser.error("fixed-membership comparison requires --support-two-trim-seed-tails")
+                after_path = arguments.high_confidence_support_two_rescue_projection
+                if after_path is None:
+                    parser.error("fixed-membership comparison requires a support-two projection path")
+                if arguments.support_two_fixed_membership_before.resolve() == after_path.resolve():
+                    parser.error("fixed-membership before and after paths must differ")
+            if arguments.support_two_trim_seed_tails:
+                if arguments.support_two_seed_quality_filter:
+                    parser.error("support-two seed rejection and trimming cannot be combined")
+                if not arguments.high_confidence_support_two_rescue_audit:
+                    parser.error("seed trimming requires --high-confidence-support-two-rescue-audit")
             started = time.perf_counter()
             input_paths = _resolve_input_paths(parser, arguments)
             _progress(f"Loading fragments from {', '.join(map(str, input_paths))}")
@@ -819,6 +1088,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         reciprocal_best_extension=True,
                         extension_consensus=arguments.extension_consensus,
                         maximum_rounds=arguments.max_rounds,
+                        track_raw_placements=consensus_profile is not None,
+                        low_quality_ry_rescue=arguments.progressive_low_quality_ry_rescue,
                     )
                 )
                 progressive_pool, progressive_iterations = (
@@ -842,6 +1113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         evidence_priority=(
                             arguments.evidence_priority_progressive_extension
                         ),
+                        low_quality_ry_rescue=arguments.progressive_low_quality_ry_rescue,
                         audit_rejected_extensions=(
                             arguments.progressive_extension_failure_audit
                         ),
@@ -850,6 +1122,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 progressive_projection_contigs = [
                     record.current for record in progressive_pool.active_derived
                 ]
+                if consensus_profile is not None:
+                    # Match the written progressive FASTA's length filter and IDs.
+                    consensus_pool = ProgressiveSequencePool(tuple(
+                        record.consumed() if record.state in (SequenceState.CORRECTED_CENTER, SequenceState.EXTENDED_CONTIG)
+                        and len(record.current.sequence) < arguments.min_output_length else record
+                        for record in progressive_pool.records
+                    ))
+                    with ExitStack() as stack:
+                        report = stack.enter_context(arguments.raw_consensus_report.open("w", encoding="utf-8", newline="")) if arguments.raw_consensus_report else None
+                        placements = stack.enter_context(arguments.raw_consensus_placements.open("w", encoding="utf-8", newline="")) if arguments.raw_consensus_placements else None
+                        mixture = stack.enter_context(arguments.raw_consensus_mixture_report.open("w", encoding="utf-8", newline="")) if arguments.raw_consensus_mixture_report else None
+                        linkage = stack.enter_context(arguments.raw_consensus_linkage_report.open("w", encoding="utf-8", newline="")) if arguments.raw_consensus_linkage_report else None
+                        consensus_contigs, consensus_diagnostics = project_raw_consensus(
+                            consensus_pool, consensus_profile, report=report, placements_report=placements,
+                            mixture_report=mixture, linkage_report=linkage,
+                            linked_allele_guard=arguments.raw_consensus_linked_allele_guard,
+                        )
+                    write_fasta([read.sequence for read in consensus_contigs], arguments.raw_consensus_projection)
+                    print(f"raw_consensus_profile_prefix={arguments.raw_consensus_profile_prefix}")
+                    print(f"raw_consensus_linked_allele_guard={str(arguments.raw_consensus_linked_allele_guard).lower()}")
+                    for label, value in asdict(consensus_diagnostics).items():
+                        print(f"raw_consensus_{label}={value}")
+                    if arguments.raw_consensus_quality_control is not None:
+                        quality_contigs, quality_diagnostics = project_raw_consensus(consensus_pool, DamageProfile((), ()))
+                        write_fasta([read.sequence for read in quality_contigs], arguments.raw_consensus_quality_control)
+                        for label, value in asdict(quality_diagnostics).items():
+                            print(f"raw_quality_control_{label}={value}")
                 if (
                     arguments.support_three_progressive_projection is not None
                     and not arguments.support_three_progressive_extension_audit
@@ -1081,10 +1380,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                             arguments.selective_support_rescue_projection,
                         )
                     if arguments.high_confidence_support_two_rescue_audit:
+                        fixed_before = [] if arguments.support_two_fixed_membership_before is not None else None
                         support_two_contigs, support_two_rescue = (
                             project_high_confidence_support_two_rescue(
                                 progressive_pool,
                                 selective_contigs,
+                                filter_seed_quality=arguments.support_two_seed_quality_filter,
+                                filter_recruit_quality=arguments.support_two_recruit_quality_filter,
+                                trim_seed_tails=arguments.support_two_trim_seed_tails,
+                                minimum_output_length=arguments.min_output_length,
+                                fixed_membership_before=fixed_before,
                                 anchor_k=arguments.anchor_k,
                                 anchors_per_read=arguments.anchors_per_read,
                                 maximum_anchor_occurrences=min(
@@ -1114,6 +1419,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                                     >= arguments.min_output_length
                                 ],
                                 arguments.high_confidence_support_two_rescue_projection,
+                            )
+                        if fixed_before is not None:
+                            write_fasta(
+                                [contig.sequence for contig in fixed_before if len(contig.sequence) >= arguments.min_output_length],
+                                arguments.support_two_fixed_membership_before,
                             )
                         if arguments.support_two_master_graph_audit:
                             (
@@ -2026,6 +2336,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "overlap_progressive_reciprocal_rejections="
                 f"{progressive_extension.reciprocal_rejections}"
             )
+            for reason, count in progressive_extension.round_outcomes:
+                print(f"overlap_progressive_round_{reason}={count}")
+            for reason, count in progressive_extension.recruit_search:
+                print(f"overlap_progressive_recruit_search_{reason}={count}")
+            print(f"overlap_progressive_low_quality_ry_rescue={str(arguments.progressive_low_quality_ry_rescue).lower()}")
+            for reason, count in progressive_iterations.recruit_search:
+                print(f"overlap_progressive_iteration_search_{reason}={count}")
             print(
                 "overlap_progressive_iterations="
                 f"{progressive_iterations.iterations}"
@@ -2337,6 +2654,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             for label, value in (
                 ("eligible_raw_reads", support_two_rescue.eligible_raw_reads),
+                ("seed_quality_filter", str(arguments.support_two_seed_quality_filter).lower()),
+                ("trim_seed_tails", str(arguments.support_two_trim_seed_tails).lower()),
+                ("seed_trimmed_contigs", support_two_rescue.seed_trimmed_contigs),
+                ("seed_trimmed_left_bases", support_two_rescue.seed_trimmed_left_bases),
+                ("seed_trimmed_right_bases", support_two_rescue.seed_trimmed_right_bases),
+                ("trimmed_short_contigs", support_two_rescue.trimmed_short_contigs),
+                ("fixed_membership", str(arguments.support_two_fixed_membership_before is not None).lower()),
+                ("fixed_membership_short_exclusions", support_two_rescue.fixed_membership_short_exclusions),
+                ("primary_extension_exclusions", support_two_rescue.primary_extension_exclusions),
+                ("ambiguous_primary_extension_exclusions", support_two_rescue.ambiguous_primary_extension_exclusions),
+                ("recruit_quality_filter", str(arguments.support_two_recruit_quality_filter).lower()),
+                ("seed_quality_rejections", support_two_rescue.seed_quality_rejections),
+                ("seed_quality_rejected_bases", support_two_rescue.seed_quality_rejected_bases),
+                ("recruit_quality_rejections", support_two_rescue.recruit_quality_rejections),
+                ("recruit_quality_rejected_overhang_bases", support_two_rescue.recruit_quality_rejected_overhang_bases),
                 ("candidate_clusters", support_two_rescue.candidate_clusters),
                 ("admitted_clusters", support_two_rescue.admitted_clusters),
                 (

@@ -23,7 +23,9 @@ def _open_text(path: Path) -> TextIO:
     return path.open(encoding="utf-8")
 
 
-def _load_fasta(first_header: str, handle: TextIO) -> list[Read]:
+def _load_fasta(
+    first_header: str, handle: TextIO, maximum_reads: int | None = None,
+) -> list[Read]:
     reads: list[Read] = []
     name = first_header[1:].strip()
     sequence_parts: list[str] = []
@@ -37,6 +39,8 @@ def _load_fasta(first_header: str, handle: TextIO) -> list[Read]:
             continue
         if line.startswith(">"):
             reads.append(Read(name, normalize_dna("".join(sequence_parts))))
+            if maximum_reads is not None and len(reads) > maximum_reads:
+                raise ValueError(f"sequence file contains more than {maximum_reads} reads")
             name = line[1:].strip()
             sequence_parts = []
             if not name:
@@ -45,10 +49,14 @@ def _load_fasta(first_header: str, handle: TextIO) -> list[Read]:
             sequence_parts.append(line)
 
     reads.append(Read(name, normalize_dna("".join(sequence_parts))))
+    if maximum_reads is not None and len(reads) > maximum_reads:
+        raise ValueError(f"sequence file contains more than {maximum_reads} reads")
     return reads
 
 
-def _load_fastq(first_header: str, handle: TextIO) -> list[Read]:
+def _load_fastq(
+    first_header: str, handle: TextIO, maximum_reads: int | None = None,
+) -> list[Read]:
     reads: list[Read] = []
     header = first_header
 
@@ -74,6 +82,8 @@ def _load_fastq(first_header: str, handle: TextIO) -> list[Read]:
         if any(score < 0 for score in scores):
             raise ValueError("FASTQ contains an invalid quality character")
         reads.append(Read(name, sequence, scores))
+        if maximum_reads is not None and len(reads) > maximum_reads:
+            raise ValueError(f"sequence file contains more than {maximum_reads} reads")
 
         header = handle.readline()
         while header and not header.strip():
@@ -83,15 +93,17 @@ def _load_fastq(first_header: str, handle: TextIO) -> list[Read]:
     return reads
 
 
-def load_reads(path: str | Path) -> list[Read]:
+def load_reads(path: str | Path, maximum_reads: int | None = None) -> list[Read]:
     """Load reads from a plain or gzipped FASTA/FASTQ file."""
+    if maximum_reads is not None and maximum_reads < 1:
+        raise ValueError("maximum reads must be at least 1")
     input_path = Path(path)
     with _open_text(input_path) as handle:
         first_line = handle.readline().rstrip("\r\n")
         if not first_line:
             raise ValueError("sequence file must not be empty")
         if first_line.startswith(">"):
-            return _load_fasta(first_line, handle)
+            return _load_fasta(first_line, handle, maximum_reads)
         if first_line.startswith("@"):
-            return _load_fastq(first_line, handle)
+            return _load_fastq(first_line, handle, maximum_reads)
         raise ValueError("input must be FASTA or FASTQ")
