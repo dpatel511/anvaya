@@ -7,6 +7,16 @@ from anvaya.reads import Read, load_reads
 
 
 class LoadReadsTests(unittest.TestCase):
+    def test_rejects_fastq_beyond_maximum_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reads.fastq"
+            path.write_text(
+                "@one\nACGT\n+\nIIII\n@two\nTGCA\n+\nIIII\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "more than 1 reads"):
+                load_reads(path, maximum_reads=1)
+
     def test_loads_multiline_fasta(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "reads.fasta"

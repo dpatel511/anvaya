@@ -1,3 +1,4 @@
+import random
 import unittest
 from unittest.mock import Mock, patch
 
@@ -10,9 +11,83 @@ from anvaya.overlap_adaptive_rescue import (
 from anvaya.overlap_assembly import _MasterOverlapEdge
 from anvaya.overlap_progressive import ProgressiveSequencePool
 from anvaya.reads import Read
+from anvaya.sequences import reverse_complement
 
 
 class AdaptiveSupportRescueTests(unittest.TestCase):
+    def test_support_two_quality_controls_are_independent(self) -> None:
+        rng = random.Random(971)
+        sequence = "".join(rng.choice("ACGT") for _ in range(140))
+        for seed_filter in (False, True):
+            for recruit_filter in (False, True):
+                for bad_seed in (False, True):
+                    with self.subTest(seed=seed_filter, recruit=recruit_filter, bad_seed=bad_seed):
+                        pool = ProgressiveSequencePool.from_reads([
+                            Read("seed", sequence[:60], (0 if bad_seed else 30,) * 40 + (30,) * 20),
+                            Read("partner", sequence[40:100], (30,) * 60),
+                            Read("recruit", sequence[80:], (30,) * 20 + (0,) * 40),
+                        ])
+                        projected, diagnostics = project_high_confidence_support_two_rescue(
+                            pool, [], anchor_k=5, anchors_per_read=50, minimum_overlap=20,
+                            filter_seed_quality=seed_filter,
+                            filter_recruit_quality=recruit_filter,
+                        )
+                        rejected_seed = seed_filter and bad_seed
+                        expected = [] if rejected_seed else [sequence[:100] if recruit_filter else sequence]
+                        self.assertEqual([read.sequence for read in projected], expected)
+                        self.assertEqual(diagnostics.seed_quality_rejections, int(rejected_seed))
+                        self.assertEqual(diagnostics.seed_quality_rejected_bases, 60 if rejected_seed else 0)
+                        rejected_recruit = recruit_filter and not rejected_seed
+                        self.assertEqual(diagnostics.recruit_quality_rejections, int(rejected_recruit))
+                        self.assertEqual(diagnostics.recruit_quality_rejected_overhang_bases, 40 if rejected_recruit else 0)
+
+    def test_support_two_rejects_unsupported_seed_without_quality(self) -> None:
+        sequence = "ACGTTGCACTGATCGGACCTAGTA"
+        for qualities in (None, (0,) * 6 + (30,) * 12):
+            with self.subTest(qualities=qualities):
+                pool = ProgressiveSequencePool.from_reads([
+                    Read("seed", sequence[:18], qualities),
+                    Read("partner", sequence[6:], (30,) * 18),
+                ])
+                projected, diagnostics = project_high_confidence_support_two_rescue(
+                    pool, [], anchor_k=3, anchors_per_read=16, minimum_overlap=8,
+                    filter_seed_quality=True,
+                )
+                self.assertEqual(projected, [])
+                self.assertEqual(diagnostics.boundary_quality_rejections, 1)
+
+    def test_support_two_checks_later_recruit_overhang_quality(self) -> None:
+        rng = random.Random(971)
+        sequence = "".join(rng.choice("ACGT") for _ in range(140))
+        for quality, reverse in ((q, r) for q in (0, 19, 20, 30, None) for r in (False, True)):
+            with self.subTest(quality=quality, reverse=reverse):
+                qualities = None if quality is None else (30,) * 20 + (quality,) * 40
+                recruit = sequence[80:]
+                if reverse:
+                    recruit = reverse_complement(recruit)
+                    qualities = None if qualities is None else qualities[::-1]
+                pool = ProgressiveSequencePool.from_reads([
+                    Read("seed", sequence[:60], (30,) * 60),
+                    Read("partner", sequence[40:100], (30,) * 60),
+                    Read("recruit", recruit, qualities),
+                ])
+                projected, _ = project_high_confidence_support_two_rescue(
+                    pool, [], anchor_k=5, anchors_per_read=50, minimum_overlap=20,
+                )
+                expected = sequence if quality is not None and quality >= 20 else sequence[:100]
+                self.assertEqual([read.sequence for read in projected], [expected])
+
+    def test_support_two_allows_low_quality_seed_bases_inside_overlap(self) -> None:
+        sequence = "ACGTTGCACTGATCGGACCTAGTA"
+        pool = ProgressiveSequencePool.from_reads([
+            Read("seed", sequence[:18], (30,) * 6 + (0,) * 12),
+            Read("partner", sequence[6:], (30,) * 18),
+        ])
+        projected, _ = project_high_confidence_support_two_rescue(
+            pool, [], anchor_k=3, anchors_per_read=16, minimum_overlap=8,
+        )
+        self.assertEqual([read.sequence for read in projected], [sequence])
+
     def test_support_two_rescue_accepts_high_quality_exact_overlap(self) -> None:
         primary = Read("primary", "GGGGAAAACCCCTTTT")
         orphan = "ACGTTGCACTGATCGGACCTAGTA"

@@ -27,6 +27,8 @@ class ProgressiveLinkDiagnostics:
     input_contigs: int = 0
     candidate_dovetails: int = 0
     exact_dovetails: int = 0
+    exact_overlap_lengths: tuple[int, ...] = ()
+    geometrically_spannable_dovetails: int = 0
     near_exact_candidates: int = 0
     near_exact_raw_confirmed: int = 0
     near_exact_accepted: int = 0
@@ -76,18 +78,29 @@ def _add_bidirected_edge(
     destination: dict[_EdgeKey, _MasterOverlapEdge],
     contigs: list[Read],
     edge: _MasterOverlapEdge,
-) -> None:
+    ambiguous_physical_edges: set[_EdgeKey] | None = None,
+) -> bool:
+    """Add both orientations, or remove a pair with contradictory edge data."""
+    physical = _physical_key(edge.source, edge.target)
+    if ambiguous_physical_edges is not None and physical in ambiguous_physical_edges:
+        return False
+    existing = destination.get((edge.source, edge.target))
+    if existing is not None and existing != edge and ambiguous_physical_edges is not None:
+        ambiguous_physical_edges.add(physical)
+        destination.pop((edge.source, edge.target), None)
+        destination.pop((_reverse_node(edge.target), _reverse_node(edge.source)), None)
+        return False
     destination[(edge.source, edge.target)] = edge
     reverse_source = _reverse_node(edge.target)
     reverse_target = _reverse_node(edge.source)
     second_sequence = _oriented_sequence(contigs, edge.target)
-    reverse_corrections = tuple(
+    reverse_corrections = tuple(sorted(
         (
             len(second_sequence) - 1 - (position - edge.shift),
             reverse_complement(base),
         )
         for position, base in edge.corrections
-    )
+    ))
     destination[(reverse_source, reverse_target)] = _MasterOverlapEdge(
         reverse_source,
         reverse_target,
@@ -95,6 +108,7 @@ def _add_bidirected_edge(
         edge.overlap,
         reverse_corrections,
     )
+    return True
 
 
 def _spanning_molecules(
@@ -455,6 +469,13 @@ def audit_raw_supported_progressive_links(
         input_contigs=len(contigs),
         candidate_dovetails=candidate_dovetails,
         exact_dovetails=len(physical_edges),
+        exact_overlap_lengths=tuple(sorted(
+            edge.overlap for edge in physical_edges.values()
+        )),
+        geometrically_spannable_dovetails=sum(
+            edge.overlap + 2 <= maximum_read_length
+            for edge in physical_edges.values()
+        ),
         near_exact_candidates=near_candidates // 2,
         near_exact_raw_confirmed=len(near_edges),
         near_exact_accepted=len(preferred_near) // 2,

@@ -24,3 +24,23 @@ def write_fasta(
             handle.write(f">unitig_{index} length={len(normalized)}\n")
             for start in range(0, len(normalized), line_width):
                 handle.write(normalized[start : start + line_width] + "\n")
+
+
+def write_named_fasta(
+    records: Sequence[tuple[str, str]],
+    path: str | Path,
+    line_width: int = 80,
+) -> None:
+    """Write sequences with stable caller-supplied identifiers."""
+    if not isinstance(line_width, int) or isinstance(line_width, bool):
+        raise TypeError("line_width must be an integer")
+    if line_width < 1:
+        raise ValueError("line_width must be at least 1")
+    with Path(path).open(mode="w", encoding="utf-8") as handle:
+        for identifier, sequence in records:
+            if not identifier or any(character.isspace() for character in identifier):
+                raise ValueError("FASTA identifiers must be non-empty and contain no whitespace")
+            normalized = normalize_dna(sequence)
+            handle.write(f">{identifier} length={len(normalized)}\n")
+            for start in range(0, len(normalized), line_width):
+                handle.write(normalized[start : start + line_width] + "\n")

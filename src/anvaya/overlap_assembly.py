@@ -86,11 +86,17 @@ class OverlapAssemblySummary:
 
 @dataclass(slots=True)
 class _CandidateDiagnostics:
+    target_anchors: int = 0
+    missing_index_anchors: int = 0
+    occurrence_capped_anchors: int = 0
+    indexed_anchor_hits: int = 0
     offsets: int = 0
     below_anchor_support: int = 0
     short_overlap: int = 0
     dna_rejected: int = 0
     ry_rejected: int = 0
+    ry_rescued_offsets: int = 0
+    ry_rescued_alignments: int = 0
     molecule_ambiguous: int = 0
     alignments: int = 0
     unavailable_anchor_hits: int = 0
@@ -320,6 +326,7 @@ class _Alignment:
     sequence: str
     offset: int
     support: int
+    reverse: bool | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -333,6 +340,9 @@ class _MasterOverlapEdge:
 
 @dataclass(slots=True, frozen=True)
 class _MasterGraphProjection:
+    input_physical_edges: int = 0
+    reduced_physical_edges: int = 0
+    branch_rejected_physical_edges: int = 0
     transitive_edges_removed: int = 0
     ambiguous_ends: int = 0
     reciprocal_edges: int = 0
@@ -393,6 +403,8 @@ def _candidate_alignments(
     position_bits: int,
     target_window: int,
     diagnostics: _CandidateDiagnostics | None = None,
+    stage_trace: dict[tuple[int, bool, int], str] | None = None,
+    low_quality_ry_rescue: bool = False,
 ) -> list[_Alignment]:
     payload_bits = position_bits + 1
     position_mask = (1 << position_bits) - 1
@@ -400,9 +412,19 @@ def _candidate_alignments(
     for anchor, target_position, target_reverse in _target_anchors(
         target, anchor_k, anchors_per_read, target_window
     ):
+        if diagnostics is not None:
+            diagnostics.target_anchors += 1
         occurrences = anchors.get(anchor, ())
-        if not occurrences or len(occurrences) > maximum_anchor_occurrences:
+        if not occurrences:
+            if diagnostics is not None:
+                diagnostics.missing_index_anchors += 1
             continue
+        if len(occurrences) > maximum_anchor_occurrences:
+            if diagnostics is not None:
+                diagnostics.occurrence_capped_anchors += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.indexed_anchor_hits += len(occurrences)
         for packed in occurrences:
             member_index = packed >> payload_bits
             if (
@@ -424,7 +446,11 @@ def _candidate_alignments(
             votes[(member_index, reverse, target_position - member_position)] += 1
 
     by_molecule: dict[int, list[_Alignment]] = defaultdict(list)
+    rescued: set[tuple[int, bool, int]] = set()
     for (member_index, reverse, offset), support in votes.items():
+        key = (member_index, reverse, offset)
+        if stage_trace is not None:
+            stage_trace[key] = "anchor_support_rejected"
         if diagnostics is not None:
             diagnostics.offsets += 1
         if support < minimum_anchor_matches:
@@ -432,6 +458,8 @@ def _candidate_alignments(
                 diagnostics.below_anchor_support += 1
             continue
         member = reads[member_index].sequence
+        if stage_trace is not None:
+            stage_trace[key] = "short_overlap"
         if reverse:
             member = reverse_complement(member)
         start = max(0, offset)
@@ -441,18 +469,46 @@ def _candidate_alignments(
                 diagnostics.short_overlap += 1
             continue
         member_start = start - offset
+        if stage_trace is not None:
+            stage_trace[key] = "dna_identity_rejected"
         target_overlap = target[start:stop]
         member_overlap = member[member_start : member_start + stop - start]
         if _identity(target_overlap, member_overlap) < minimum_identity:
             if diagnostics is not None:
                 diagnostics.dna_rejected += 1
             continue
+        if stage_trace is not None:
+            stage_trace[key] = "ry_identity_rejected"
         if _identity(_ry(target_overlap), _ry(member_overlap)) < minimum_ry_identity:
+            qualities = reads[member_index].qualities
+            mismatch_positions = []
+            if low_quality_ry_rescue and qualities is not None:
+                for position, (first, second) in enumerate(zip(target_overlap, member_overlap)):
+                    if first not in "ACGT" or second not in "ACGT":
+                        mismatch_positions = []
+                        break
+                    if (first in "AG") != (second in "AG"):
+                        mismatch_positions.append(position)
+                        if len(mismatch_positions) > 1:
+                            break
+            eligible = len(mismatch_positions) == 1
+            if eligible:
+                # Positions and offsets are 0-based; qualities retain raw orientation.
+                raw_position = member_start + mismatch_positions[0]
+                if reverse:
+                    raw_position = len(member) - 1 - raw_position
+                eligible = qualities[raw_position] <= 15
+            if not eligible:
+                if diagnostics is not None:
+                    diagnostics.ry_rejected += 1
+                continue
+            rescued.add(key)
             if diagnostics is not None:
-                diagnostics.ry_rejected += 1
-            continue
+                diagnostics.ry_rescued_offsets += 1
+        if stage_trace is not None:
+            stage_trace[key] = "molecule_selection_rejected"
         by_molecule[molecule_ids[member_index]].append(
-            _Alignment(member_index, member, offset, support)
+            _Alignment(member_index, member, offset, support, reverse)
         )
 
     selected: list[_Alignment] = []
@@ -461,8 +517,15 @@ def _candidate_alignments(
         best = [candidate for candidate in candidates if candidate.support == best_support]
         if len(best) == 1:
             selected.append(best[0])
+            if stage_trace is not None:
+                candidate = best[0]
+                stage_trace[(candidate.read_index, candidate.reverse, candidate.offset)] = "selected"
             if diagnostics is not None:
                 diagnostics.alignments += 1
+                candidate = best[0]
+                diagnostics.ry_rescued_alignments += (
+                    (candidate.read_index, candidate.reverse, candidate.offset) in rescued
+                )
         elif diagnostics is not None:
             diagnostics.molecule_ambiguous += 1
     return selected

@@ -26,6 +26,41 @@ from anvaya.sequences import reverse_complement
 
 
 class ProgressiveSequencePoolTests(unittest.TestCase):
+    def test_consumed_bridges_can_link_exhausted_contigs_without_double_counting(self):
+        # Sequence intervals are 0-based, half-open. Bridges span both overlap ends.
+        left = "ACGTTGCACTGA"
+        right = "CTGATCGGACCT"
+        truth = left + right[4:]
+        for duplicate in (False, True):
+            with self.subTest(duplicate=duplicate):
+                reads = [Read("left", left), Read("right", right),
+                         Read("bridge-1", "CACTGATCGG"),
+                         Read("bridge-2", reverse_complement("CACTGATCGG"))]
+                molecules = [0, 1, 2, 2 if duplicate else 3]
+                pool = ProgressiveSequencePool.from_reads(reads, molecules)
+                for index in (0, 1):
+                    pool = pool.replace_record(pool.records[index].extended(
+                        reads[index], frozenset({molecules[index + 2]})))
+                for index in (2, 3):
+                    pool = pool.replace_record(pool.records[index].consumed())
+                self.assertEqual(pool.active_raw, ())
+                unchanged, iterations = iterate_progressive_raw_extension(pool)
+                self.assertEqual(unchanged, pool)
+                self.assertEqual(iterations.added_bases, 0)
+                snapshot = pool.records
+                projection, diagnostics = audit_raw_supported_progressive_links(
+                    pool, anchor_k=3, anchors_per_read=16, minimum_anchor_matches=1,
+                    minimum_overlap=4, minimum_identity=1.0, minimum_ry_identity=1.0,
+                    minimum_read_support=2)
+                self.assertEqual(pool.records, snapshot)
+                if duplicate:
+                    self.assertEqual(len(projection), 2)
+                    self.assertEqual(diagnostics.supported_dovetails, 0)
+                else:
+                    self.assertEqual(len(projection), 1)
+                    self.assertIn(projection[0].sequence, (truth, reverse_complement(truth)))
+                    self.assertEqual(diagnostics.supported_dovetails, 1)
+
     def test_strict_boundary_filter_requires_unanimous_q20_support(self) -> None:
         target = "ACGTCCGT"
         reads = [
@@ -449,6 +484,8 @@ class ProgressiveSequencePoolTests(unittest.TestCase):
             min(merged, reverse_complement(merged)),
         )
         self.assertEqual(diagnostics.supported_dovetails, 1)
+        self.assertEqual(diagnostics.exact_overlap_lengths, (4,))
+        self.assertEqual(diagnostics.geometrically_spannable_dovetails, 1)
         self.assertEqual(diagnostics.linear_paths, 1)
         self.assertEqual(diagnostics.merged_contigs, 2)
 
